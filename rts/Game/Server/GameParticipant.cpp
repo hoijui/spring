@@ -6,9 +6,12 @@
 #include "BaseNetProtocol.h"
 
 GameParticipant::GameParticipant()
-: myState(UNCONNECTED)
-, lastFrameResponse(0)
-, isLocal(false)
+	: myState(UNCONNECTED)
+	, cpuUsage (0.0f)
+	, ping (0)
+	, speedWarning(0.0f)
+	, lastKeyframeResponse(0)
+	, isLocal(false)
 {
 }
 
