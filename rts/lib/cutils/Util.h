@@ -127,6 +127,7 @@ void util_removeTrailingSlash(char* fsPath);
 
 /**
  * Returns true if the file specified in filePath exists.
+ * Does not care for the type of file (file, directory, link, ...).
  */
 bool util_fileExists(const char* filePath);
 

@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SHAREDLIBRARY_H
-#define _SHAREDLIBRARY_H
+#ifndef _SHARED_LIBRARY_H
+#define _SHARED_LIBRARY_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +27,8 @@ extern "C" {
 #endif
 #include <stddef.h> // for NULL
 
+// Define the base type for a shared library.
+// Has to be a pointer type -> can be set to NULL.
 #ifdef _WIN32
 	#include <windows.h>
 	typedef HINSTANCE sharedLib_t;
@@ -43,6 +45,15 @@ extern "C" {
  * - OS X:         "dylib"
  */
 const char* sharedLib_getLibExtension();
+
+/**
+ * Returns the platform specific shared library prefix.
+ * examples:
+ * - Windows:      ""
+ * - Unix & Linux: "lib"
+ * - OS X:         "lib"
+ */
+const char* sharedLib_getLibPrefix();
 
 /**
  * Creates a full library file name out of a base name.
@@ -82,4 +93,4 @@ void* sharedLib_findAddress(sharedLib_t sharedLib, const char* symbol);
 } // extern "C"
 #endif
 
-#endif // _SHAREDLIBRARY_H
+#endif // _SHARED_LIBRARY_H

@@ -31,17 +31,21 @@ const char* sharedLib_getLibExtension() {
 #endif
 }
 
-void sharedLib_createFullLibName(const char* libBaseName,
-		char* libFullName, const size_t libFullName_sizeMax) {
+const char* sharedLib_getLibPrefix() {
 
 #ifdef _WIN32
-	static const char* prefix = "";
+	return "";
+#elif defined __APPLE__
+	return "lib";
 #else
-	static const char* prefix = "lib";
+	return "lib";
 #endif
+}
 
+void sharedLib_createFullLibName(const char* libBaseName,
+		char* libFullName, const size_t libFullName_sizeMax) {
 	SNPRINTF(libFullName, libFullName_sizeMax, "%s%s.%s",
-			prefix, libBaseName, sharedLib_getLibExtension());
+			sharedLib_getLibPrefix(), libBaseName, sharedLib_getLibExtension());
 }
 
 sharedLib_t sharedLib_load(const char* libFilePath) {
