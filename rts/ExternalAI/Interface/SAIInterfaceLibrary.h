@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SAIINTERFACELIBRARY_H
-#define _SAIINTERFACELIBRARY_H
+#ifndef _S_AI_INTERFACE_LIBRARY_H
+#define _S_AI_INTERFACE_LIBRARY_H
 
 /*
  * All this is not needed when building an AI,
@@ -200,4 +200,4 @@ struct SAIInterfaceLibrary {
 #endif
 
 #endif // !defined BUILDING_SKIRMISH_AI
-#endif // _SAIINTERFACELIBRARY_H
+#endif // _S_AI_INTERFACE_LIBRARY_H

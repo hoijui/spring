@@ -24,4 +24,4 @@ public:
 	content_error(const std::string& msg) : std::runtime_error(msg) {};
 };
 
-#endif
+#endif // EXCEPTIONS_H

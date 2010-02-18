@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SKIRMISHAICALLBACK_H
-#define	_SKIRMISHAICALLBACK_H
+#ifndef _S_SKIRMISH_AI_CALLBACK_H
+#define _S_SKIRMISH_AI_CALLBACK_H
 
 #include "aidefines.h"
 
@@ -1752,4 +1752,4 @@ void (CALLING_CONV *Clb_WeaponDef_0MAP1VALS0getCustomParams)(int teamId,
 } // extern "C"
 #endif
 
-#endif // _SKIRMISHAICALLBACK_H
+#endif // _S_SKIRMISH_AI_CALLBACK_H

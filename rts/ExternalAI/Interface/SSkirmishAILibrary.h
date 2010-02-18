@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SSAILIBRARY_H
-#define _SSAILIBRARY_H
+#ifndef _S_SKIRMISH_AI_LIBRARY_H
+#define _S_SKIRMISH_AI_LIBRARY_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -216,4 +216,4 @@ struct SSkirmishAILibrary {
 } // extern "C"
 #endif
 
-#endif // _SSAILIBRARY_H
+#endif // _S_SKIRMISH_AI_LIBRARY_H

@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _SAIINTERFACECALLBACK_H
-#define _SAIINTERFACECALLBACK_H
+#ifndef _S_AI_INTERFACE_CALLBACK_H
+#define _S_AI_INTERFACE_CALLBACK_H
 
 #include "aidefines.h"
 
@@ -200,4 +200,4 @@ struct SAIInterfaceCallback {
 } // extern "C"
 #endif
 
-#endif // _SAIINTERFACECALLBACK_H
+#endif // _S_AI_INTERFACE_CALLBACK_H

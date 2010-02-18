@@ -18,8 +18,8 @@
 	@author Robin Vobruba <hoijui.quaero@gmail.com>
 */
 
-#ifndef _AISEVENTS_H
-#define _AISEVENTS_H
+#ifndef _AI_S_EVENTS_H
+#define _AI_S_EVENTS_H
 
 // IMPORTANT NOTE: external systems parse this file,
 // so DO NOT CHANGE the style and format it uses without
@@ -364,4 +364,4 @@ struct SSaveEvent {
 } // extern "C"
 #endif
 
-#endif // _AISEVENTS_H
+#endif // _AI_S_EVENTS_H

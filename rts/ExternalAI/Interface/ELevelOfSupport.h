@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _ELEVELOFSUPPORT_H
-#define	_ELEVELOFSUPPORT_H
+#ifndef _E_LEVEL_OF_SUPPORT_H
+#define	_E_LEVEL_OF_SUPPORT_H
 
 #ifdef	__cplusplus
 extern "C" {
@@ -49,4 +49,4 @@ enum LevelOfSupport {
 } // extern "C"
 #endif
 
-#endif // _ELEVELOFSUPPORT_H
+#endif // _E_LEVEL_OF_SUPPORT_H

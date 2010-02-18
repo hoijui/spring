@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _AISCOMMANDS_H
-#define	_AISCOMMANDS_H
+#ifndef _AI_S_COMMANDS_H
+#define _AI_S_COMMANDS_H
 
 // IMPORTANT NOTE: external systems parse this file,
 // so DO NOT CHANGE the style and format it uses without
@@ -25,7 +25,7 @@
 #include "aidefines.h"
 #include "SAIFloat3.h"
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -1104,12 +1104,12 @@ struct SPauseCommand {
  */
 void initSUnitCommand(void* sUnitCommand);
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 }	// extern "C"
 #endif
 
 
-#ifdef	__cplusplus
+#ifdef __cplusplus
 struct Command;
 
 // legacy support functions
@@ -1142,7 +1142,7 @@ int extractAICommandTopic(const Command* internalUnitCmd);
  * @brief creates - with new - an engine C++ Command struct
  */
 Command* newCommand(void* sUnitCommandData, int sCommandId);
-#endif	// __cplusplus
+#endif // __cplusplus
 
 
-#endif	// _AISCOMMANDS_H
+#endif // _AI_S_COMMANDS_H
