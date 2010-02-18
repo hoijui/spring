@@ -6,7 +6,7 @@ set -e
 
 # Sanity check.
 if [ ! -x /usr/bin/git ]; then
-	echo "Error: Couldn't find /usr/bin/git" 1>&2
+	echo "Error: Could not find /usr/bin/git" 1>&2
 	exit 1
 fi
 
@@ -34,10 +34,10 @@ fi
 set -e # turn it on again
 
 if [ $RELEASE_SOURCE ]; then
-	version_string=`git describe --tags`
+	version_string=$(git describe --tags)
 	branch=${version_string}
 else
-	version_string=`git describe --tags | sed s/\-[^\-]*$//`
+	version_string=$(git describe --tags | sed s/\-[^\-]*$//)
 	branch="master"
 fi
 echo "Using $branch as source"
@@ -78,17 +78,18 @@ windows_exclude="${exclude_from_all}"
 windows_include=""
 
 # Linux line endings, .tar.{bz2,gz} package.
-echo 'Exporting checkout dir with LF line endings'
+echo ""
+echo "Exporting checkout dir with LF line endings"
 git clone -n . lf/$dir
 cd lf/$dir
 git checkout $branch
 cd ..
 [ -n "$linux_exclude" ] && rm -rf $linux_exclude
-[ -n "$lzma" ] && echo "Creating .tar.lzma archive ($lzma)" && \
+[ -n "$lzma" ] && echo "Creating archive: $lzma" && \
 	tar --lzma -c -f "../$lzma" $include $linux_include
-[ -n "$tbz" ] && echo "Creating .tar.bz2 archive ($tbz)" && \
+[ -n "$tbz" ]  && echo "Creating archive: $tbz"  && \
 	tar -c -j -f "../$tbz" $include $linux_include
-[ -n "$tgz" ] && echo "Creating .tar.gz archive ($tgz)" && \
+[ -n "$tgz" ]  && echo "Creating archive: $tgz"  && \
 	tar -c -z -f "../$tgz" $include $linux_include
 cd ..
 echo "Cleaning"
@@ -96,17 +97,17 @@ rm -rf lf
 
 ### TODO: needs fixing
 # Windows line endings, .zip/.7z package
-#echo "Exporting checkout dir with CRLF line endings"
+echo ""
+echo "Exporting checkout dir with CRLF line endings"
 git clone -n . crlf/$dir
 cd crlf/$dir
 git config core.autocrlf true
 git checkout $branch
 cd ..
-
 [ -n "$windows_exclude" ] && rm -rf $windows_exclude
-[ -n "$zip" ] && [ -x /usr/bin/zip ] && echo "Creating .zip archive ($zip)" && \
+[ -n "$zip" ]       && [ -x /usr/bin/zip ] && echo "Creating archive: $zip"       && \
 	/usr/bin/zip -q -r -u -9 "../$zip" $include $windows_include
-[ -n "$seven_zip" ] && [ -x /usr/bin/7z ] && echo "Creating .7z archive ($seven_zip)" && \
+[ -n "$seven_zip" ] && [ -x /usr/bin/7z ]  && echo "Creating archive: $seven_zip" && \
 	/usr/bin/7z a -t7z -m0=lzma -mx=9 -mfb=64 -md=32m -ms=on "../$seven_zip" $include >/dev/null
 cd ..
 echo "Cleaning"
