@@ -173,22 +173,24 @@ Alias('streflop', streflop_lib) # Allow `scons streflop' to compile just streflo
 ################################################################################
 
 # setup build environment
-cutenv = env.Clone(builddir=os.path.join(env['builddir'], 'cutils'))
-cutenv.BuildDir(os.path.join(cutenv['builddir'], 'rts/lib/cutils'),
+cutenv = env.Clone(builddir=os.path.join(env['builddir'], 'rts/lib/cutils'))
+cutenv.BuildDir(cutenv['builddir'],
 		'rts/lib/cutils', duplicate = False)
 
-cutenv['CXXFLAGS'] = streflopEnv['CXXFLAGS']
+cutstrenv = cutenv.Clone(builddir=os.path.join(env['builddir'], 'rts/lib/cutils-streflop'))
+cutstrenv.BuildDir(cutstrenv['builddir'],
+		'rts/lib/cutils', duplicate = False)
+cutstrenv['CXXFLAGS'] = streflopEnv['CXXFLAGS']
 
 # setup flags and defines
-cutstrenv = cutenv.Clone(builddir=os.path.join(env['builddir'], 'cutils-streflop'))
 cutstrenv.AppendUnique(CPPDEFINES=['USING_STREFLOP'])
 
 # gather the sources
 cutilsSource_tmp = [
-		'rts/lib/cutils/SharedLibrary.c',
-		'rts/lib/cutils/SimpleLog.c',
-		'rts/lib/cutils/SSkirmishAISpecifier.cpp',
-		'rts/lib/cutils/Util.c'
+		'SharedLibrary.c',
+		'SimpleLog.c',
+		'SSkirmishAISpecifier.cpp',
+		'Util.c'
 		]
 
 cutilsSource = []
@@ -216,9 +218,9 @@ Alias('cutils-streflop', cutilsStreflop_lib) # Allow `scons cutils-streflop' to 
 ################################################################################
 
 # setup build environment
-oscenv = env.Clone(builddir=os.path.join(env['builddir'], 'oscpack'))
+oscenv = env.Clone(builddir=os.path.join(env['builddir'], 'rts/lib/oscpack'))
 oscenv['CPPPATH'] = []
-oscenv.BuildDir(os.path.join(oscenv['builddir'], 'rts/lib/oscpack'),
+oscenv.BuildDir(oscenv['builddir'],
 		'rts/lib/oscpack', duplicate = False)
 
 oscenv['CXXFLAGS'] = streflopEnv['CXXFLAGS']
@@ -231,8 +233,8 @@ else:
 
 # gather the sources
 oscpackSource_tmp = [
-		'rts/lib/oscpack/OscOutboundPacketStream.cpp',
-		'rts/lib/oscpack/OscTypes.cpp'
+		'OscOutboundPacketStream.cpp',
+		'OscTypes.cpp'
 		]
 oscpackSource = []
 for f in oscpackSource_tmp:
