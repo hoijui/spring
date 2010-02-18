@@ -1,16 +1,10 @@
 #include "RAI.h"
 #include "ExternalAI/IGlobalAICallback.h"
-//#include "ExternalAI/IAICheats.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/MoveTypes/MoveInfo.h"
-#include "CUtils/Util.h"
-//#include <vector>
-//#include <iostream>
+#include "lib/cutils/Util.h"
 #include <stdio.h>
-//#include <direct.h>	// mkdir function (windows)
-//#include <sys/stat.h>	// mkdir function (linux)
-#include <time.h>		// time(NULL)
-//#include "KrogsMetalClass-v0.4/MetalMap.h"
+#include <time.h> // time(NULL)
 
 static GlobalResourceMap* GRMap=0;
 static GlobalTerrainMap* GTMap=0;

@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "CUtils/Util.h"
+#include "lib/cutils/Util.h"
 
 #include "JvmLocater.h"
 
@@ -30,7 +30,7 @@
 #include <limits.h> // for CHAR_BIT
 #define CURRENT_DATA_MODEL (CHAR_BIT * sizeof(void*))
 
-#include "CUtils/SimpleLog.h"
+#include "lib/cutils/SimpleLog.h"
 
 // implemented in the OS specific files
 const char* GetArchPath();

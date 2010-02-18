@@ -27,7 +27,7 @@ SkirmishAI
 """
 
 
-Import(['env', 'ai_env', 'streflop_lib'])
+Import(['env', 'ai_env', 'streflop_lib', 'cutils_lib', 'cutilsStreflop_lib'])
 
 import os, sys
 sys.path.append('rts/build/scons')
@@ -463,8 +463,6 @@ skirmishai_env.AppendUnique(CPPDEFINES = ['BUILDING_SKIRMISH_AI'])
 # *** Two environments with different actions were specified for the same target
 aiinterfaceobjs_main = create_shared_objects(aiinterface_env, filelist.get_shared_AIInterface_sources(env), '-aiinterface')
 aiinterfaceobjs_SharedLib = create_shared_objects(aiinterface_env, filelist.get_shared_AIInterface_sources_SharedLib(env), '-aiinterface')
-aiinterfaceobjs_CUtils = create_shared_objects(aiinterface_env, filelist.get_shared_wrapper_source(ai_env, 'CUtils'), '-aiinterface')
-aiinterfaceobjs_CUtilsStreflopped = create_shared_objects(aiinterface_env, filelist.get_shared_wrapper_source(ai_env, 'CUtils'), '-aiinterface_withStreflop', ['USING_STREFLOP'])
 
 # Build
 aiinterfaces_exclude_list=['build']
@@ -502,11 +500,10 @@ for baseName in aiinterfaces_toBuild:
 		objs += aiinterfaceobjs_SharedLib
 
 	if needCUtils:
-		myEnv.AppendUnique(CPPPATH = ['Wrappers'])
 		if needStreflop:
-			objs += aiinterfaceobjs_CUtilsStreflopped
+			myEnv.AppendUnique(LIBS = [cutilsStreflop_lib])
 		else:
-			objs += aiinterfaceobjs_CUtils
+			myEnv.AppendUnique(LIBS = [cutils_lib])
 
 	if needStreflop:
 		myEnv.AppendUnique(CPPDEFINES=['USING_STREFLOP'])
@@ -663,7 +660,6 @@ skirmishAIObjsLegacyCPP      = create_shared_objects(skirmishai_env, filelist.ge
 skirmishAIObjsLegacyCPP_CREG = create_shared_objects(skirmishai_env, filelist.get_shared_AILib_legacyCPP_sources(env), '_SkirmishAI_CREG', ['USING_CREG'])
 skirmishAIObjsLua            = create_shared_objects(skirmishai_env, filelist.get_shared_AILib_lua_sources(env), '_SkirmishAI_Lua', [])
 skirmishAIObjsCpp            = create_shared_objects(skirmishai_env, filelist.get_shared_wrapper_source(ai_env, 'Cpp'), '_SkirmishAI')
-skirmishAIObjsCUtils         = create_shared_objects(skirmishai_env, filelist.get_shared_wrapper_source(ai_env, 'CUtils'), '_SkirmishAI', [])
 
 # which AIs need what to build
 skirmishai_exclude_list       = ['build', 'CSAI', 'TestABICAI', 'AbicWrappersTestAI']
@@ -786,8 +782,7 @@ for baseName in skirmishais_toBuild:
 			objs += skirmishAIObjsCpp
 
 		if needCUtils:
-			myEnv.AppendUnique(CPPPATH = ['Wrappers'])
-			objs += skirmishAIObjsCUtils
+			myEnv.AppendUnique(LIBS = [cutils_lib])
 
 		if useLua:
 			objs += skirmishAIObjsLua

@@ -19,8 +19,8 @@
 #define _INTERFACE_H
 
 #include "ExternalAI/Interface/SSkirmishAILibrary.h"
-#include "CUtils/SSkirmishAISpecifier.h"
-#include "CUtils/SharedLibrary.h"
+#include "lib/cutils/SSkirmishAISpecifier.h"
+#include "lib/cutils/SharedLibrary.h"
 
 #include <map>
 #include <set>

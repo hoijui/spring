@@ -104,7 +104,8 @@ if    (BUILD_${myName}_AIINTERFACE)
 	else  (UNIX)
 		list (APPEND mySources ${rts}/System/Platform/Win/DllLib)
 	endif (UNIX)
-	add_library(${myTarget} MODULE ${mySources} ${ai_common_SRC} ${CUtils_SRC})
+	add_library(${myTarget} MODULE ${mySources} ${ai_common_SRC})
+	target_link_libraries(${myTarget} cutils)
 	set_target_properties(${myTarget} PROPERTIES OUTPUT_NAME "AIInterface")
 
 	# Install the data files

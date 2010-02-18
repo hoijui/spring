@@ -19,8 +19,8 @@
 
 #include "InterfaceDefines.h"
 #include "JavaBridge.h"
-#include "CUtils/Util.h"
-#include "CUtils/SimpleLog.h"
+#include "lib/cutils/Util.h"
+#include "lib/cutils/SimpleLog.h"
 
 #include "ExternalAI/Interface/SAIInterfaceLibrary.h"
 #include "ExternalAI/Interface/SAIInterfaceCallback.h"

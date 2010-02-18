@@ -117,7 +117,7 @@ def create_static_objects(env, fileList, suffix, additionalCPPDEFINES = []):
 	return objsList
 
 
-	
+
 ################################################################################
 ### Build streflop
 ################################################################################
@@ -165,6 +165,49 @@ createStaticExtLibraryBuilder(streflopEnv)
 streflop_lib = streflopEnv.StaticExtLibrary(streflopEnv['builddir'], streflopSource)
 #streflop_lib = streflopEnv.StaticLibrary(streflopEnv['builddir'], streflopSource)
 Alias('streflop', streflop_lib) # Allow `scons streflop' to compile just streflop
+
+
+
+################################################################################
+### Build cutils & cutils-streflop
+################################################################################
+
+# setup build environment
+cutenv = env.Clone(builddir=os.path.join(env['builddir'], 'cutils'))
+cutenv.BuildDir(os.path.join(cutenv['builddir'], 'rts/lib/cutils'),
+		'rts/lib/cutils', duplicate = False)
+
+cutenv['CXXFLAGS'] = streflopEnv['CXXFLAGS']
+
+# setup flags and defines
+cutstrenv = cutenv.Clone(builddir=os.path.join(env['builddir'], 'cutils-streflop'))
+cutstrenv.AppendUnique(CPPDEFINES=['USING_STREFLOP'])
+
+# gather the sources
+cutilsSource_tmp = [
+		'rts/lib/cutils/SharedLibrary.c',
+		'rts/lib/cutils/SimpleLog.c',
+		'rts/lib/cutils/SSkirmishAISpecifier.cpp',
+		'rts/lib/cutils/Util.c'
+		]
+
+cutilsSource = []
+for f in cutilsSource_tmp:
+	cutilsSource += [os.path.join(cutenv['builddir'], f)]
+
+cutilsStreflopSource = []
+for f in cutilsSource_tmp:
+	cutilsStreflopSource += [os.path.join(cutstrenv['builddir'], f)]
+
+# compile cutils
+createStaticExtLibraryBuilder(cutenv)
+cutils_lib = cutenv.StaticExtLibrary(cutenv['builddir'], cutilsSource)
+Alias('cutils', cutils_lib) # Allow `scons cutils' to compile just cutils
+
+# compile cutils-streflop
+createStaticExtLibraryBuilder(cutstrenv)
+cutilsStreflop_lib = cutstrenv.StaticExtLibrary(cutstrenv['builddir'], cutilsStreflopSource)
+Alias('cutils-streflop', cutilsStreflop_lib) # Allow `scons cutils-streflop' to compile just cutils-streflop
 
 
 
@@ -380,8 +423,7 @@ ai_env = env.Clone(
 )
 remove_precompiled_header(ai_env)
 #SConscript(['AI/SConscript'], exports=['env', 'ai_env'], variant_dir=env['builddir'])
-SConscript(['AI/SConscript'], exports=['env', 'ai_env', 'streflop_lib'])
-#SConscript(['AI/SConscript'], exports=['env', 'ai_env'], variant_dir=ai_env['builddir'])
+SConscript(['AI/SConscript'], exports=['env', 'ai_env', 'streflop_lib', 'cutils_lib', 'cutilsStreflop_lib'])
 
 
 

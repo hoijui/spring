@@ -2,8 +2,8 @@
 #
 
 set(mySourceDirRel         "src") # Common values are "" or "src"
-set(additionalSources      ${CUtils_SRC})
+set(additionalSources      "")
 set(additionalCompileFlags "")
-set(additionalLibraries    ${LegacyCpp_AIWRAPPER_TARGET})
+set(additionalLibraries    cutils ${LegacyCpp_AIWRAPPER_TARGET})
 
 ConfigureNativeSkirmishAI(mySourceDirRel additionalSources additionalCompileFlags additionalLibraries)

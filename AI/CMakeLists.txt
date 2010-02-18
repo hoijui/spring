@@ -123,7 +123,6 @@ endmacro (GetNativeSourcesRecursive _var _dir _relDir)
 ################################################################################
 
 
-# Wrappers have to come first cause the Interfaces use the CUtils Wrapper too
-Add_Subdirectory(Wrappers)
 Add_Subdirectory(Interfaces)
+Add_Subdirectory(Wrappers)
 Add_Subdirectory(Skirmish)

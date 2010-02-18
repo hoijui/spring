@@ -30,8 +30,8 @@ extern "C" {
 #include <string.h>
 #include <limits.h> // for CHAR_BIT
 
-#include "CUtils/Util.h"
-#include "CUtils/SimpleLog.h"
+#include "lib/cutils/Util.h"
+#include "lib/cutils/SimpleLog.h"
 
 #define MAXPATHLEN 2048
 #define JRE_PATH_PROPERTY "jre.path"

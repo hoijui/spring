@@ -19,9 +19,9 @@
 
 #include "InterfaceDefines.h"
 #include "JvmLocater.h"
-#include "CUtils/Util.h"
-#include "CUtils/SimpleLog.h"
-#include "CUtils/SharedLibrary.h"
+#include "lib/cutils/Util.h"
+#include "lib/cutils/SimpleLog.h"
+#include "lib/cutils/SharedLibrary.h"
 
 #include "ExternalAI/Interface/aidefines.h"
 #include "ExternalAI/Interface/SAIInterfaceLibrary.h"

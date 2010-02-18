@@ -25,7 +25,7 @@
 #include "ExternalAI/Interface/SSkirmishAICallback.h"
 #include "LegacyCpp/AIGlobalAI.h"
 #include "Game/GameVersion.h"
-#include "CUtils/Util.h"
+#include "lib/cutils/Util.h"
 
 // KAIK stuff
 #include "KAIK.h"

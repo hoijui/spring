@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include "ExternalAI/IGlobalAICallback.h"
 #include "Sim/Units/UnitDef.h"
-#include "CUtils/Util.h" // we only use the defines
+#include "lib/cutils/Util.h" // we only use the defines
 
 ////////////////////////////////////////////////////////////////////////////////
 // Construction/Destruction
