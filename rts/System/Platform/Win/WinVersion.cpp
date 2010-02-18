@@ -1,4 +1,5 @@
-#include "StdAfx.h"
+#include "WinVersion.h"
+
 #include <sstream>
 #include <string>
 
