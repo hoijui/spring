@@ -66,6 +66,7 @@ include=" \
  $dir/SConstruct \
  $dir/tools/SelectionEditor/ \
  $dir/CMakeLists.txt \
+ $dir/VERSION \
  $dir/tools/unitsync/ \
  $dir/tools/DedicatedServer/"
 
@@ -84,6 +85,11 @@ git clone -n . lf/${dir} > /dev/null
 cd lf/$dir
 git checkout -b source_package_lf ${branch} > /dev/null
 cd ..
+# This is used by the build systems, as they fall back to this file,
+# if the source root is not a git repository.
+# They need the version to incorporate it into the library names,
+# for example: libspring-0.80.5.so
+echo -n "${version_string}" > ./${dir}/VERSION
 [ -n "$linux_exclude" ] && rm -rf $linux_exclude
 [ -n "$lzma" ] && echo "Creating archive: $lzma" && \
 	tar --lzma -c -f "../$lzma" $include $linux_include
@@ -104,6 +110,11 @@ cd crlf/$dir
 git config core.autocrlf true
 git checkout -b source_package_crlf ${branch} > /dev/null
 cd ..
+# This is used by the build systems, as they fall back to this file,
+# if the source root is not a git repository.
+# They need the version to incorporate it into the library names,
+# for example: spring-0.80.5.dll
+echo -n "${version_string}" > ./${dir}/VERSION
 [ -n "$windows_exclude" ] && rm -rf $windows_exclude
 [ -n "$zip" ]       && [ -x /usr/bin/zip ] && echo "Creating archive: $zip"       && \
 	/usr/bin/zip -q -r -u -9 "../$zip" $include $windows_include
