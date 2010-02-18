@@ -80,9 +80,9 @@ windows_include=""
 # Linux line endings, .tar.{bz2,gz} package.
 echo ""
 echo "Exporting checkout dir with LF line endings"
-git clone -n . lf/$dir
+git clone -n . lf/${dir} > /dev/null
 cd lf/$dir
-git checkout $branch
+git checkout -b source_package_lf ${branch} > /dev/null
 cd ..
 [ -n "$linux_exclude" ] && rm -rf $linux_exclude
 [ -n "$lzma" ] && echo "Creating archive: $lzma" && \
@@ -99,10 +99,10 @@ rm -rf lf
 # Windows line endings, .zip/.7z package
 echo ""
 echo "Exporting checkout dir with CRLF line endings"
-git clone -n . crlf/$dir
+git clone -n . crlf/${dir} > /dev/null
 cd crlf/$dir
 git config core.autocrlf true
-git checkout $branch
+git checkout -b source_package_crlf ${branch} > /dev/null
 cd ..
 [ -n "$windows_exclude" ] && rm -rf $windows_exclude
 [ -n "$zip" ]       && [ -x /usr/bin/zip ] && echo "Creating archive: $zip"       && \
