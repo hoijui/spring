@@ -4,7 +4,7 @@
 set -e
 
 if [ ! -e installer ]; then
-  echo "Error: This script needs to be run from the root directory of the archive"
+  echo "Error: This script needs to be run from the root directory of the archive" 1>&2
   exit 1
 fi
 

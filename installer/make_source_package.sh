@@ -6,7 +6,7 @@ set -e
 
 # Sanity check.
 if [ ! -x /usr/bin/git ]; then
-	echo "Error: Couldn't find /usr/bin/git"
+	echo "Error: Couldn't find /usr/bin/git" 1>&2
 	exit 1
 fi
 
@@ -15,8 +15,8 @@ fi
 
 while [ ! -d installer ]; do
         if [ "$PWD" = "/" ]; then
-                echo "Error: Could not find installer directory."
-                echo "Make sure to run this script from a directory below your checkout directory."
+                echo "Error: Could not find installer directory." 1>&2
+                echo "Make sure to run this script from a directory below your checkout directory." 1>&2
                 exit 1
         fi
         cd ..
@@ -91,12 +91,12 @@ cd ..
 [ -n "$tgz" ] && echo "Creating .tar.gz archive ($tgz)" && \
 	tar -c -z -f "../$tgz" $include $linux_include
 cd ..
-echo 'Cleaning'
+echo "Cleaning"
 rm -rf lf
 
 ### TODO: needs fixing
 # Windows line endings, .zip/.7z package
-#echo 'Exporting checkout dir with CRLF line endings'
+#echo "Exporting checkout dir with CRLF line endings"
 git clone -n . crlf/$dir
 cd crlf/$dir
 git config core.autocrlf true
@@ -109,6 +109,6 @@ cd ..
 [ -n "$seven_zip" ] && [ -x /usr/bin/7z ] && echo "Creating .7z archive ($seven_zip)" && \
 	/usr/bin/7z a -t7z -m0=lzma -mx=9 -mfb=64 -md=32m -ms=on "../$seven_zip" $include >/dev/null
 cd ..
-echo 'Cleaning'
+echo "Cleaning"
 rm -rf crlf
 cd ..

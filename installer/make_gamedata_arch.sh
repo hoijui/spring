@@ -12,7 +12,7 @@ fi
 
 # Sanity check.
 if ! which 7z > /dev/null; then
-	echo "Error: Could not find 7z."
+	echo "Error: Could not find 7z." 1>&2
 	exit 1
 fi
 CMD_7Z="7z u -tzip -r"
@@ -32,22 +32,22 @@ BUILD_DIR=$(cd $BUILD_DIR; pwd)
 
 cd installer/builddata/
 
-echo Updating bitmaps.sdz
+echo "Updating bitmaps.sdz"
 cd bitmaps/
 ${CMD_7Z} ${BUILD_DIR}/spring/bitmaps.sdz * > /dev/null
 cd ..
 
-echo Updating springcontent.sdz
+echo "Updating springcontent.sdz"
 cd springcontent/
 ${CMD_7Z} ${BUILD_DIR}/springcontent.sdz * > /dev/null
 cd ..
 
-echo Updating maphelper.sdz
+echo "Updating maphelper.sdz"
 cd maphelper/
 ${CMD_7Z} ${BUILD_DIR}/maphelper.sdz * > /dev/null
 cd ..
 
-echo Updating cursors.sdz
+echo "Updating cursors.sdz"
 cd cursors/
 ${CMD_7Z} ${BUILD_DIR}/cursors.sdz * > /dev/null
 cd ..

@@ -6,7 +6,7 @@ set -e
 
 # Sanity check.
 if [ ! -x /usr/bin/git ]; then
-	echo "Error: Couldn't find /usr/bin/git"
+	echo "Error: Couldn't find /usr/bin/git" 1>&2
 	exit 1
 fi
 
@@ -15,8 +15,8 @@ fi
 
 while [ ! -d installer ]; do
         if [ "$PWD" = "/" ]; then
-                echo "Error: Could not find installer directory."
-                echo "Make sure to run this script from a directory below your checkout directory."
+                echo "Error: Could not find installer directory." 1>&2
+                echo "Make sure to run this script from a directory below your checkout directory." 1>&2
                 exit 1
         fi
         cd ..
@@ -50,7 +50,7 @@ CheckFiles=("game/spring.exe" "installer/downloads/springlobby.exe" "installer/d
 for filename in ${CheckFiles[@]}
 do
 	if [ ! -f $filename ]; then
-		echo "Error: Couldn't find $filename"
+		echo "Error: Could not find $filename" 1>&2
 		exit 1
 	fi
 done
