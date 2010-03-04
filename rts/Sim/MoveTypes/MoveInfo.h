@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef MOVEINFO_H
 #define MOVEINFO_H
 
@@ -8,6 +10,7 @@
 #include "Sim/Misc/GlobalConstants.h"
 
 class CMoveMath;
+class CSolidObject;
 
 struct MoveData {
 	CR_DECLARE_STRUCT(MoveData);
@@ -35,26 +38,28 @@ struct MoveData {
 		heatMapping     = udefMD? udefMD->heatMapping:             true;
 		heatMod	        = udefMD? udefMD->heatMod:                 0.05f;
 		heatProduced    = udefMD? udefMD->heatProduced:            30;
+
+		tempOwner       = NULL;
 	}
 
 	enum MoveType {
-		Ground_Move,
-		Hover_Move,
-		Ship_Move
+		Ground_Move = 0,
+		Hover_Move  = 1,
+		Ship_Move   = 2
 	};
 	enum MoveFamily {
-		Tank,
-		KBot,
-		Hover,
-		Ship
+		Tank  = 0,
+		KBot  = 1,
+		Hover = 2,
+		Ship  = 3
 	};
 	enum TerrainClass {
 		/// we are restricted to "land" (terrain with height >= 0)
-		Land,
+		Land = 0,
 		/// we are restricted to "water" (terrain with height < 0)
-		Water,
+		Water = 1,
 		/// we can exist at heights both greater and smaller than 0
-		Mixed
+		Mixed = 2
 	};
 
 	/// NOTE: rename? (because of (AMoveType*) CUnit::moveType)
@@ -95,6 +100,8 @@ struct MoveData {
 	float heatMod;
 	/// heat produced by a path
 	int heatProduced;
+
+	CSolidObject* tempOwner;
 };
 
 
@@ -110,7 +117,6 @@ public:
 	MoveData* GetMoveDataFromName(const std::string& name);
 	unsigned int moveInfoChecksum;
 
-	float terrainType2MoveFamilySpeed[256][4];
 private:
 	CMoveMath* groundMoveMath;
 	CMoveMath* hoverMoveMath;

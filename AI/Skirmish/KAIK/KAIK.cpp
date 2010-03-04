@@ -50,8 +50,6 @@ void CKAIK::Serialize(creg::ISerializer* s) {
 	s->SerializeObjectInstance(ai, ai->GetClass());
 }
 
-
-
 void CKAIK::InitAI(IGlobalAICallback* callback, int team) {
 	ai = new AIClasses(callback);
 	ai->Init();
@@ -69,8 +67,6 @@ void CKAIK::InitAI(IGlobalAICallback* callback, int team) {
 void CKAIK::ReleaseAI() {
 	delete ai; ai = NULL;
 }
-
-
 
 void CKAIK::UnitCreated(int unitID, int builderID) {
 	ai->uh->UnitCreated(unitID);
@@ -214,12 +210,12 @@ void CKAIK::Update() {
 	ai->econTracker->frameUpdate(frame);
 	ai->dgunConHandler->Update(frame);
 
-	if (frame == 1) {
+	if ((frame - ai->initFrame) == 1) {
 		// init defense matrix
 		ai->dm->Init();
 	}
 
-	if (frame > 60) {
+	if ((frame - ai->initFrame) > 60) {
 		// call buildup manager and unit handler (idle) update routine
 		ai->bu->Update(frame);
 		ai->uh->IdleUnitUpdate(frame);

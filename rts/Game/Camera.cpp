@@ -1,8 +1,6 @@
-#include "StdAfx.h"
-// camera->cpp: implementation of the CCamera class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
+#include "StdAfx.h"
 #include "mmgr.h"
 
 #include "myMath.h"
@@ -161,7 +159,7 @@ void CCamera::Update(bool freeze, bool resetUp)
 	up = right.cross(forward);
 	up.UnsafeANormalize();
 
-	const float aspect = (float) gu->viewSizeX / (float) gu->viewSizeY;
+	const float aspect = gu->aspectRatio;
 	const float viewx = tan(aspect * halfFov);
 	// const float viewx = aspect * tanHalfFov;
 	const float viewy = tanHalfFov;

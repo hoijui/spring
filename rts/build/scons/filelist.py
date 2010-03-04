@@ -1,4 +1,4 @@
-# Copyright (C) 2006  Tobi Vollebregt
+# This file is part of the Spring engine (GPL v2 or later), see LICENSE.html
 
 import os, re
 
@@ -159,17 +159,6 @@ def get_shared_AIInterface_sources(env):
 # lists source files common for all Skirmish AIs
 def get_shared_AILib_sources(env):
 	result = get_shared_AI_source(env)
-	return result
-
-# list SharedLib source files (used by some AI Interface libraries)
-def get_shared_AIInterface_sources_SharedLib(env):
-	result = []
-	if env.has_key('builddir') and env['builddir']:
-		result += [os.path.join(env['builddir'], 'rts/System/Platform/SharedLib.cpp')]
-		if env['platform'] == 'windows':
-			result += [os.path.join(env['builddir'], 'rts/System/Platform/Win/DllLib.cpp')]
-		else:
-			result += [os.path.join(env['builddir'], 'rts/System/Platform/Linux/SoLib.cpp')]
 	return result
 
 # list the LegacyCPP source files (used by some Skirmish AI libraries)

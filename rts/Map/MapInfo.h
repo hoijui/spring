@@ -1,8 +1,11 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef MAPINFO_H
 #define MAPINFO_H
 
 #include <string>
 #include <vector>
+
 #include "float3.h"
 #include "float4.h"
 
@@ -12,8 +15,11 @@ class MapParser;
 class CMapInfo
 {
 public:
-
-	CMapInfo(const std::string& mapName);
+	/**
+	@param mapInfoFile mapinfo file, aka sm3 / smf (full path)
+	@param mapName human readable mapname e.g. DeltaSiegeDry
+	*/
+	CMapInfo(const std::string& mapInfoFile, const std::string& mapName);
 	void Load(); // fill in infos
 	~CMapInfo();
 
@@ -49,7 +55,6 @@ public:
 	/** Global settings, ie. from "MAP" section. */
 	struct map_t {
 		std::string name;      ///< The filename as passed to the constructor.
-		std::string wantedScript;
 		std::string humanName; ///< "MAP\\Description"
 		std::string author;
 		float hardness;        ///< "MAP\\MapHardness"
@@ -92,7 +97,7 @@ public:
 		float4 unitAmbientColor;
 		float4 unitSunColor;
 		float  unitShadowDensity;
-		float3 specularSunColor;
+		float3 unitSpecularColor;
 	} light;
 
 	/** settings read from "MAP\WATER" section
@@ -136,6 +141,8 @@ public:
 	/** SMF specific settings */
 	struct smf_t {
 		std::string detailTexName; ///< "MAP\DetailTex"
+		std::string specularTexName; ///< "MAP\SpecularTex"
+
 		float minHeight;
 		bool  minHeightOverride;
 		float maxHeight;
@@ -153,6 +160,7 @@ public:
 
 	/** Terrain type, there can be 256 of these:
 	    "MAP\TerrainType0" up to "MAP\TerrainType255" */
+	static const int NUM_TERRAIN_TYPES = 256;
 	struct TerrainType {
 		std::string name;
 		float hardness;
@@ -162,7 +170,7 @@ public:
 		float shipSpeed;   ///< "ShipMoveSpeed"
 		bool receiveTracks;
 	};
-	TerrainType terrainTypes[256];
+	TerrainType terrainTypes[NUM_TERRAIN_TYPES];
 
 private:
 	void ReadGlobal();
@@ -174,6 +182,7 @@ private:
 	void ReadSm3();
 	void ReadTerrainTypes();
 
+	std::string mapInfoFile;
 	MapParser* parser; // map       parser root table
 	LuaTable* resRoot; // resources parser root table
 };

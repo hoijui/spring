@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef AICALLBACK_H
 #define AICALLBACK_H
 
@@ -6,6 +8,7 @@
 class CGroupHandler;
 class CGroup;
 
+/** Generalized legacy callback interface */
 class CAICallback: public IAICallback
 {
 	int team;
@@ -110,8 +113,12 @@ public:
 	const unsigned short* GetRadarMap();
 	const unsigned short* GetJammerMap();
 	const unsigned char* GetMetalMap();
-	const char* GetMapName ();
+	int GetMapHash();
+	const char* GetMapName();
+	const char* GetMapHumanName();
+	int GetModHash();
 	const char* GetModName();
+	const char* GetModHumanName();
 
 	float GetMaxMetal() const;
 	float GetExtractorRadius() const;
@@ -198,6 +205,9 @@ public:
 	// 3. the return data is subject to lua garbage collection,
 	//    copy it if you wish to continue using it
 	const char* CallLuaRules(const char* data, int inSize = -1, int* outSize = NULL);
+
+	std::map<std::string, std::string> GetMyInfo();
+	std::map<std::string, std::string> GetMyOptionValues();
 };
 
 #endif /* AICALLBACK_H */

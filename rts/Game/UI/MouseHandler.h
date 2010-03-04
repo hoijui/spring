@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef MOUSEHANDLER_H
 #define MOUSEHANDLER_H
-// MouseHandler.h: interface for the CMouseHandler class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <string>
 #include <vector>
@@ -10,7 +9,7 @@
 
 #include "MouseCursor.h"
 
-#define NUM_BUTTONS 5
+static const int NUM_BUTTONS = 10;
 
 class CInputReceiver;
 class CCameraController;

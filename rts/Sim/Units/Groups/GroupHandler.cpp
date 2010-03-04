@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// GroupHandler.cpp: implementation of the CGroupHandler class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include "GroupHandler.h"
 #include "Group.h"
@@ -19,7 +18,6 @@
 #include "mmgr.h"
 #include <boost/cstdint.hpp>
 
-//CGroupHandler* grouphandler;
 std::vector<CGroupHandler*> grouphandlers;
 extern boost::uint8_t *keys;
 
@@ -85,8 +83,7 @@ void CGroupHandler::DrawCommands()
 
 void CGroupHandler::GroupCommand(int num)
 {
-	GML_RECMUTEX_LOCK(sel); // GroupCommand
-	GML_RECMUTEX_LOCK(group); // GroupCommand
+	GML_RECMUTEX_LOCK(grpsel); // GroupCommand
 
 	if (keys[SDLK_LCTRL]) {
 		if (!keys[SDLK_LSHIFT]) {
@@ -134,8 +131,7 @@ void CGroupHandler::GroupCommand(int num)
 
 void CGroupHandler::GroupCommand(int num, const std::string& cmd)
 {
-	GML_RECMUTEX_LOCK(sel); // GroupCommand
-	GML_RECMUTEX_LOCK(group); // GroupCommand
+	GML_RECMUTEX_LOCK(grpsel); // GroupCommand
 
 	if ((cmd == "set") || (cmd == "add")) {
 		if (cmd == "set") {
@@ -211,8 +207,7 @@ CGroup* CGroupHandler::CreateNewGroup()
 
 void CGroupHandler::RemoveGroup(CGroup* group)
 {
-	GML_RECMUTEX_LOCK(sel); // RemoveGroup
-	GML_RECMUTEX_LOCK(group); // RemoveGroup
+	GML_RECMUTEX_LOCK(grpsel); // RemoveGroup
 
 	if(group->id<10){
 		logOutput.Print("Warning trying to remove hotkey group %i",group->id);

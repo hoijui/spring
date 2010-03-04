@@ -1,15 +1,20 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "BaseNetProtocol.h"
 
 #include <boost/cstdint.hpp>
 #include "mmgr.h"
 
-#include "Game/PlayerBase.h"
+#include "Game/PlayerStatistics.h"
 #include "Sim/Misc/Team.h"
 #include "Net/RawPacket.h"
 #include "Rendering/InMapDraw.h"
 #include "Net/PackPacket.h"
 #include "Net/ProtocolDef.h"
+#if defined(_MSC_VER)
+#include "System.h" // for uint16_t (and possibly other types)
+#endif
 
 using netcode::PackPacket;
 typedef boost::shared_ptr<const netcode::RawPacket> PacketType;
@@ -33,9 +38,12 @@ PacketType CBaseNetProtocol::SendNewFrame()
 }
 
 
-PacketType CBaseNetProtocol::SendQuit()
+PacketType CBaseNetProtocol::SendQuit(const std::string& reason)
 {
-	return PacketType(new PackPacket(1, NETMSG_QUIT));
+	unsigned size = 3 + reason.size() + 1;
+	PackPacket* packet = new PackPacket(size, NETMSG_QUIT);
+	*packet << static_cast<boost::uint16_t>(size) << reason;
+	return PacketType(packet);
 }
 
 PacketType CBaseNetProtocol::SendStartPlaying(unsigned countdown)
@@ -112,7 +120,7 @@ PacketType CBaseNetProtocol::SendAICommand(uchar myPlayerNum, short unitID, int 
 
 PacketType CBaseNetProtocol::SendAIShare(uchar myPlayerNum, uchar sourceTeam, uchar destTeam, float metal, float energy, const std::vector<short>& unitIDs)
 {
-	short totalNumBytes = (1 + sizeof(short)) + (3 + (2 * sizeof(float)) + (unitIDs.size() * sizeof(short)));
+	boost::uint16_t totalNumBytes = (1 + sizeof(boost::uint16_t)) + (3 + (2 * sizeof(float)) + (unitIDs.size() * sizeof(short)));
 
 	PackPacket* packet = new PackPacket(totalNumBytes, NETMSG_AISHARE);
 	*packet << totalNumBytes << myPlayerNum << sourceTeam << destTeam << metal << energy << unitIDs;
@@ -244,11 +252,16 @@ PacketType CBaseNetProtocol::SendSyncResponse(int frameNum, uint checksum)
 	return PacketType(packet);
 }
 
-PacketType CBaseNetProtocol::SendSystemMessage(uchar myPlayerNum, const std::string& message)
+PacketType CBaseNetProtocol::SendSystemMessage(uchar myPlayerNum, std::string message)
 {
-	unsigned size = 3 + message.size() + 1;
+	if (message.size() > 65000)
+	{
+		message.resize(65000);
+		message += "...";
+	}
+	unsigned size = 1 + 2 + 1 + message.size() + 1;
 	PackPacket* packet = new PackPacket(size, NETMSG_SYSTEMMSG);
-	*packet << static_cast<uchar>(size) << myPlayerNum << message;
+	*packet << static_cast<boost::uint16_t>(size) << myPlayerNum << message;
 	return PacketType(packet);
 }
 
@@ -344,6 +357,21 @@ PacketType CBaseNetProtocol::SendSetAllied(uchar myPlayerNum, uchar whichAllyTea
 	return PacketType(packet);
 }
 
+PacketType CBaseNetProtocol::SendRegisterNetMsg( uchar myPlayerNum, NETMSG msgID )
+{
+	PackPacket* packet = new PackPacket(3, NETMSG_REGISTER_NETMSG);
+	*packet << myPlayerNum << (uchar)msgID;
+	return PacketType(packet);
+}
+
+PacketType CBaseNetProtocol::SendUnRegisterNetMsg( uchar myPlayerNum, NETMSG msgID )
+{
+	PackPacket* packet = new PackPacket(3, NETMSG_UNREGISTER_NETMSG);
+	*packet << myPlayerNum << (uchar)msgID;
+	return PacketType(packet);
+}
+
+
 #ifdef SYNCDEBUG
 PacketType CBaseNetProtocol::SendSdCheckrequest(int frameNum)
 {
@@ -352,7 +380,7 @@ PacketType CBaseNetProtocol::SendSdCheckrequest(int frameNum)
 	return PacketType(packet);
 }
 
-PacketType CBaseNetProtocol::SendSdCheckresponse(uchar myPlayerNum, uint64_t flop, std::vector<unsigned> checksums)
+PacketType CBaseNetProtocol::SendSdCheckresponse(uchar myPlayerNum, boost::uint64_t flop, std::vector<unsigned> checksums)
 {
 	unsigned size = 1 + 2 + 1 + 8 + checksums.size() * 4;
 	PackPacket* packet = new PackPacket(size, NETMSG_SD_CHKRESPONSE);
@@ -398,7 +426,7 @@ CBaseNetProtocol::CBaseNetProtocol()
 
 	proto->AddType(NETMSG_KEYFRAME, 5);
 	proto->AddType(NETMSG_NEWFRAME, 1);
-	proto->AddType(NETMSG_QUIT, 1);
+	proto->AddType(NETMSG_QUIT, -2);
 	proto->AddType(NETMSG_STARTPLAYING, 5);
 	proto->AddType(NETMSG_SETPLAYERNUM, 2);
 	proto->AddType(NETMSG_PLAYERNAME, -1);
@@ -426,7 +454,7 @@ CBaseNetProtocol::CBaseNetProtocol()
 	proto->AddType(NETMSG_GAMEOVER, 1);
 	proto->AddType(NETMSG_MAPDRAW, -1);
 	proto->AddType(NETMSG_SYNCRESPONSE, 9);
-	proto->AddType(NETMSG_SYSTEMMSG, -1);
+	proto->AddType(NETMSG_SYSTEMMSG, -2);
 	proto->AddType(NETMSG_STARTPOS, 16);
 	proto->AddType(NETMSG_PLAYERINFO, 8);
 	proto->AddType(NETMSG_PLAYERLEFT, 3);
@@ -436,6 +464,9 @@ CBaseNetProtocol::CBaseNetProtocol()
 	proto->AddType(NETMSG_ALLIANCE, 4);
 	proto->AddType(NETMSG_CCOMMAND, -2);
 	proto->AddType(NETMSG_TEAMSTAT, 2 + sizeof(CTeam::Statistics));
+	proto->AddType(NETMSG_REQUEST_TEAMSTAT, 4 );
+	proto->AddType(NETMSG_REGISTER_NETMSG, 3 );
+	proto->AddType(NETMSG_UNREGISTER_NETMSG, 3);
 
 	proto->AddType(NETMSG_AI_CREATED, -1);
 	proto->AddType(NETMSG_AI_STATE_CHANGED, 7);

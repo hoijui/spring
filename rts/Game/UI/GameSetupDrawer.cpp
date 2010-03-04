@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <assert.h>
@@ -21,6 +23,7 @@
 #include "Sim/Misc/TeamHandler.h"
 #include "StartPosSelecter.h"
 #include "Rendering/glFont.h"
+#include "KeyBindings.h"
 #include "EventHandler.h"
 
 extern boost::uint8_t *keys;
@@ -45,7 +48,6 @@ void GameSetupDrawer::Disable()
 		instance = NULL;
 	}
 }
-
 
 void GameSetupDrawer::StartCountdown(unsigned time)
 {
@@ -83,9 +85,11 @@ void GameSetupDrawer::Draw()
 	if (readyCountdown > 0) {
 		readyCountdown -= (SDL_GetTicks() - lastTick);
 		lastTick = SDL_GetTicks();
-	}
-	else if (readyCountdown < 0) {
-		GameSetupDrawer::Disable();
+
+		if (readyCountdown <= 0) {
+			GameSetupDrawer::Disable();
+			return; // *this is deleted!
+		}
 	}
 
 	std::string state = "Unknown state.";
@@ -96,7 +100,11 @@ void GameSetupDrawer::Draw()
 	} else if (!playerHandler->Player(gu->myPlayerNum)->spectator && !playerHandler->Player(gu->myPlayerNum)->readyToStart) {
 		state = "Choose start pos";
 	} else if (gameServer) {
-		state = "Waiting for players, Ctrl+Return to force start";
+		CKeyBindings::HotkeyList list = keyBindings->GetHotkeys("forcestart");
+		std::string primary = "<none>";
+		if (!list.empty())
+			primary = list.front();
+		state = std::string("Waiting for players, press ")+primary + " to force start";
 	} else {
 		state = "Waiting for players";
 	}

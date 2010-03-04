@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef LUA_SYNCED_MOVE_CTRL_H
 #define LUA_SYNCED_MOVE_CTRL_H
-// LuaSyncedMoveCtrl.h: interface for the LuaSyncedMoveCtrl class.
-//
-//////////////////////////////////////////////////////////////////////
 
 class CUnit;
 struct lua_State;
@@ -55,6 +54,12 @@ class LuaSyncedMoveCtrl {
 		static int SetShotStop(lua_State* L);
 		static int SetSlopeStop(lua_State* L);
 		static int SetCollideStop(lua_State* L);
+
+		// *MoveType-specific setters
+		static int SetGroundMoveTypeData(lua_State *L);
+		static int SetAirMoveTypeData(lua_State* L);
+		static int SetGunshipMoveTypeData(lua_State* L);
+		static int SetBaseMoveTypeData(lua_State* L);
 };
 
 

@@ -1,6 +1,4 @@
-// GameHelper.cpp: implementation of the CGameHelperHelper class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include "Rendering/GL/myGL.h"
@@ -177,7 +175,8 @@ void CGameHelper::Explosion(
 	bool damageGround, float gfxMod,
 	bool ignoreOwner, bool impactOnly,
 	CExplosionGenerator* explosionGraphics, CUnit* hit,
-	const float3& impactDir, int weaponId
+	const float3& impactDir, int weaponId,
+	CFeature* hitfeature
 ) {
 	if (luaUI) {
 		if ((weaponId >= 0) && (weaponId <= weaponDefHandler->numWeaponDefs)) {
@@ -203,6 +202,8 @@ void CGameHelper::Explosion(
 	if (impactOnly) {
 		if (hit) {
 			DoExplosionDamage(hit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
+		} else if (hitfeature) {
+			DoExplosionDamage(hitfeature, expPos, expRad, owner, damages);
 		}
 	} else {
 		float height = std::max(expPos.y - h2, 0.0f);
@@ -233,11 +234,19 @@ void CGameHelper::Explosion(
 		// damage all features within the explosion radius
 		vector<CFeature*> features = qf->GetFeaturesExact(expPos, expRad);
 		vector<CFeature*>::iterator fi;
+		bool hitFeatureDamaged = false;
 
 		for (fi = features.begin(); fi != features.end(); ++fi) {
 			CFeature* feature = *fi;
 
+			if (hitfeature == feature) {
+				hitFeatureDamaged = true;
+			}
 			DoExplosionDamage(feature, expPos, expRad, owner, damages);
+		}
+
+		if (hitfeature && !hitFeatureDamaged) {
+			DoExplosionDamage(hitfeature, expPos, expRad, owner, damages);
 		}
 
 		// deform the map
@@ -269,7 +278,9 @@ void CGameHelper::Explosion(
 //////////////////////////////////////////////////////////////////////
 
 // called by {CRifle, CBeamLaser, CLightningCannon}::Fire()
-float CGameHelper::TraceRay(const float3& start, const float3& dir, float length, float /*power*/, const CUnit* owner, const CUnit*& hit, int collisionFlags)
+float CGameHelper::TraceRay(const float3& start, const float3& dir, float length, float /*power*/,
+			    const CUnit* owner, const CUnit*& hit, int collisionFlags,
+			    const CFeature** hitfeature)
 {
 	float groundLength = ground->LineGroundCol(start, start + dir * length);
 	const bool ignoreAllies = !!(collisionFlags & COLLISION_NOFRIENDLY);
@@ -287,6 +298,9 @@ float CGameHelper::TraceRay(const float3& start, const float3& dir, float length
 	qf->GetQuadsOnRay(start, dir, length, endQuad);
 
 	if (!ignoreFeatures) {
+		if (hitfeature)
+			*hitfeature = 0;
+
 		for (int* qi = quads; qi != endQuad; ++qi) {
 			const CQuadField::Quad& quad = qf->GetQuad(*qi);
 
@@ -305,6 +319,8 @@ float CGameHelper::TraceRay(const float3& start, const float3& dir, float length
 					// we want the closest feature (intersection point) on the ray
 					if (tmpLen < length) {
 						length = tmpLen;
+						if(hitfeature)
+							*hitfeature = f;
 					}
 				}
 			}
@@ -820,9 +836,11 @@ void CGameHelper::GenerateTargets(const CWeapon *weapon, CUnit* lastTarget,
 							if (unit == lastTarget) {
 								value *= weapon->avoidTarget ? 10.0f : 0.4f;
 							}
-							if (paralyzer && unit->paralyzeDamage > unit->maxHealth) {
+
+							if (paralyzer && unit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? unit->maxHealth: unit->health)) {
 								value *= 4.0f;
 							}
+
 							if (weapon->hasTargetWeight) {
 								value *= weapon->TargetWeight(unit);
 							}
@@ -914,6 +932,12 @@ void CGameHelper::GetEnemyUnits(const float3 &pos, float searchRadius, int searc
 {
 	Query::AllUnitsById q(pos, searchRadius, found);
 	QueryUnits(Filter::Enemy_InLos(searchAllyteam), q);
+}
+
+void CGameHelper::GetEnemyUnitsNoLosTest(const float3 &pos, float searchRadius, int searchAllyteam, vector<int> &found)
+{
+	Query::AllUnitsById q(pos, searchRadius, found);
+	QueryUnits(Filter::Enemy(searchAllyteam), q);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1099,20 +1123,20 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 
 	CFeature* feature = NULL;
 
-	const int allyteam = teamHandler->AllyTeam(team);
-	const int endr = int(searchRadius / (SQUARE_SIZE * 2));
+	const int allyTeam = teamHandler->AllyTeam(team);
+	const int endr = (int) (searchRadius / (SQUARE_SIZE * 2));
 	const vector<SearchOffset>& ofs = GetSearchOffsetTable(endr);
 
 	for (int so = 0; so < endr * endr * 4; so++) {
-		float x = pos.x + ofs[so].dx * SQUARE_SIZE * 2;
-		float z = pos.z + ofs[so].dy * SQUARE_SIZE * 2;
+		const float x = pos.x + ofs[so].dx * SQUARE_SIZE * 2;
+		const float z = pos.z + ofs[so].dy * SQUARE_SIZE * 2;
 
 		BuildInfo bi(unitDef, float3(x, 0.0f, z), facing);
 		bi.pos = Pos2BuildPos(bi);
 
-		if (uh->TestUnitBuildSquare(bi, feature, allyteam) && (!feature || feature->allyteam != allyteam)) {
-			const int xs = int(x / SQUARE_SIZE);
-			const int zs = int(z / SQUARE_SIZE);
+		if (uh->TestUnitBuildSquare(bi, feature, allyTeam) && (!feature || feature->allyteam != allyTeam)) {
+			const int xs = (int) (x / SQUARE_SIZE);
+			const int zs = (int) (z / SQUARE_SIZE);
 			const int xsize = bi.GetXSize();
 			const int zsize = bi.GetZSize();
 
@@ -1126,9 +1150,9 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 			// check for nearby blocking features
 			for (int z2 = z2Min; z2 < z2Max; ++z2) {
 				for (int x2 = x2Min; x2 < x2Max; ++x2) {
-					CSolidObject* so = groundBlockingObjectMap->GroundBlockedUnsafe(z2 * gs->mapx + x2);
+					CSolidObject* solObj = groundBlockingObjectMap->GroundBlockedUnsafe(z2 * gs->mapx + x2);
 
-					if (so && so->immobile && !dynamic_cast<CFeature*>(so)) {
+					if (solObj && solObj->immobile && !dynamic_cast<CFeature*>(solObj)) {
 						good = false;
 						break;
 					}
@@ -1144,9 +1168,9 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 				// check for nearby factories with open yards
 				for (int z2 = z2Min; z2 < z2Max; ++z2) {
 					for (int x2 = x2Min; x2 < x2Max; ++x2) {
-						CSolidObject* so = groundBlockingObjectMap->GroundBlockedUnsafe(z2 * gs->mapx + x2);
+						CSolidObject* solObj = groundBlockingObjectMap->GroundBlockedUnsafe(z2 * gs->mapx + x2);
 
-						if (so && so->immobile && dynamic_cast<CFactory*>(so) && ((CFactory*)so)->opening) {
+						if (solObj && solObj->immobile && dynamic_cast<CFactory*>(solObj) && ((CFactory*)solObj)->opening) {
 							good = false;
 							break;
 						}
@@ -1170,7 +1194,7 @@ void CGameHelper::Update(void)
 		WaitingDamage* w = wd->back();
 		wd->pop_back();
 		if (uh->units[w->target])
-			uh->units[w->target]->DoDamage(w->damage, w->attacker == -1? 0: uh->units[w->attacker], w->impulse, w->weaponId);
+			uh->units[w->target]->DoDamage(w->damage, w->attacker == -1? NULL: uh->units[w->attacker], w->impulse, w->weaponId);
 		delete w;
 	}
 }

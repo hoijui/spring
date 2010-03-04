@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef __CAMERA_CONTROLLER_H__
 #define __CAMERA_CONTROLLER_H__
 
@@ -6,7 +8,6 @@
 #include <map>
 
 #include "float3.h"
-
 
 class CCameraController
 {
@@ -31,6 +32,7 @@ public:
 	virtual float3 GetPos() = 0;
 	virtual float3 GetDir() = 0;
 
+	/// In degree!
 	float GetFOV() const { return fov; };
 
 	virtual void SetPos(const float3& newPos) { pos = newPos; };

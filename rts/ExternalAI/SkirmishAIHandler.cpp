@@ -1,22 +1,4 @@
-/*
-	Copyright (c) 2008 Robin Vobruba <hoijui.quaero@gmail.com>
-
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-	@author	Robin Vobruba <hoijui.quaero@gmail.com>
-*/
-
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "SkirmishAIHandler.h"
 
@@ -28,6 +10,7 @@
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/LuaAIImplHandler.h"
 #include "ExternalAI/Interface/SSkirmishAILibrary.h"
+#include "Option.h"
 
 #include "creg/STL_Map.h"
 #include "creg/STL_Set.h"
@@ -70,13 +53,7 @@ CSkirmishAIHandler::~CSkirmishAIHandler()
 void CSkirmishAIHandler::LoadFromSetup(const CGameSetup& setup) {
 
 	for (size_t a = 0; a < setup.GetSkirmishAIs().size(); ++a) {
-		SkirmishAIData sai = setup.GetSkirmishAIs()[a];
-
-		// complete the SkirmishAIData before adding
-		if (gameInitialized) {
-			sai.isLuaAI = IsLuaAI(sai);
-		}
-
+		const SkirmishAIData& sai = setup.GetSkirmishAIs()[a];
 		AddSkirmishAI(sai, a);
 	}
 }
@@ -103,7 +80,7 @@ void CSkirmishAIHandler::LoadPreGame() {
 
 	// actualize the already added SkirmishAIData's
 	for (id_ai_t::iterator ai = id_ai.begin(); ai != id_ai.end(); ++ai) {
-		ai->second.isLuaAI = IsLuaAI(ai->second);
+		CompleteSkirmishAI(ai->first);
 	}
 }
 
@@ -174,6 +151,8 @@ void CSkirmishAIHandler::AddSkirmishAI(const SkirmishAIData& data, const size_t 
 
 	id_ai[skirmishAIId] = data;
 	team_localAIsInCreation.erase(data.team);
+
+	CompleteSkirmishAI(skirmishAIId);
 }
 
 bool CSkirmishAIHandler::RemoveSkirmishAI(const size_t skirmishAIId) {
@@ -293,4 +272,46 @@ const std::set<std::string>& CSkirmishAIHandler::GetLuaAIImplShortNames() const 
 bool CSkirmishAIHandler::IsLuaAI(const SkirmishAIData& aiData) const {
 	assert(gameInitialized);
 	return (luaAIShortNames.find(aiData.shortName) != luaAIShortNames.end());
+}
+
+void CSkirmishAIHandler::CompleteWithDefaultOptionValues(const size_t skirmishAIId) {
+
+	if (gameInitialized && IsLocalSkirmishAI(skirmishAIId)) {
+		IAILibraryManager* aiLibMan = IAILibraryManager::GetInstance();
+		const IAILibraryManager::T_skirmishAIInfos& aiInfos = aiLibMan->GetSkirmishAIInfos();
+		const SkirmishAIKey* aiKey = GetLocalSkirmishAILibraryKey(skirmishAIId);
+		if (aiKey != NULL) {
+			const IAILibraryManager::T_skirmishAIInfos::const_iterator inf = aiInfos.find(*aiKey);
+			if (inf != aiInfos.end()) {
+				const CSkirmishAILibraryInfo* aiInfo = inf->second;
+				const std::vector<Option>& options = aiInfo->GetOptions();
+				id_ai_t::iterator ai = id_ai.find(skirmishAIId);
+				if (ai != id_ai.end()) {
+					SkirmishAIData& aiData = ai->second;
+					std::vector<Option>::const_iterator oi;
+					for (oi = options.begin(); oi != options.end(); ++oi) {
+						if ((oi->typeCode != opt_error) &&
+								(oi->typeCode != opt_section) &&
+								(aiData.options.find(oi->key) == aiData.options.end())) {
+							aiData.optionKeys.push_back(oi->key);
+							aiData.options[oi->key] = option_getDefString(*oi);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+void CSkirmishAIHandler::CompleteSkirmishAI(const size_t skirmishAIId) {
+
+	if (gameInitialized) {
+		id_ai_t::iterator ai = id_ai.find(skirmishAIId);
+		if (ai != id_ai.end()) {
+			ai->second.isLuaAI = IsLuaAI(ai->second);
+			if (!ai->second.isLuaAI) {
+				CompleteWithDefaultOptionValues(skirmishAIId);
+			}
+		}
+	}
 }

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -11,6 +13,7 @@
 #include "DynWater.h"
 #include "RefractWater.h"
 #include "Exceptions.h"
+#include "GlobalUnsynced.h"
 
 CBaseWater* water=0;
 
@@ -39,7 +42,7 @@ void CBaseWater::DeleteOldWater(CBaseWater *water) {
 CBaseWater* CBaseWater::GetWater(CBaseWater* old)
 {
 	CBaseWater* water = NULL;
-	const int configValue = configHandler->Get("ReflectiveWater",1);
+	int configValue = configHandler->Get("ReflectiveWater", 1);
 	
 	if(water==NULL && configValue==2 && GLEW_ARB_fragment_program && GLEW_ARB_texture_float &&
 	   ProgramStringIsNative(GL_FRAGMENT_PROGRAM_ARB,"waterDyn.fp")) {

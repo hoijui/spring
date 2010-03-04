@@ -1,18 +1,13 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include <string>
+#include <sstream>
+#include <algorithm>
 
 #include "maindefines.h"
-
-
-
-#ifdef __cplusplus
-
-#include <string>
-#include <algorithm>
 
 static inline void StringToLowerInPlace(std::string &s)
 {
@@ -23,6 +18,13 @@ static inline std::string StringToLower(std::string s)
 {
 	StringToLowerInPlace(s);
 	return s;
+}
+
+static inline std::string Quote(std::string s)
+{
+	std::ostringstream buf;
+	buf << "\"" << s << "\"";
+	return buf.str();
 }
 
 //! replace all characters matching 'c' in a string by 'd'
@@ -55,6 +57,13 @@ static inline std::string IntToString(int i, const std::string& format = "%i")
 	return std::string(buf);
 }
 
+static inline std::string FloatToString(float f, const std::string& format = "%f")
+{
+	char buf[64];
+	SNPRINTF(buf, sizeof(buf), format.c_str(), f);
+	return std::string(buf);
+}
+
 /**
  * @brief Safely delete object by first setting pointer to NULL and then deleting.
  * This way it is guaranteed other objects can not access the object through the
@@ -81,7 +90,5 @@ namespace proc {
 	unsigned int GetProcMaxExtendedLevel();
 	unsigned int GetProcSSEBits();
 }
-
-#endif // __cplusplus
 
 #endif // UTIL_H

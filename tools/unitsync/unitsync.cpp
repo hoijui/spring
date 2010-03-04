@@ -19,6 +19,7 @@
 #include "Map/SMF/SmfMapFile.h"
 #include "ConfigHandler.h"
 #include "FileSystem/FileSystem.h"
+#include "FileSystem/FileSystemHandler.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "Sim/Misc/SideParser.h"
 #include "ExternalAI/Interface/aidefines.h"
@@ -139,12 +140,7 @@ class ScopedMapLoader {
 			}
 
 			vfsHandler = new CVFSHandler();
-
-			const vector<string> ars = archiveScanner->GetArchivesForMap(mapName);
-			vector<string>::const_iterator it;
-			for (it = ars.begin(); it != ars.end(); ++it) {
-				vfsHandler->AddArchive(*it, false);
-			}
+			vfsHandler->AddArchiveWithDeps(mapName, false);
 		}
 
 		~ScopedMapLoader()
@@ -264,18 +260,19 @@ EXPORT(int) Init(bool isServer, int id)
 {
 	try {
 		if (!logOutputInitialised)
+			logOutput.SetFileName("unitsync.log");
+		if (!configHandler)
+			ConfigHandler::Instantiate(); // use the default config file
+		FileSystemHandler::Initialize(false);
+
+		if (!logOutputInitialised)
 		{
-			logOutput.SetFilename("unitsync.log");
 			logOutput.Initialize();
 			logOutputInitialised = true;
 		}
 		logOutput.Print(LOG_UNITSYNC, "loaded, %s\n", SpringVersion::GetFull().c_str());
 
 		_UnInit();
-
-		if (!configHandler)
-			ConfigHandler::Instantiate("");
-		FileSystemHandler::Initialize(false);
 
 		std::vector<string> filesToCheck;
 		filesToCheck.push_back("base/springcontent.sdz");
@@ -450,12 +447,7 @@ EXPORT(void) AddAllArchives(const char* root)
 	try {
 		CheckInit();
 		CheckNullOrEmpty(root);
-
-		vector<string> ars = archiveScanner->GetArchives(root);
-		for (vector<string>::iterator i = ars.begin(); i != ars.end(); ++i) {
-			logOutput.Print(LOG_UNITSYNC, "adding archive: %s\n", i->c_str());
-			vfsHandler->AddArchive(*i, false);
-		}
+		vfsHandler->AddArchiveWithDeps(root, false);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 }
@@ -496,7 +488,7 @@ EXPORT(unsigned int) GetArchiveChecksum(const char* arname)
 		CheckNullOrEmpty(arname);
 
 		logOutput.Print(LOG_UNITSYNC, "archive checksum: %s\n", arname);
-		return archiveScanner->GetArchiveChecksum(arname);
+		return archiveScanner->GetSingleArchiveChecksum(arname);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -603,8 +595,8 @@ static int _GetMapInfoEx(const char* name, MapInfo* outInfo, int version)
 
 	logOutput.Print(LOG_UNITSYNC, "get map info: %s", name);
 
-	const string mapName = name;
-	ScopedMapLoader mapLoader(mapName);
+	ScopedMapLoader mapLoader(name);
+	const string mapName = archiveScanner->MapNameToMapFile(name);
 
 	string err("");
 
@@ -619,7 +611,7 @@ static int _GetMapInfoEx(const char* name, MapInfo* outInfo, int version)
 		const string extension = mapName.substr(mapName.length() - 3);
 		if (extension == "smf") {
 			try {
-				CSmfMapFile file(name);
+				CSmfMapFile file(mapName);
 				const SMFHeader& mh = file.GetHeader();
 
 				outInfo->width  = mh.mapx * SQUARE_SIZE;
@@ -832,7 +824,7 @@ EXPORT(int) GetMapArchiveCount(const char* mapName)
 		CheckInit();
 		CheckNullOrEmpty(mapName);
 
-		mapArchives = archiveScanner->GetArchivesForMap(mapName);
+		mapArchives = archiveScanner->GetArchives(mapName);
 		return mapArchives.size();
 	}
 	UNITSYNC_CATCH_BLOCKS;
@@ -874,7 +866,7 @@ EXPORT(unsigned int) GetMapChecksum(int index)
 		CheckInit();
 		CheckBounds(index, mapNames.size());
 
-		return archiveScanner->GetMapChecksum(mapNames[index]);
+		return archiveScanner->GetArchiveCompleteChecksum(mapNames[index]);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -892,7 +884,7 @@ EXPORT(unsigned int) GetMapChecksumFromName(const char* mapName)
 	try {
 		CheckInit();
 
-		return archiveScanner->GetMapChecksum(mapName);
+		return archiveScanner->GetArchiveCompleteChecksum(mapName);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -950,41 +942,17 @@ static void* GetMinimapSM3(string mapName, int miplevel)
 
 static void* GetMinimapSMF(string mapName, int miplevel)
 {
-	// Calculate stuff
-
-	int mipsize = 1024;
-	int offset = 0;
-
-	for ( int i = 0; i < miplevel; i++ ) {
-		int size = ((mipsize+3)/4)*((mipsize+3)/4)*8;
-		offset += size;
-		mipsize >>= 1;
-	}
-
-	int size = ((mipsize+3)/4)*((mipsize+3)/4)*8;
-	int numblocks = size/8;
-
-	// Read the map data
-	CFileHandler in("maps/" + mapName);
-
-	if (!in.FileExists()) {
-		throw content_error("File '" + mapName + "' does not exist");
-	}
-
-	unsigned char* buffer = (unsigned char*)malloc(size);
-
-	SMFHeader mh;
-	in.Read(&mh, sizeof(mh));
-	in.Seek(mh.minimapPtr + offset);
-	in.Read(buffer, size);
+	CSmfMapFile in(mapName);
+	std::vector<uint8_t> buffer;
+	const int mipsize = in.ReadMinimap(buffer, miplevel);
 
 	// Do stuff
-
 	void* ret = (void*)imgbuf;
 	unsigned short* colors = (unsigned short*)ret;
 
-	unsigned char* temp = buffer;
+	unsigned char* temp = &buffer[0];
 
+	const int numblocks = buffer.size()/8;
 	for ( int i = 0; i < numblocks; i++ ) {
 		unsigned short color0 = (*(unsigned short*)&temp[0]);
 		unsigned short color1 = (*(unsigned short*)&temp[2]);
@@ -1029,7 +997,6 @@ static void* GetMinimapSMF(string mapName, int miplevel)
 		}
 		temp += 8;
 	}
-	free(buffer);
 	return (void*)ret;
 }
 
@@ -1056,8 +1023,8 @@ EXPORT(void*) GetMinimap(const char* filename, int miplevel)
 		if (miplevel < 0 || miplevel > 8)
 			throw std::out_of_range("Miplevel must be between 0 and 8 (inclusive) in GetMinimap.");
 
-		const string mapName = filename;
-		ScopedMapLoader mapLoader(mapName);
+		ScopedMapLoader mapLoader(filename);
+		const string mapName = archiveScanner->MapNameToMapFile(filename);
 
 		const string extension = mapName.substr(mapName.length() - 3);
 
@@ -1095,7 +1062,7 @@ EXPORT(int) GetInfoMapSize(const char* filename, const char* name, int* width, i
 		CheckNull(height);
 
 		ScopedMapLoader mapLoader(filename);
-		CSmfMapFile file(filename);
+		CSmfMapFile file(archiveScanner->MapNameToMapFile(filename));
 		MapBitmapInfo bmInfo = file.GetInfoMapSize(name);
 
 		*width = bmInfo.width;
@@ -1138,7 +1105,7 @@ EXPORT(int) GetInfoMap(const char* filename, const char* name, void* data, int t
 
 		string n = name;
 		ScopedMapLoader mapLoader(filename);
-		CSmfMapFile file(filename);
+		CSmfMapFile file(archiveScanner->MapNameToMapFile(filename));
 		int actualType = (n == "height" ? bm_grayscale_16 : bm_grayscale_8);
 
 		if (actualType == typeHint) {
@@ -1177,7 +1144,7 @@ EXPORT(int) GetInfoMap(const char* filename, const char* name, void* data, int t
 //////////////////////////
 //////////////////////////
 
-vector<CArchiveScanner::ModData> modData;
+vector<CArchiveScanner::ArchiveData> modData;
 
 
 /**
@@ -1460,7 +1427,7 @@ EXPORT(unsigned int) GetPrimaryModChecksum(int index)
 		CheckInit();
 		CheckBounds(index, modData.size());
 
-		return archiveScanner->GetModChecksum(GetPrimaryModArchive(index));
+		return archiveScanner->GetArchiveCompleteChecksum(GetPrimaryModArchive(index));
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -1478,7 +1445,7 @@ EXPORT(unsigned int) GetPrimaryModChecksumFromName(const char* name)
 	try {
 		CheckInit();
 
-		return archiveScanner->GetModChecksum(archiveScanner->ModNameToModArchive(name));
+		return archiveScanner->GetArchiveCompleteChecksum(archiveScanner->ArchiveFromName(name));
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -2699,7 +2666,6 @@ EXPORT(void) CloseArchive(int archive)
 	UNITSYNC_CATCH_BLOCKS;
 }
 
-
 EXPORT(int) FindFilesArchive(int archive, int cur, char* nameBuf, int* size)
 {
 	try {
@@ -2711,13 +2677,16 @@ EXPORT(int) FindFilesArchive(int archive, int cur, char* nameBuf, int* size)
 
 		logOutput.Print(LOG_UNITSYNC, "findfilesarchive: %d\n", archive);
 
-		string name;
-		int s;
-
-		int ret = a->FindFiles(cur, &name, &s);
-		strcpy(nameBuf, name.c_str()); // FIXME: oops, buffer overflow
-		*size = s;
-		return ret;
+		if (cur < a->NumFiles())
+		{
+			string name;
+			int s;
+			a->FileInfo(cur, name, s);
+			strcpy(nameBuf, name.c_str()); // FIXME: oops, buffer overflow
+			*size = s;
+			return ++cur;
+		}
+		return 0;
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -2740,7 +2709,7 @@ EXPORT(int) OpenArchiveFile(int archive, const char* name)
 		CheckNullOrEmpty(name);
 
 		CArchiveBase* a = openArchives[archive];
-		return a->OpenFile(name);
+		return a->FindFile(name);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return 0;
@@ -2764,7 +2733,11 @@ EXPORT(int) ReadArchiveFile(int archive, int handle, void* buffer, int numBytes)
 		CheckPositive(numBytes);
 
 		CArchiveBase* a = openArchives[archive];
-		return a->ReadFile(handle, buffer, numBytes);
+		std::vector<uint8_t> buf;
+		if (!a->GetFile(handle, buf))
+			return -1;
+		std::memcpy(buffer, &buf[0], std::min(buf.size(), (size_t)numBytes));
+		return std::min(buf.size(), (size_t)numBytes);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return -1;
@@ -2779,10 +2752,7 @@ EXPORT(int) ReadArchiveFile(int archive, int handle, void* buffer, int numBytes)
 EXPORT(void) CloseArchiveFile(int archive, int handle)
 {
 	try {
-		CheckArchiveHandle(archive);
-
-		CArchiveBase* a = openArchives[archive];
-		a->CloseFile(handle);
+		// nuting
 	}
 	UNITSYNC_CATCH_BLOCKS;
 }
@@ -2800,7 +2770,10 @@ EXPORT(int) SizeArchiveFile(int archive, int handle)
 		CheckArchiveHandle(archive);
 
 		CArchiveBase* a = openArchives[archive];
-		return a->FileSize(handle);
+		string name;
+		int s;
+		a->FileInfo(handle, name, s);
+		return s;
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return -1;

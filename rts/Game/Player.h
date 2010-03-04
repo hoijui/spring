@@ -1,17 +1,16 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef PLAYER_H
 #define PLAYER_H
-// Player.h: interface for the CPlayer class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <string>
 #include <set>
 
 #include "creg/creg_cond.h"
-
 #include "PlayerBase.h"
-
+#include "PlayerStatistics.h"
 #include "float3.h"
+
 class CPlayer;
 class CUnit;
 struct DirectControlStruct {
@@ -71,7 +70,6 @@ public:
 
 	int playerNum;
 
-	float cpuUsage;
 	int ping;
 
 	typedef PlayerStatistics Statistics;

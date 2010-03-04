@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 /* Copyright (C) 2009 Wildfire Games.
  * This file is part of 0 A.D.
  *
@@ -18,6 +20,7 @@
 /*
  * emulate SDL on Windows.
  */
+
 #include "GlobalUnsynced.h"
 #include <stdio.h>
 #include "wsdl.h"
@@ -108,12 +111,12 @@ Uint8 SDL_GetAppState()
 	return app_state;
 }
 
-static void queue_quit_event()
+/*static void queue_quit_event()
 {
 	SDL_Event ev;
 	ev.type = SDL_QUIT;
 	queue_event(ev);
-}
+}*/
 
 
 //----------------------------------------------------------------------------
@@ -200,8 +203,9 @@ static bool GetCoords(int screen_x, int screen_y, int& x, int& y)
 			return false;
 	}
 
+	/* causes bigslowdown
 	if(WindowFromPoint(screen_pt) != g_hWnd)
-		return false;
+		return false;*/
 
 	x = client_pt.x;
 	y = client_pt.y;

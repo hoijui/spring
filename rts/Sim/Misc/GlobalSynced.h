@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef GLOBAL_UNSYNCED_H
 #define GLOBAL_UNSYNCED_H
 
@@ -185,5 +187,15 @@ private:
 };
 
 extern CGlobalSyncedStuff* gs;
+
+
+class SyncedRNG
+{
+public:
+	int operator()(unsigned N)
+	{
+		return gs->randInt()%N;
+	};
+};
 
 #endif //GLOBAL_UNSYNCED_H

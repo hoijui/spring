@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef BASICMAPDAMAGE_H
 #define BASICMAPDAMAGE_H
 
@@ -46,7 +48,7 @@ public:
 	std::deque<int> relosUnits;
 
 	float craterTable[10000];
-	float invHardness[256];
+	float invHardness[/*CMapInfo::NUM_TERRAIN_TYPES*/ 256];
 
 	void Explosion(const float3& pos, float strength,float radius);
 	void RecalcArea(int x1, int x2, int y1, int y2);

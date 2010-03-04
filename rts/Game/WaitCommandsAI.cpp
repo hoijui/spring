@@ -1,6 +1,4 @@
-// WaitCommandsAI.cpp: implementation of the CWaitCommands class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include "mmgr.h"
@@ -26,6 +24,7 @@
 #include "UI/CursorIcons.h"
 #include "creg/STL_Map.h"
 #include "creg/STL_List.h"
+#include "creg/STL_Set.h"
 #include "Util.h"
 #include <assert.h>
 

@@ -1,7 +1,10 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef IAICALLBACK_H
 #define IAICALLBACK_H
 
 #include <vector>
+#include <map>
 #include <deque>
 #include "float3.h"
 #include "Sim/Units/CommandAI/Command.h"
@@ -49,7 +52,7 @@ struct UnitResourceInfo
 struct PointMarker
 {
 	float3 pos;
-	unsigned char* color;
+	const unsigned char* color;
 	// don't store this pointer anywhere, it may become
 	// invalid at any time after GetMapPoints()
 	const char* label;
@@ -58,7 +61,7 @@ struct PointMarker
 struct LineMarker {
 	float3 pos;
 	float3 pos2;
-	unsigned char* color;
+	const unsigned char* color;
 };
 
 // HandleCommand structs:
@@ -316,7 +319,7 @@ public:
 	 * - do NOT modify or delete the height-map (native code relevant only)
 	 * - index 0 is top left
 	 * - each data position is 2*2 in size
-	 * - the value for the full resolution position (x, z) is at index (x/2 * width + z/2)
+	 * - the value for the full resolution position (x, z) is at index ((z * width + x) / 2)
 	 * - the last value, bottom right, is at index (width/2 * height/2 - 1)
 	 */
 	virtual const float* GetSlopeMap() = 0;
@@ -341,8 +344,17 @@ public:
 	 * of the standard map
 	 */
 	virtual const unsigned char* GetMetalMap() = 0;
+	/// Use this one for reference (eg. in cache-file names)
+	virtual int GetMapHash() = 0;
+	/// Use this one for reference (eg. in config-file names)
 	virtual const char* GetMapName() = 0;
+	virtual const char* GetMapHumanName() = 0;
+	/// Use this one for reference (eg. in cache-file names)
+	virtual int GetModHash() = 0;
+	/// archive name @deprecated
 	virtual const char* GetModName() = 0;
+	/// Use this one for reference (eg. in config-file names)
+	virtual const char* GetModHumanName() = 0;
 
 	/// Gets the elevation of the map at position (x, z)
 	virtual float GetElevation(float x, float z) = 0;
@@ -455,6 +467,9 @@ public:
 	//    copy it if you wish to continue using it
 	virtual const char* CallLuaRules(const char* data, int inSize = -1, int* outSize = NULL) = 0;
 
+	virtual std::map<std::string, std::string> GetMyInfo() = 0;
+	virtual std::map<std::string, std::string> GetMyOptionValues() = 0;
+
 	// use virtual instead of pure virtual,
 	// because pure virtual is not well supported
 	// among different OSs and compilers,
@@ -464,4 +479,4 @@ public:
 	virtual ~IAICallback() {}
 };
 
-#endif /* IAICALLBACK_H */
+#endif // IAICALLBACK_H

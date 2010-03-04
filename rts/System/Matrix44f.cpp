@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "Matrix44f.h"
 #include <memory.h>
@@ -20,6 +22,14 @@ CMatrix44f::CMatrix44f(const float3& pos,const float3& x,const float3& y,const f
 	m[4]  = y.x;   m[5]  = y.y;   m[6]  = y.z;   m[7]  = 0.0f;
 	m[8]  = z.x;   m[9]  = z.y;   m[10] = z.z;   m[11] = 0.0f;
 	m[12] = pos.x; m[13] = pos.y; m[14] = pos.z; m[15] = 1.0f;
+}
+
+CMatrix44f::CMatrix44f(const float& rotX, const float& rotY, const float& rotZ)
+{
+	LoadIdentity();
+	RotateX(rotX);
+	RotateY(rotY);
+	RotateZ(rotZ);
 }
 
 

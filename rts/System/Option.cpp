@@ -1,19 +1,4 @@
-/*
-	Copyright (c) 2008 Robin Vobruba <hoijui.quaero@gmail.com>
-
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef _OPTION_CPP
 #define _OPTION_CPP
@@ -28,6 +13,36 @@
 #include <assert.h>
 
 static const char* Option_badKeyChars = " =;\r\n\t";
+
+std::string option_getDefString(const Option& option) {
+
+	std::string def = "";
+
+	switch (option.typeCode) {
+		case opt_bool: {
+			def = option.boolDef ? "true" : "false";
+			break;
+		} case opt_list: {
+			def = option.listDef;
+			break;
+		} case opt_number: {
+			static const size_t fltString_sizeMax = 32;
+			char fltString[fltString_sizeMax];
+			SNPRINTF(fltString, fltString_sizeMax, "%f", option.numberDef);
+			def += fltString;
+			break;
+		} case opt_string: {
+			def = option.stringDef;
+			break;
+		} case opt_error: {
+		} case opt_section: {
+		} default: {
+			break;
+		}
+	}
+
+	return def;
+}
 
 static bool parseOption(const LuaTable& root, int index, Option& opt,
 		std::set<string>& optionsSet, CLogSubsystem& logSubsystem) {

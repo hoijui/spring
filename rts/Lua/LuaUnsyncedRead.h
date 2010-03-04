@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef LUA_UNSYNCED_INFO_H
 #define LUA_UNSYNCED_INFO_H
-// LuaUnsyncedRead.h: interface for the LuaUnsyncedRead class.
-//
-//////////////////////////////////////////////////////////////////////
 
 struct lua_State;
 
@@ -119,8 +118,6 @@ class LuaUnsyncedRead {
 
 		static int GetGroupList(lua_State* L);
 		static int GetSelectedGroup(lua_State* L);
-		static int GetGroupAIName(lua_State* L);
-		static int GetGroupAIList(lua_State* L);
 
 		static int GetMyAllyTeamID(lua_State* L);
 		static int GetMyTeamID(lua_State* L);

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifdef _MSC_VER
 #	include "StdAfx.h"
 #elif defined(_WIN32)
@@ -204,6 +206,8 @@ boost::shared_ptr<const RawPacket> UDPConnection::GetData()
 
 void UDPConnection::Update()
 {
+	outgoing.UpdateTime(spring_gettime());
+	
 	if (!sharedSocket)
 	{
 		// duplicated code with UDPListener
@@ -314,7 +318,7 @@ void UDPConnection::ProcessRawPacket(Packet& incoming)
 						}
 						else if (length_t == -2)
 						{
-							msglength = *(short*)(&buf[pos+1]);
+							msglength = *(uint16_t*)(&buf[pos+1]);
 						}
 					}
 					else
@@ -521,7 +525,7 @@ void UDPConnection::SendIfNecessary(bool flushed)
 	if (flushed || !newChunks.empty() || !resendRequested.empty() || nak > 0 || lastSendTime + spring_msecs(200) < curTime)
 	{
 		bool todo = true;
-		while (todo)
+		while (todo && outgoing.GetAverage() < 64*1024)
 		{
 			Packet buf(lastInOrder, nak);
 			if (nak > 0)
@@ -536,17 +540,17 @@ void UDPConnection::SendIfNecessary(bool flushed)
 			
 			while (true)
 			{
-				if (!newChunks.empty() && buf.GetSize() + newChunks[0]->GetSize() <= mtu)
-				{
-					buf.chunks.push_back(newChunks[0]);
-					unackedChunks.push_back(newChunks[0]);
-					newChunks.pop_front();
-				}
-				else if (!resendRequested.empty() && buf.GetSize() + resendRequested[0]->GetSize() <= mtu)
+				if (!resendRequested.empty() && buf.GetSize() + resendRequested[0]->GetSize() <= mtu)
 				{
 					buf.chunks.push_back(resendRequested[0]);
 					resendRequested.pop_front();
 					++resentChunks;
+				}
+				else if (!newChunks.empty() && buf.GetSize() + newChunks[0]->GetSize() <= mtu)
+				{
+					buf.chunks.push_back(newChunks[0]);
+					unackedChunks.push_back(newChunks[0]);
+					newChunks.pop_front();
 				}
 				else
 					break;
@@ -564,6 +568,7 @@ void UDPConnection::SendPacket(Packet& pkt)
 	std::vector<uint8_t> data;
 	pkt.Serialize(data);
 
+	outgoing.DataSent(data.size());
 	lastSendTime = spring_gettime();
 	boost::asio::ip::udp::socket::message_flags flags = 0;
 	boost::system::error_code err;
@@ -608,6 +613,30 @@ void UDPConnection::RequestResend(ChunkPtr ptr)
 			return;
 	}
 	resendRequested.push_back(ptr);
+}
+
+UDPConnection::BandwidthUsage::BandwidthUsage() : lastTime(0), trafficSinceLastTime(1), average(0.0)
+{
+}
+
+void UDPConnection::BandwidthUsage::UpdateTime(unsigned newTime)
+{
+	if (newTime > lastTime+100)
+	{
+		average = (average*9 + float(trafficSinceLastTime)/float(newTime-lastTime)*1000.0f)/10.0f;
+		trafficSinceLastTime = 0;
+		lastTime = newTime;
+	}
+}
+
+void UDPConnection::BandwidthUsage::DataSent(unsigned amount)
+{
+	trafficSinceLastTime += amount;
+}
+
+float UDPConnection::BandwidthUsage::GetAverage() const
+{
+	return (average+trafficSinceLastTime); // not exactly accurate, but does job
 }
 
 } // namespace netcode

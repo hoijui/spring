@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef MYMATH_H
 #define MYMATH_H
 
@@ -23,6 +25,13 @@ static const float TWOPI = 2*PI;
 #  error "HEADING_CHECKSUM not set, invalid NUM_HEADINGS?"
 #endif
 
+enum FacingMap {
+	FACING_NORTH = 2,
+	FACING_SOUTH = 0,
+	FACING_EAST  = 1,
+	FACING_WEST  = 3
+};
+
 class CMyMath {
 public:
 	static void Init();
@@ -31,14 +40,38 @@ public:
 
 
 
+//                  F(N=2) = H(-32768 / 32767)
+// 
+//                         ^
+//                         |
+//                         |
+// F(W=3) = H(-16384)  <---o--->  F(E=1) = H(16384)
+//                         |
+//                         |
+//                         v
+// 
+//                  F(S=0) = H(0)
 inline short int GetHeadingFromFacing(int facing)
 {
 	switch (facing) {
-		case 0: return      0;	// south
-		case 1: return  16384;	// east
-		case 2: return  32767;	// north == -32768
-		case 3: return -16384;	// west
+		case FACING_SOUTH: return      0;
+		case FACING_EAST:  return  16384;
+		case FACING_NORTH: return  32767;
+		case FACING_WEST:  return -16384;
 		default: return 0;
+	}
+}
+
+inline int GetFacingFromHeading(short int heading)
+{
+	if (heading >= 0) {
+		if (heading <  8192) { return FACING_SOUTH; }
+		if (heading < 24576) { return FACING_EAST; }
+		return FACING_NORTH;
+	} else {
+		if (heading >=  -8192) { return FACING_SOUTH; }
+		if (heading >= -24576) { return FACING_WEST; }
+		return FACING_NORTH;
 	}
 }
 
@@ -164,6 +197,17 @@ inline float Square(const float x) { return x * x; }
 
 float smoothstep(const float edge0, const float edge1, const float value);
 float3 smoothstep(const float edge0, const float edge1, float3 vec);
+
+
+inline float Clamp(const float& v, const float& min, const float& max)
+{
+	if (v>max) {
+		return max;
+	} else if (v<min) {
+		return min;
+	}
+	return v;
+}
 
 /**
  * @brief Clamps an radian angle between 0 .. 2*pi

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef PREGAME_H
 #define PREGAME_H
 
@@ -52,12 +54,6 @@ private:
 
 	/// receive network traffic
 	void UpdateClientNet();
-
-	/// Load map and dependend archives into archive scanner
-	void LoadMap(const std::string& mapName, const bool forceReload = false);
-	
-	/// Map all required archives depending on selected mod(s)
-	void LoadMod(const std::string& modName);
 
 	void GameDataReceived(boost::shared_ptr<const netcode::RawPacket> packet);
 

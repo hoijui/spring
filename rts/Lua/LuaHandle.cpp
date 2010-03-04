@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// LuaHandle.cpp: implementation of the CLuaHandle class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <string>
 #include <SDL_keysym.h>
@@ -218,7 +217,12 @@ int CLuaHandle::RunCallInTraceback(int inArgs, int outArgs, int errfuncIndex, st
 
 	CLuaHandle* orig = activeHandle;
 	SetActiveHandle();
+	//! limit gc just to the time the correct ActiveHandle is bound,
+	//! because some object could use __gc and try to access the ActiveHandle
+	//! outside of SetActiveHandle this can be an incorrect enviroment or even null -> crash
+	lua_gc(L,LUA_GCRESTART,0);
 	const int error = lua_pcall(L, inArgs, outArgs, errfuncIndex);
+	lua_gc(L,LUA_GCSTOP,0);
 	SetActiveHandle(orig);
 
 	if (error == 0) {
@@ -420,6 +424,29 @@ void CLuaHandle::PlayerChanged(int playerID)
 
 	// call the routine
 	RunCallInTraceback(cmdStr, 1, 0, errfunc);
+	return;
+}
+
+
+void CLuaHandle::PlayerRemoved(int playerID, int reason)
+{
+	LUA_CALL_IN_CHECK(L);
+	lua_checkstack(L, 5);
+
+	int errfunc = SetupTraceback();
+
+	static const LuaHashString cmdStr("PlayerRemoved");
+	if (!cmdStr.GetGlobalFunc(L)) {
+		// remove error handler
+		if (errfunc) lua_pop(L, 1);
+		return; // the call is not defined	}
+	}
+
+	lua_pushnumber(L, playerID);
+	lua_pushnumber(L, reason);
+
+	// call the routine
+	RunCallInTraceback(cmdStr, 2, 0, errfunc);
 	return;
 }
 

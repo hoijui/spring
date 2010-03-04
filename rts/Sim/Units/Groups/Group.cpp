@@ -1,6 +1,4 @@
-// Group.cpp: implementation of the CGroup class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include "Group.h"
@@ -13,6 +11,7 @@
 #include "Platform/errorhandler.h"
 #include "mmgr.h"
 #include "creg/STL_List.h"
+#include "creg/STL_Set.h"
 
 CR_BIND(CGroup, (0,NULL))
 

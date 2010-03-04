@@ -1,7 +1,4 @@
-/*
-	@author ???
-	@author Robin Vobruba <hoijui.quaero@gmail.com>
-*/
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef	_GROUPHANDLER_H
 #define	_GROUPHANDLER_H
@@ -13,7 +10,6 @@
 #include "creg/creg_cond.h"
 
 class CGroup;
-class CUnitSet;
 
 /**
  * Handles All Groups of a single team.

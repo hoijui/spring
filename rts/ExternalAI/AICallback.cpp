@@ -1,6 +1,9 @@
-// Generalized callback interface - shared between global AI and group AI
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "FileSystem/FileHandler.h"
+#include "FileSystem/FileSystem.h"
+#include "FileSystem/FileSystemHandler.h"
 #include "Game/Camera/CameraController.h"
 #include "Game/Camera.h"
 #include "Game/CameraHandler.h"
@@ -18,7 +21,6 @@
 #include "NetProtocol.h"
 #include "ConfigHandler.h"
 #include "Platform/errorhandler.h"
-#include "FileSystem/FileSystem.h"
 #include "Rendering/InMapDraw.h"
 #include "Rendering/UnitModels/3DModel.h"
 #include "Rendering/UnitModels/UnitDrawer.h"
@@ -685,6 +687,7 @@ bool CAICallback::IsUnitNeutral(int unitId) {
 
 int CAICallback::InitPath(float3 start, float3 end, int pathType)
 {
+	assert(((size_t)pathType) < moveinfo->moveData.size());
 	return pathManager->RequestPath(moveinfo->moveData.at(pathType), start, end);
 }
 
@@ -768,11 +771,10 @@ float CAICallback::GetPathLength(float3 start, float3 end, int pathType)
 int CAICallback::GetEnemyUnits(int* unitIds, int unitIds_max)
 {
 	verify();
-	std::list<CUnit*>::iterator ui;
-	int a = 0;
 
-	for (std::list<CUnit*>::const_iterator ui = uh->activeUnits.begin();
-			ui != uh->activeUnits.end(); ++ui) {
+	std::list<CUnit*>::const_iterator ui;
+	int a = 0;
+	for (ui = uh->activeUnits.begin(); ui != uh->activeUnits.end(); ++ui) {
 		const CUnit* u = *ui;
 
 		if (!teamHandler->Ally(u->allyteam, teamHandler->AllyTeam(team)) &&
@@ -792,11 +794,10 @@ int CAICallback::GetEnemyUnits(int* unitIds, int unitIds_max)
 int CAICallback::GetEnemyUnitsInRadarAndLos(int* unitIds, int unitIds_max)
 {
 	verify();
-	std::list<CUnit*>::iterator ui;
-	int a = 0;
 
-	for (std::list<CUnit*>::const_iterator ui = uh->activeUnits.begin();
-			ui != uh->activeUnits.end(); ++ui) {
+	std::list<CUnit*>::const_iterator ui;
+	int a = 0;
+	for (ui = uh->activeUnits.begin(); ui != uh->activeUnits.end(); ++ui) {
 		const CUnit* u = *ui;
 
 		if (!teamHandler->Ally(u->allyteam, teamHandler->AllyTeam(team))
@@ -817,11 +818,11 @@ int CAICallback::GetEnemyUnits(int* unitIds, const float3& pos, float radius,
 		int unitIds_max)
 {
 	verify();
-	std::vector<CUnit*> unit = qf->GetUnitsExact(pos, radius);
+
+	const std::vector<CUnit*> units = qf->GetUnitsExact(pos, radius);
 	std::vector<CUnit*>::const_iterator ui;
 	int a = 0;
-
-	for (ui = unit.begin(); ui != unit.end(); ++ui) {
+	for (ui = units.begin(); ui != units.end(); ++ui) {
 		const CUnit* u = *ui;
 
 		if (!teamHandler->Ally(u->allyteam, teamHandler->AllyTeam(team))
@@ -842,10 +843,10 @@ int CAICallback::GetEnemyUnits(int* unitIds, const float3& pos, float radius,
 int CAICallback::GetFriendlyUnits(int *unitIds, int unitIds_max)
 {
 	verify();
-	int a = 0;
 
-	for (std::list<CUnit*>::const_iterator ui = uh->activeUnits.begin();
-			ui != uh->activeUnits.end(); ++ui) {
+	std::list<CUnit*>::const_iterator ui;
+	int a = 0;
+	for (ui = uh->activeUnits.begin(); ui != uh->activeUnits.end(); ++ui) {
 		const CUnit* u = *ui;
 
 		if (teamHandler->Ally(u->allyteam, teamHandler->AllyTeam(team))) {
@@ -867,10 +868,10 @@ int CAICallback::GetFriendlyUnits(int *unitIds, const float3& pos, float radius,
 		int unitIds_max)
 {
 	verify();
+
 	std::vector<CUnit*> unit = qf->GetUnitsExact(pos, radius);
 	std::vector<CUnit*>::const_iterator ui;
 	int a = 0;
-
 	for (ui = unit.begin(); ui != unit.end(); ++ui) {
 		const CUnit* u = *ui;
 
@@ -893,9 +894,10 @@ int CAICallback::GetFriendlyUnits(int *unitIds, const float3& pos, float radius,
 int CAICallback::GetNeutralUnits(int* unitIds, int unitIds_max)
 {
 	verify();
-	int a = 0;
 
-	for (std::list<CUnit*>::const_iterator ui = uh->activeUnits.begin(); ui != uh->activeUnits.end(); ++ui) {
+	std::list<CUnit*>::const_iterator ui;
+	int a = 0;
+	for (ui = uh->activeUnits.begin(); ui != uh->activeUnits.end(); ++ui) {
 		const CUnit* u = *ui;
 
 		// IsUnitNeutral does the LOS check
@@ -913,10 +915,10 @@ int CAICallback::GetNeutralUnits(int* unitIds, int unitIds_max)
 int CAICallback::GetNeutralUnits(int* unitIds, const float3& pos, float radius, int unitIds_max)
 {
 	verify();
+
 	std::vector<CUnit*> unit = qf->GetUnitsExact(pos, radius);
 	std::vector<CUnit*>::const_iterator ui;
 	int a = 0;
-
 	for (ui = unit.begin(); ui != unit.end(); ++ui) {
 		const CUnit* u = *ui;
 
@@ -945,14 +947,40 @@ int CAICallback::GetMapHeight()
 	return gs->mapy;
 }
 
+int CAICallback::GetMapHash()
+{
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return 0;
+}
+
 const char* CAICallback::GetMapName ()
 {
-	return gameSetup->mapName.c_str();
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return NULL;
+}
+
+const char* CAICallback::GetMapHumanName ()
+{
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return NULL;
+}
+
+int CAICallback::GetModHash()
+{
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return 0;
 }
 
 const char* CAICallback::GetModName()
 {
-	return modInfo.filename.c_str();
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return NULL;
+}
+
+const char* CAICallback::GetModHumanName()
+{
+	// NOTE: this function is never called, implemented in SSkirmishAICallbackImpl
+	return NULL;
 }
 
 
@@ -1223,11 +1251,9 @@ int CAICallback::GetFeatures(int* featureIds, int featureIds_sizeMax)
 		const CFeature* f = *it;
 		assert(f);
 
-		if (!f->IsInLosForAllyTeam(allyteam)) {
-			continue;
+		if (f->IsInLosForAllyTeam(allyteam)) {
+			featureIds[featureIds_size++] = f->id;
 		}
-
-		featureIds[featureIds_size++] = f->id;
 	}
 
 	return featureIds_size;
@@ -1246,11 +1272,9 @@ int CAICallback::GetFeatures(int* featureIds, int featureIds_sizeMax, const floa
 		const CFeature* f = *it;
 		assert(f);
 
-		if (!f->IsInLosForAllyTeam(allyteam)) {
-			continue;
+		if (f->IsInLosForAllyTeam(allyteam)) {
+			featureIds[featureIds_size++] = f->id;
 		}
-
-		featureIds[featureIds_size++] = f->id;
 	}
 
 	return featureIds_size;
@@ -1262,11 +1286,9 @@ const FeatureDef* CAICallback::GetFeatureDef(int featureId)
 
 	verify();
 
-	const CFeatureSet& fset = featureHandler->GetActiveFeatures();
-	const CFeatureSet::const_iterator it = fset.find(featureId);
+	const CFeature* f = featureHandler->GetFeature(featureId);
 
-	if (it != fset.end()) {
-		const CFeature* f = *it;
+	if (f) {
 		const int allyteam = teamHandler->AllyTeam(team);
 		if (f->IsInLosForAllyTeam(allyteam)) {
 			featureDef = f->def;
@@ -1286,11 +1308,9 @@ float CAICallback::GetFeatureHealth(int featureId)
 
 	verify();
 
-	const CFeatureSet& fset = featureHandler->GetActiveFeatures();
-	const CFeatureSet::const_iterator it = fset.find(featureId);
+	const CFeature* f = featureHandler->GetFeature(featureId);
 
-	if (it != fset.end()) {
-		const CFeature *f = *it;
+	if (f) {
 		const int allyteam = teamHandler->AllyTeam(team);
 		if (f->IsInLosForAllyTeam(allyteam)) {
 			health = f->health;
@@ -1306,11 +1326,9 @@ float CAICallback::GetFeatureReclaimLeft(int featureId)
 
 	verify();
 
-	const CFeatureSet& fset = featureHandler->GetActiveFeatures();
-	const CFeatureSet::const_iterator it = fset.find(featureId);
+	const CFeature* f = featureHandler->GetFeature(featureId);
 
-	if (it != fset.end()) {
-		const CFeature *f = *it;
+	if (f) {
 		const int allyteam = teamHandler->AllyTeam(team);
 		if (f->IsInLosForAllyTeam(allyteam)) {
 			return f->reclaimLeft;
@@ -1326,11 +1344,9 @@ float3 CAICallback::GetFeaturePos(int featureId)
 
 	verify();
 
-	const CFeatureSet& fset = featureHandler->GetActiveFeatures();
-	const CFeatureSet::const_iterator it = fset.find(featureId);
+	const CFeature* f = featureHandler->GetFeature(featureId);
 
-	if (it != fset.end()) {
-		const CFeature *f = *it;
+	if (f) {
 		const int allyteam = teamHandler->AllyTeam(team);
 		if (f->IsInLosForAllyTeam(allyteam)) {
 			pos = f->pos;
@@ -1384,7 +1400,7 @@ bool CAICallback::GetValue(int id, void *data)
 			std::string f((char*) data);
 			f = filesystem.LocateFile(f);
 			strcpy((char*) data, f.c_str());
-			return true;
+			return FileSystemHandler::IsReadableFile(f);
 		}case AIVAL_LOCATE_FILE_W:{
 			std::string f((char*) data);
 			std::string f_abs = filesystem.LocateFile(f, FileSystem::WRITE | FileSystem::CREATE_DIRS);
@@ -1671,7 +1687,7 @@ int CAICallback::GetMapPoints(PointMarker* pm, int pm_sizeMax, bool includeAllie
 		return pm_size;
 	}*/
 
-	std::list<unsigned char*> includeColors;
+	std::list<const unsigned char*> includeColors;
 	// include out team color
 	includeColors.push_back(teamHandler->Team(team)->color);
 	// include the team colors of all our allies
@@ -1683,7 +1699,7 @@ int CAICallback::GetMapPoints(PointMarker* pm, int pm_sizeMax, bool includeAllie
 
 	std::list<CInMapDraw::MapPoint>* points = NULL;
 	std::list<CInMapDraw::MapPoint>::const_iterator point;
-	std::list<unsigned char*>::const_iterator ic;
+	std::list<const unsigned char*>::const_iterator ic;
 	for (size_t i=0; i < inMapDrawer->numQuads && pm_size < pm_sizeMax; i++) {
 		points = &(inMapDrawer->drawQuads[i].points);
 		for (point = points->begin(); point != points->end()
@@ -1716,7 +1732,7 @@ int CAICallback::GetMapLines(LineMarker* lm, int lm_sizeMax, bool includeAllies)
 		return lm_size;
 	}*/
 
-	std::list<unsigned char*> includeColors;
+	std::list<const unsigned char*> includeColors;
 	// include out team color
 	includeColors.push_back(teamHandler->Team(team)->color);
 	// include the team colors of all our allies
@@ -1728,7 +1744,7 @@ int CAICallback::GetMapLines(LineMarker* lm, int lm_sizeMax, bool includeAllies)
 
 	std::list<CInMapDraw::MapLine>* lines = NULL;
 	std::list<CInMapDraw::MapLine>::const_iterator line;
-	std::list<unsigned char*>::const_iterator ic;
+	std::list<const unsigned char*>::const_iterator ic;
 	for (size_t i=0; i < inMapDrawer->numQuads && lm_size < lm_sizeMax; i++) {
 		lines = &(inMapDrawer->drawQuads[i].lines);
 		for (line = lines->begin(); line != lines->end()
@@ -1781,4 +1797,22 @@ const char* CAICallback::CallLuaRules(const char* data, int inSize, int* outSize
 		return NULL;
 	}
 	return luaRules->AICallIn(data, inSize, outSize);
+}
+
+std::map<std::string, std::string> CAICallback::GetMyInfo()
+{
+	// do nothing
+	// this function will never be called,
+	// as it is handled in the C layer directly
+	// see eg. Clb_SkirmishAI_Info_getSize in rts/ExternalAI/Interface/SSkirmishAICallback.h
+	return std::map<std::string, std::string>();
+}
+
+std::map<std::string, std::string> CAICallback::GetMyOptionValues()
+{
+	// do nothing
+	// this function will never be called,
+	// as it is handled in the C layer directly
+	// see eg. Clb_SkirmishAI_OptionValues_getSize in rts/ExternalAI/Interface/SSkirmishAICallback.h
+	return std::map<std::string, std::string>();
 }

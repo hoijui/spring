@@ -1,5 +1,7 @@
-#ifndef SERVERMSGSTRINGS_H_
-#define SERVERMSGSTRINGS_H_
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
+#ifndef _SERVER_MSG_STRINGS_H_
+#define _SERVER_MSG_STRINGS_H_
 
 #include <string>
 
@@ -13,8 +15,7 @@ const std::string DemoEnd = "End of demo reached";
 const std::string GameEnd = "Game has ended";
 const std::string NoClientsExit = "No clients connected, shutting down server";
 
-const std::string NoSyncResponse = "No sync response from %s for frame %d";
-const std::string DelayedSyncResponse = "Delayed response from %s for frame %d (current %d)";
+const std::string NoSyncResponse = "Error: Player %s did not send sync checksum for frame %d";
 const std::string SyncError = "Sync error for %s in frame %d (%x)";
 const std::string NoSyncCheck = "Warning: Sync checking disabled!";
 
@@ -34,4 +35,5 @@ const std::string UnknownNetmsg = "Unhandled net msg (%d) in server from %d";
 
 const std::string CommandNotAllowed = "Player %d is not allowed to execute command %s";
 
-#endif /*SERVERMSGSTRINGS_H_*/
+#endif // _SERVER_MSG_STRINGS_H_
+

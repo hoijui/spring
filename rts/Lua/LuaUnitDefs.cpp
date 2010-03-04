@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// LuaUnitDefs.cpp: implementation of the LuaUnitDefs class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <set>
 #include <string>
@@ -700,7 +699,6 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_FLOAT("energyStorage",  ud.energyStorage);
 
 	ADD_BOOL("extractSquare", ud.extractSquare);
-	ADD_BOOL("isMetalMaker",  ud.isMetalMaker);
 
 	ADD_FLOAT("power", ud.power);
 
@@ -826,6 +824,7 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_BOOL("hoverAttack",   ud.hoverAttack);
 	ADD_BOOL("airStrafe",     ud.airStrafe);
 	ADD_BOOL("bankingAllowed",ud.bankingAllowed);
+	ADD_BOOL("useSmoothMesh", ud.useSmoothMesh);
 
 	// < 0 means it can land,
 	// >= 0 indicates how much the unit will move during hovering on the spot
@@ -875,8 +874,9 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_BOOL( "decloakSpherical", ud.decloakSpherical);
 	ADD_BOOL( "decloakOnFire",    ud.decloakOnFire);
 
-	ADD_BOOL( "canKamikaze",  ud.canKamikaze);
-	ADD_FLOAT("kamikazeDist", ud.kamikazeDist);
+	ADD_BOOL( "canKamikaze",    ud.canKamikaze);
+	ADD_FLOAT("kamikazeDist",   ud.kamikazeDist);
+	ADD_BOOL( "kamikazeUseLOS", ud.kamikazeUseLOS);
 
 	ADD_BOOL("targfac", ud.targfac);
 

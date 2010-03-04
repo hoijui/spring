@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include <stdio.h>
 #include <algorithm>
@@ -247,14 +249,8 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 
 	ud.isCommander = udTable.GetBool("commander", false);
 
-	if (ud.isCommander) {
-		ud.metalStorage  = udTable.GetFloat("metalStorage",  gameSetup->startMetal);
-		ud.energyStorage = udTable.GetFloat("energyStorage", gameSetup->startEnergy);
-	}
-	else {
-		ud.metalStorage  = udTable.GetFloat("metalStorage",  0.0f);
-		ud.energyStorage = udTable.GetFloat("energyStorage", 0.0f);
- 	}
+	ud.metalStorage  = udTable.GetFloat("metalStorage",  0.0f);
+	ud.energyStorage = udTable.GetFloat("energyStorage", 0.0f);
 
 	ud.extractsMetal  = udTable.GetFloat("extractsMetal",  0.0f);
 	ud.windGenerator  = udTable.GetFloat("windGenerator",  0.0f);
@@ -272,8 +268,6 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 	ud.idleTime     = udTable.GetInt("idleTime", 600);
 
 	ud.buildangle = udTable.GetInt("buildAngle", 0);
-
-	ud.isMetalMaker = (ud.makesMetal >= 1 && ud.energyUpkeep > ud.makesMetal * 40);
 
 	ud.controlRadius = 32;
 	ud.losHeight = 20;
@@ -297,7 +291,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 	ud.losRadius = udTable.GetFloat("sightDistance", 0.0f) * modInfo.losMul / (SQUARE_SIZE * (1 << modInfo.losMipLevel));
 	ud.airLosRadius = udTable.GetFloat("airSightDistance", -1.0f);
 	if (ud.airLosRadius == -1.0f) {
-		ud.airLosRadius=udTable.GetFloat("sightDistance", 0.0f) * modInfo.airLosMul * 1.5f / (SQUARE_SIZE * (1 << modInfo.airMipLevel));
+		ud.airLosRadius = udTable.GetFloat("sightDistance", 0.0f) * modInfo.airLosMul * 1.5f / (SQUARE_SIZE * (1 << modInfo.airMipLevel));
 	} else {
 		ud.airLosRadius = ud.airLosRadius * modInfo.airLosMul / (SQUARE_SIZE * (1 << modInfo.airMipLevel));
 	}
@@ -420,6 +414,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 
 	ud.canKamikaze = udTable.GetBool("kamikaze", false);
 	ud.kamikazeDist = udTable.GetFloat("kamikazeDistance", -25.0f) + 25.0f; //we count 3d distance while ta count 2d distance so increase slightly
+	ud.kamikazeUseLOS = udTable.GetBool("kamikazeUseLOS", false);
 
 	ud.showNanoFrame = udTable.GetBool("showNanoFrame", true);
 	ud.showNanoSpray = udTable.GetBool("showNanoSpray", true);
@@ -439,6 +434,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 	ud.wantedHeight  = udTable.GetFloat("cruiseAlt", 0.0f);
 	ud.dlHoverFactor = udTable.GetFloat("airHoverFactor", -1.0f);
 	ud.bankingAllowed = udTable.GetBool("bankingAllowed", true);
+	ud.useSmoothMesh = udTable.GetBool("useSmoothMesh", true);
 
 	ud.transportSize     = udTable.GetInt("transportSize",      0);
 	ud.minTransportSize  = udTable.GetInt("minTransportSize",   0);

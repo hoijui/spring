@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -416,9 +418,8 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 				return false;
 			if (unit && !unit->AllowedReclaim(owner)) return false;
 		} else {
-			const CFeatureSet& fset = featureHandler->GetActiveFeatures();
-			CFeatureSet::const_iterator f = fset.find(unitID - uh->MaxUnits());
-			if (f != fset.end() && !(*f)->def->reclaimable)
+			const CFeature* feature = featureHandler->GetFeature(unitID - uh->MaxUnits());
+			if (feature && !feature->def->reclaimable)
 				return false;
 		}
 	}
@@ -1355,7 +1356,7 @@ void CCommandAI::DrawDefaultCommand(const Command& c) const
 		lineDrawer.DrawLineAndIcon(dd->cmdIconID, endPos, dd->color);
 		lineDrawer.Break(endPos, dd->color);
 		glSurfaceCircle(endPos, radius, 20);
-		lineDrawer.RestartSameColor();
+		lineDrawer.RestartWithColor(dd->color);
 	}
 }
 

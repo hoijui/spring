@@ -6,13 +6,13 @@
 
 namespace AIUtil {
 	std::string GetAbsFileName(IAICallback* cb, const std::string& relFileName) {
-		char        dst[1024] = {0};
+		char        dst[2048] = {0};
 		const char* src       = relFileName.c_str();
 		const int   len       = relFileName.size();
 
 		// last char ('\0') in dst
 		// should not be overwritten
-		assert(len < (1024 - 1));
+		assert(len < (2048 - 1));
 
 		memcpy(dst, src, len);
 
@@ -21,5 +21,32 @@ namespace AIUtil {
 		cb->GetValue(AIVAL_LOCATE_FILE_W, dst);
 
 		return (std::string(dst));
+	}
+
+	bool IsFSGoodChar(const char c) {
+
+		if ((c >= '0') && (c <= '9')) {
+			return true;
+		} else if ((c >= 'a') && (c <= 'z')) {
+			return true;
+		} else if ((c >= 'A') && (c <= 'Z')) {
+			return true;
+		} else if ((c == '.') || (c == '_') || (c == '-')) {
+			return true;
+		}
+
+		return false;
+	}
+	std::string MakeFileSystemCompatible(const std::string& str) {
+
+		std::string cleaned = str;
+
+		for (std::string::size_type i=0; i < cleaned.size(); i++) {
+			if (!IsFSGoodChar(cleaned[i])) {
+				cleaned[i] = '_';
+			}
+		}
+
+		return cleaned;
 	}
 }

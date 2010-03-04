@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -47,8 +49,7 @@ void CBaseTreeDrawer::Draw (bool drawReflection)
 {
 	float zoom=45/camera->GetFov();
 	float treeDistance=baseTreeDistance*fastmath::apxsqrt(zoom);
-	if(treeDistance>MAX_VIEW_RANGE/(SQUARE_SIZE*TREE_SQUARE_SIZE))
-		treeDistance=MAX_VIEW_RANGE/(SQUARE_SIZE*TREE_SQUARE_SIZE);
+	treeDistance = std::max(1.0f, std::min(treeDistance, (float)MAX_VIEW_RANGE / (SQUARE_SIZE * TREE_SQUARE_SIZE)));
 
 	Draw (treeDistance, drawReflection);
 }

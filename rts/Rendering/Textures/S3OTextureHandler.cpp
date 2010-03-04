@@ -1,6 +1,4 @@
-// S3OTextureHandler.cpp: implementation of the CS3OTextureHandler class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 
@@ -108,9 +106,9 @@ void CS3OTextureHandler::SetS3oTexture(int num)
 	if (shadowHandler->inShadowPass) {
 		glBindTexture(GL_TEXTURE_2D, s3oTextures[num].tex2);
 	} else {
+		glActiveTextureARB(GL_TEXTURE0_ARB);
 		glBindTexture(GL_TEXTURE_2D, s3oTextures[num].tex1);
 		glActiveTextureARB(GL_TEXTURE1_ARB);
 		glBindTexture(GL_TEXTURE_2D, s3oTextures[num].tex2);
-		glActiveTextureARB(GL_TEXTURE0_ARB);
 	}
 }

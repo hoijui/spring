@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef COMMAND_H
 #define COMMAND_H
 
@@ -49,6 +51,7 @@
 #define CMD_AUTOREPAIRLEVEL      135
 #define CMD_LOOPBACKATTACK       140
 #define CMD_IDLEMODE             145
+#define CMD_FAILED               150
 
 #define CMDTYPE_ICON                        0  // expect 0 parameters in return
 #define CMDTYPE_ICON_MODE                   5  // expect 1 parameter in return (number selected mode)

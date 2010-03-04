@@ -1,34 +1,34 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-#include <assert.h>
-#include <cstdio>
 #include "mmgr.h"
 
 #include "MapInfo.h"
+
+#include <assert.h>
 
 #include "Sim/Misc/GlobalConstants.h"
 #include "MapParser.h"
 #include "Lua/LuaParser.h"
 #include "LogOutput.h"
-#include "FileSystem/FileHandler.h"
 #include "Exceptions.h"
 
 
 using namespace std;
 
 
-static CLogSubsystem LOG_MAPINFO("mapinfo");
-
-
-// before delete, the const is const_cast'ed away.
-// there are no (other) situations where mapInfo may be modified
+// Before delete, the const is const_cast'ed away. There are
+// no (other) situations where mapInfo may be modified, except
+//   LuaUnsyncedCtrl may change water
+//   LuaSyncedCtrl may change terrainTypes
 const CMapInfo* mapInfo;
 
 
-CMapInfo::CMapInfo(const string& mapName)
+CMapInfo::CMapInfo(const std::string& _mapInfoFile, const string& mapName) : mapInfoFile(_mapInfoFile)
 {
 	map.name = mapName;
 
-	parser = new MapParser(mapName);
+	parser = new MapParser(mapInfoFile);
 	if (!parser->IsValid()) {
 		throw content_error("MapInfo: " + parser->GetErrorLog());
 	}
@@ -71,7 +71,6 @@ void CMapInfo::ReadGlobal()
 
 	map.humanName    = topTable.GetString("description", map.name);
 	map.author       = topTable.GetString("author", "");
-	map.wantedScript = topTable.GetString("script", "");
 
 	map.hardness      = topTable.GetFloat("maphardness", 100.0f);
 	map.notDeformable = topTable.GetBool("notDeformable", false);
@@ -143,7 +142,7 @@ void CMapInfo::ReadLight()
 	                                                float3(0.4f, 0.4f, 0.4f));
 	light.unitSunColor      = lightTable.GetFloat3("unitDiffuseColor",
 	                                                float3(0.7f, 0.7f, 0.7f));
-	light.specularSunColor  = lightTable.GetFloat3("unitSpecularColor",
+	light.unitSpecularColor  = lightTable.GetFloat3("unitSpecularColor",
 	                                               light.unitSunColor);
 	light.unitShadowDensity = lightTable.GetFloat("unitShadowDensity", 0.8f);
 }
@@ -256,13 +255,18 @@ void CMapInfo::ReadSmf()
 	// SMF specific settings
 	const LuaTable mapResTable = parser->GetRoot().SubTable("resources");
 	smf.detailTexName = mapResTable.GetString("detailTex", "");
+	smf.specularTexName = mapResTable.GetString("specularTex", "");
+
 	if (!smf.detailTexName.empty()) {
 		smf.detailTexName = "maps/" + smf.detailTexName;
-	}
-	else {
+	} else {
 		const LuaTable resGfxMaps = resRoot->SubTable("graphics").SubTable("maps");
 		smf.detailTexName = resGfxMaps.GetString("detailtex", "detailtex2.bmp");
 		smf.detailTexName = "bitmaps/" + smf.detailTexName;
+	}
+
+	if (!smf.specularTexName.empty()) {
+		smf.specularTexName = "maps/" + smf.specularTexName;
 	}
 
 	// height overrides
@@ -301,7 +305,7 @@ void CMapInfo::ReadTerrainTypes()
 	const LuaTable terrTypeTable =
 		parser->GetRoot().SubTable("terrainTypes");
 
-	for (int tt = 0; tt < 256; tt++) {
+	for (int tt = 0; tt < NUM_TERRAIN_TYPES; tt++) {
 		TerrainType& terrType = terrainTypes[tt];
 		const LuaTable terrain = terrTypeTable.SubTable(tt);
 		terrType.name          = terrain.GetString("name", "Default");

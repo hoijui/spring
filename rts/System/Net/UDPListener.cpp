@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifdef _MSC_VER
 #	include "StdAfx.h"
 #elif defined(_WIN32)
@@ -5,10 +7,6 @@
 #endif
 
 #include "UDPListener.h"
-
-#ifndef _MSC_VER
-#include "StdAfx.h"
-#endif
 
 #include <boost/weak_ptr.hpp>
 #include <boost/noncopyable.hpp>
@@ -20,6 +18,7 @@
 #include "mmgr.h"
 
 #include "ProtocolDef.h"
+#include "LogOutput.h"
 #include "UDPConnection.h"
 #include "Socket.h"
 
@@ -109,7 +108,7 @@ void UDPListener::Update()
 			}
 			else
 			{
-				// throw it
+				LogObject() << "Dropping packet from unknown IP: [" << sender_endpoint.address() << "]:" << sender_endpoint.port();
 			}
 		}	
 	}

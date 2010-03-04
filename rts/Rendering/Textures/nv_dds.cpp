@@ -1,5 +1,9 @@
-//This file contains source code provided by NVIDIA Corporation
-//Modified DDS reader class from NVIDIA SDK
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
+// This software contains source code provided by NVIDIA Corporation.
+// License: http://developer.download.nvidia.com/licenses/general_license.txt
+
+// Modified DDS reader class from NVIDIA SDK
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Description:
@@ -1162,6 +1166,8 @@ void CDDSImage::flip_dxt5_alpha(DXT5AlphaBlock *block)
     gBits[3][2] = (unsigned char)(bits & mask);
     bits >>= 3;
     gBits[3][3] = (unsigned char)(bits & mask);
+
+    memset(block->row, 0, sizeof(unsigned char) * 6);
 
     unsigned int *pBits = ((unsigned int*) &(block->row[0]));
 

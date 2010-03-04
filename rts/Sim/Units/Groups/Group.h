@@ -1,13 +1,11 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef GROUP_H
 #define GROUP_H
-// Group.h: interface for the CGroup class.
-//
-//////////////////////////////////////////////////////////////////////
 
-#include <string>
 #include <vector>
+
 #include "Sim/Units/CommandAI/Command.h"
-#include "Platform/SharedLib.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitSet.h"
 

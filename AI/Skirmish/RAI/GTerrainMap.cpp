@@ -1,7 +1,12 @@
 #include "GTerrainMap.h"
-#include <set>
+#include "RAI.h"
+
 #include "Sim/MoveTypes/MoveInfo.h"
+#include "System/Util.h"
+
 #include "lib/cutils/Util.h"
+
+#include <set>
 
 using std::deque;
 using std::set;
@@ -11,38 +16,48 @@ GlobalTerrainMap::GlobalTerrainMap(IAICallback* cb, cLogFile* l)
 //	l = logfile;
 	*l<<"\n Loading the Terrain-Map ...";
 
-	string cacheDirectory = cLogFile::GetDir(cb, true, "cache");
-
-	if (cacheDirectory.empty()) {
-		*l<<"\nERROR: Could not create the cache dir: "<<cacheDirectory;
-	}
-
 	// Reading the WaterDamage entry from the map file
 	const int mapFileVersion = 2;
 	waterIsHarmful = false;
-	string mapFileName = cb->GetMapName();
-	mapFileName = cacheDirectory + mapFileName.substr(0,int(mapFileName.size())-3) + "res";
-	FILE *mapFile = fopen(mapFileName.c_str(),"rb");
+
+	string relMapFileName = "cache/";
+	relMapFileName += cRAI::MakeFileSystemCompatible(cb->GetMapName());
+	relMapFileName.resize(relMapFileName.size() - 4); // cut off extension
+	relMapFileName += "-" + IntToString(cb->GetMapHash(), "%x");
+	relMapFileName += ".res";
+
+	string mapFileName_r;
+	FILE* mapFile_r = NULL;
+	if (cRAI::LocateFile(cb, relMapFileName, mapFileName_r, false)) {
+		mapFile_r = fopen(mapFileName_r.c_str(), "rb");
+	} else {
+		*l<<"\nCould not find cache file for reading: "<<relMapFileName;
+	}
+
 	bool mapFileLoaded = false;
-	if( mapFile )
+	if( mapFile_r )
 	{
 		int version;
-		fread(&version, sizeof(int), 1, mapFile);
+		fread(&version, sizeof(int), 1, mapFile_r);
 		if( version == mapFileVersion )
 		{
-			fread(&waterIsHarmful, sizeof(bool), 1, mapFile);
-			fread(&waterIsAVoid, sizeof(bool), 1, mapFile);
+			fread(&waterIsHarmful, sizeof(bool), 1, mapFile_r);
+			fread(&waterIsAVoid, sizeof(bool), 1, mapFile_r);
 			mapFileLoaded = true;
 		}
 		else
-			*l<<"\n  The cashed map-file is using a different version format, reloading...";
-		fclose(mapFile);
+			*l<<"\n  The cached map-file is using a different version format, reloading...";
+		fclose(mapFile_r);
 	}
 	if( !mapFileLoaded )
 	{
 //		double mapArchiveTimer = clock();
-		string mapArchiveFileName = cb->GetMapName();
-		mapArchiveFileName = "maps\\"+mapArchiveFileName.substr(0,int(mapArchiveFileName.size())-3)+"smd";
+		string mapArchiveFileName = "maps/";
+		mapArchiveFileName += cRAI::MakeFileSystemCompatible(cb->GetMapName());
+		mapArchiveFileName.resize(mapArchiveFileName.size() - 4); // cut off extension
+		mapArchiveFileName += "-" + IntToString(cb->GetMapHash(), "%x");
+		mapArchiveFileName += ".smd";
+
 		int mapArchiveFileSize = cb->GetFileSize(mapArchiveFileName.c_str());
 		if( mapArchiveFileSize > 0 )
 		{
@@ -70,17 +85,19 @@ GlobalTerrainMap::GlobalTerrainMap(IAICallback* cb, cLogFile* l)
 		}
 //		*l<<"\n  Map-Archive Timer: "<<(clock()-mapArchiveTimer)/CLOCKS_PER_SEC<<" seconds";
 
-		mapFile = fopen(mapFileName.c_str(),"wb");
-		if (mapFile)
-		{
-			fwrite(&mapFileVersion,sizeof(int),1,mapFile);
-			fwrite(&waterIsHarmful,sizeof(bool),1,mapFile);
-			fwrite(&waterIsAVoid,sizeof(bool),1,mapFile);
-			fclose(mapFile);
+		string mapFileName_w;
+		FILE* mapFile_w = NULL;
+		if (cRAI::LocateFile(cb, relMapFileName, mapFileName_w, true)) {
+			mapFile_w = fopen(mapFileName_w.c_str(), "wb");
 		}
-		else
-		{
-			*l<<"\nERROR: Could not write to file: "<<mapFileName;
+
+		if (mapFile_w) {
+			fwrite(&mapFileVersion,sizeof(int),1,mapFile_w);
+			fwrite(&waterIsHarmful,sizeof(bool),1,mapFile_w);
+			fwrite(&waterIsAVoid,sizeof(bool),1,mapFile_w);
+			fclose(mapFile_w);
+		} else {
+			*l<<"\nERROR: Could not write to file: "<<relMapFileName;
 		}
 	}
 

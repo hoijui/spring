@@ -1,6 +1,4 @@
-// VertexArray.cpp: implementation of the CVertexArrayRange class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include <cstring>
@@ -198,6 +196,27 @@ void CVertexArray::DrawArray0(const int drawType,unsigned int stride)
 	glVertexPointer(3,GL_FLOAT,stride,drawArray);
 	DrawArrays(drawType, stride);
 	glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+void CVertexArray::DrawArray2d0(const int drawType, unsigned int stride)
+{
+	CheckEndStrip();
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(2,GL_FLOAT,stride,drawArray);
+	DrawArrays(drawType, stride);
+	glDisableClientState(GL_VERTEX_ARRAY);
+}
+
+void CVertexArray::DrawArrayN(const int drawType, unsigned int stride)
+{
+	CheckEndStrip();
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glVertexPointer(3, GL_FLOAT, stride, drawArray);
+	glNormalPointer(GL_FLOAT, stride, drawArray + 3);
+	DrawArrays(drawType, stride);
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
 }
 
 

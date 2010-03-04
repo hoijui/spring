@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -439,7 +441,7 @@ void CMissileProjectile::DrawUnitPart(void)
 	CMatrix44f transMatrix(drawPos + dir * radius * 0.9f, -rightdir, updir, dir);
 
 	glPushMatrix();
-		glMultMatrixf(&transMatrix[0]);
+		glMultMatrixf(transMatrix);
 		glCallList(s3domodel->rootobject->displist); // dont cache displists because of delayed loading (GML)
 	glPopMatrix();
 }

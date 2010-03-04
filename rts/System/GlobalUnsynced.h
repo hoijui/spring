@@ -1,10 +1,4 @@
-/**
- * @file GlobalUnsynced.h
- * @brief Globally accessible unsynced stuff
- *
- * Contains globally accessible
- * stuff that does not remain synced
- */
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef GLOBALSTUFF_H
 #define GLOBALSTUFF_H
@@ -15,10 +9,9 @@
 class CUnit;
 
 /**
- * @brief Global unsynced stuff
+ * @brief Globally accessible unsynced stuff
  *
- * Class containing globally accessible
- * stuff that does not remain synced
+ * Contains globally accessible stuff that does not remain synced
  */
 class CGlobalUnsyncedStuff
 {
@@ -71,6 +64,7 @@ public:
 	// the draw frame number (never 0)
 	unsigned int drawFrame;
 
+
 	// the screen size in pixels
 	int screenSizeX;
 	int screenSizeY;
@@ -102,12 +96,14 @@ public:
 	 */
 	float aspectRatio;
 
+
 	/**
 	 * @brief Depthbuffer bits
 	 *
 	 * depthbuffer precision
 	 */
 	int depthBufferBits;
+
 
 	/**
 	 * @brief my player num
@@ -129,6 +125,7 @@ public:
 	 * Local player's ally team
 	 */
 	int myAllyTeam;
+
 
 	/**
 	 * @brief spectating
@@ -153,12 +150,25 @@ public:
 	 */
 	bool spectatingFullSelect;
 
+
+	bool drawSky;
+	bool drawWater;
+	bool drawGround;
+	bool drawMapMarks;
+	/**
+	 * @brief draw fog
+	 *
+	 * Whether fog (of war) is drawn or not
+	 */
+	bool drawFog;
+
 	/**
 	 * @brief draw debug
 	 *
 	 * Whether debugging info is drawn
 	 */
 	bool drawdebug;
+
 
 	/**
 	 * @brief active video
@@ -183,13 +193,6 @@ public:
 	float timeOffset;
 
 	/**
-	 * @brief draw fog
-	 *
-	 * Whether fog (of war) is drawn or not
-	 */
-	bool drawFog;
-
-	/**
 	 * @brief compressTextures
 	 *
 	 * If set, many (not all) textures will compressed on run-time.
@@ -201,6 +204,7 @@ public:
 	 *
 	 * enables some ATI bugfixes
 	 */
+	bool haveATI;
 	bool atiHacks;
 
 	/**
@@ -223,6 +227,9 @@ public:
 	 * Minimap on the right is the default.
 	 */
 	bool dualScreenMiniMapOnLeft;
+
+	bool moveWarnings;
+	bool buildWarnings;
 
 	/**
 	 * @brief direct control

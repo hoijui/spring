@@ -1,30 +1,23 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 /**
- * @file GlobalStuff.cpp
  * @brief Globally accessible stuff
- *
- * Contains implementation of synced and
- * unsynced global stuff
+ * Contains implementation of synced and unsynced global stuff.
  */
+
 #include "StdAfx.h"
 
-#include "GlobalUnsynced.h"
-
-#include <cstring>
+#include <string>
 #include <assert.h>
+#include <SDL/SDL_timer.h>
 
-#include "mmgr.h"
-#include "Util.h"
-#include "Sim/Projectiles/ProjectileHandler.h"
-#include "Game/GameHelper.h"
+#include "GlobalUnsynced.h"
 #include "Game/GameSetup.h"
-#include "Sync/SyncTracer.h"
-#include "Sim/Misc/Team.h"
-#include "Game/Player.h"
+#include "Rendering/GL/myGL.h"
 #include "Sim/Misc/GlobalConstants.h"
-#include "Rendering/Textures/TAPalette.h"
-#include "Lua/LuaGaia.h"
-#include "Lua/LuaRules.h"
-#include "SDL_timer.h"
+#include "System/mmgr.h"
+#include "System/Util.h"
+#include "System/ConfigHandler.h"
 
 
 /**
@@ -68,40 +61,58 @@ CGlobalUnsyncedStuff::CGlobalUnsyncedStuff()
 {
 	boost::uint64_t randnum;
 	randnum = SDL_GetTicks();
-	usRandSeed = randnum&0xffffffff;
+	usRandSeed = randnum & 0xffffffff;
+
 	modGameTime = 0;
 	gameTime = 0;
 	lastFrameTime = 0;
 	drawFrame = 1;
+
 	viewSizeX = 100;
 	viewSizeY = 100;
 	pixelX = 0.01f;
 	pixelY = 0.01f;
 	aspectRatio = 1.0f;
+
 	myPlayerNum = 0;
 	myTeam = 1;
 	myAllyTeam = 1;
+
 	spectating           = false;
 	spectatingFullView   = false;
 	spectatingFullSelect = false;
-	drawdebug = false;
+
+	drawSky      = true;
+	drawWater    = true;
+	drawGround   = true;
+	drawFog      = true;
+	drawMapMarks = true;
+	drawdebug    = false;
+
 	active = true;
 	viewRange = MAX_VIEW_RANGE;
 	timeOffset = 0;
-	drawFog = true;
+
 	teamNanospray = false;
-	directControl = 0;
+	moveWarnings  = !!configHandler->Get("MoveWarnings", 0);
+	buildWarnings = !!configHandler->Get("BuildWarnings", 0);
+
+	directControl = NULL;
+
 	compressTextures = false;
 	atiHacks = false;
 	supportNPOTs = GLEW_ARB_texture_non_power_of_two;
+
 	{
-		std::string vendor = std::string((char*)glGetString(GL_VENDOR));
+		std::string vendor = std::string((char*) glGetString(GL_VENDOR));
 		StringToLowerInPlace(vendor);
-		bool isATi = (vendor.find("ati ") != string::npos);
-		if (isATi) {
-			std::string renderer = std::string((char*)glGetString(GL_RENDERER));
+		haveATI = (vendor.find("ati ") != std::string::npos);
+
+		if (haveATI) {
+			std::string renderer = std::string((char*) glGetString(GL_RENDERER));
 			StringToLowerInPlace(renderer);
-			supportNPOTs = (renderer.find(" x") == string::npos && renderer.find(" 9") == string::npos); //! x-series doesn't support NPOTs
+			//! x-series doesn't support NPOTs (but hd-series does)
+			supportNPOTs = (renderer.find(" x") == std::string::npos && renderer.find(" 9") == std::string::npos);
 		}
 	}
 }
@@ -112,6 +123,8 @@ CGlobalUnsyncedStuff::CGlobalUnsyncedStuff()
 CGlobalUnsyncedStuff::~CGlobalUnsyncedStuff()
 {
 }
+
+
 
 /**
  * @return unsynced random integer
@@ -132,7 +145,7 @@ int CGlobalUnsyncedStuff::usRandInt()
 float CGlobalUnsyncedStuff::usRandFloat()
 {
 	usRandSeed = (usRandSeed * 214013L + 2531011L);
-	return float(usRandSeed & RANDINT_MAX)/RANDINT_MAX;
+	return float(usRandSeed & RANDINT_MAX) / RANDINT_MAX;
 }
 
 /**

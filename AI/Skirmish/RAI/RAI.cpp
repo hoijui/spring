@@ -2,9 +2,14 @@
 #include "ExternalAI/IGlobalAICallback.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/MoveTypes/MoveInfo.h"
+#include "System/Util.h"
+
 #include "lib/cutils/Util.h"
+
 #include <stdio.h>
-#include <time.h> // time(NULL)
+//#include <direct.h>	// mkdir function (windows)
+//#include <sys/stat.h>	// mkdir function (linux)
+#include <time.h>		// time(NULL)
 
 static GlobalResourceMap* GRMap=0;
 static GlobalTerrainMap* GTMap=0;
@@ -137,8 +142,8 @@ void cRAI::InitAI(IGlobalAICallback* callback, int team)
 	{
 		ClearLogFiles();
 		*l<<"Loading Global RAI...";
-		*l<<"\n Mod = "<<cb->GetModName();
-		*l<<"\n Map = "<<cb->GetMapName();
+		*l<<"\n Mod = " << cb->GetModHumanName() << "(" << IntToString(cb->GetModHash(), "%x") << ")";
+		*l<<"\n Map = " << cb->GetMapName()      << "(" << IntToString(cb->GetMapHash(), "%x") << ")";
 		int seed = time(NULL);
 		srand(seed);
 		RAIs=0;
@@ -1068,42 +1073,89 @@ void cRAI::DebugDrawLine(float3 StartPos, float distance, int direction, float x
 			EndPos.z-=distance;
 		break;
 	}
-	cb->CreateLineFigure(StartPos,EndPos,width,arrow,lifetime,group);
+	cb->CreateLineFigure(StartPos, EndPos, width, arrow, lifetime, group);
 }
 
-void cRAI::DebugDrawShape(float3 CenterPos, float linelength, float width, int arrow, float yposoffset, int lifetime, int sides, int group)
+void cRAI::DebugDrawShape(float3 centerPos, float lineLength, float width, int arrow, float yPosOffset, int lifeTime, int sides, int group)
 {
-	DebugDrawLine(CenterPos,linelength,0,-linelength/2,linelength/2,yposoffset,lifetime,arrow,width,group);
-	DebugDrawLine(CenterPos,linelength,1,-linelength/2,-linelength/2,yposoffset,lifetime,arrow,width,group);
-	DebugDrawLine(CenterPos,linelength,2,linelength/2,-linelength/2,yposoffset,lifetime,arrow,width,group);
-	DebugDrawLine(CenterPos,linelength,3,linelength/2,linelength/2,yposoffset,lifetime,arrow,width,group);
+	DebugDrawLine(centerPos, lineLength, 0, -lineLength/2,  lineLength/2, yPosOffset, lifeTime, arrow, width, group);
+	DebugDrawLine(centerPos, lineLength, 1, -lineLength/2, -lineLength/2, yPosOffset, lifeTime, arrow, width, group);
+	DebugDrawLine(centerPos, lineLength, 2,  lineLength/2, -lineLength/2, yPosOffset, lifeTime, arrow, width, group);
+	DebugDrawLine(centerPos, lineLength, 3,  lineLength/2,  lineLength/2, yPosOffset, lifeTime, arrow, width, group);
+}
+
+bool cRAI::LocateFile(IAICallback* cb, const string& relFileName, string& absFileName, bool forWriting) {
+
+	int action = AIVAL_LOCATE_FILE_R;
+	if (forWriting) {
+		action = AIVAL_LOCATE_FILE_W;
+	}
+
+	const size_t absFN_sizeMax = 512 + relFileName.size();
+	char absFN[absFN_sizeMax];
+	STRCPYS(absFN, absFN_sizeMax, relFileName.c_str());
+	const bool located = cb->GetValue(action, absFN);
+
+	if (located) {
+		absFileName = absFN;
+	} else {
+		absFileName = "";
+	}
+
+	return located;
+}
+
+static bool IsFSGoodChar(const char c) {
+
+	if ((c >= '0') && (c <= '9')) {
+		return true;
+	} else if ((c >= 'a') && (c <= 'z')) {
+		return true;
+	} else if ((c >= 'A') && (c <= 'Z')) {
+		return true;
+	} else if ((c == '.') || (c == '_') || (c == '-')) {
+		return true;
+	}
+
+	return false;
+}
+std::string cRAI::MakeFileSystemCompatible(const std::string& str) {
+
+	std::string cleaned = str;
+
+	for (std::string::size_type i=0; i < cleaned.size(); i++) {
+		if (!IsFSGoodChar(cleaned[i])) {
+			cleaned[i] = '_';
+		}
+	}
+
+	return cleaned;
+}
+
+void cRAI::RemoveLogFile(string relFileName) const {
+
+	string absFileName;
+	if (cRAI::LocateFile(cb, relFileName, absFileName, true)) {
+		remove(absFileName.c_str());
+	}
 }
 
 void cRAI::ClearLogFiles()
 {
-	string logDir = cLogFile::GetDir(cb);
+	string logDir = "";
 
-	string logFileName;
-	for( int i=0; i<16; i++ )
+	for( int i=0; i<32; i++ )
 	{
 		char c[3];
 		SNPRINTF(c, 3, "%i", i);
-		logFileName = logDir+"RAI"+string(c)+"_LastGame.log";
-		remove(logFileName.c_str());
+		RemoveLogFile(logDir+"RAI"+string(c)+"_LastGame.log");
 	}
 
-	logFileName=logDir+"RAIGlobal_LastGame.log";
-	remove(logFileName.c_str());
-	logFileName=logDir+"TerrainMapDebug.log";
-	remove(logFileName.c_str());
-//	logFileName=logDir+"PathfinderDebug.log";
-//	remove(logFileName.c_str());
-//	logFileName=logDir+"PathFinderAPNDebug.log";
-//	remove(logFileName.c_str());
-//	logFileName=logDir+"PathFinderNPNDebug.log";
-//	remove(logFileName.c_str());
-//	logFileName=logDir+"Prerequisite.log";
-//	remove(logFileName.c_str());
-//	logFileName=logDir+"Debug.log";
-//	remove(logFileName.c_str());
+	RemoveLogFile(logDir+"RAIGlobal_LastGame.log");
+	RemoveLogFile(logDir+"TerrainMapDebug.log");
+//	RemoveLogFile(logDir+"PathfinderDebug.log");
+//	RemoveLogFile(logDir+"PathFinderAPNDebug.log");
+//	RemoveLogFile(logDir+"PathFinderNPNDebug.log");
+//	RemoveLogFile(logDir+"Prerequisite.log");
+//	RemoveLogFile(logDir+"Debug.log");
 }

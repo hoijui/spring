@@ -1,8 +1,7 @@
-// BFGroundTextures.h
-///////////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __BF_GROUND_TEXTURES_H__
-#define __BF_GROUND_TEXTURES_H__
+#ifndef _BF_GROUND_TEXTURES_H_
+#define _BF_GROUND_TEXTURES_H_
 
 #include "Rendering/GL/myGL.h"
 
@@ -41,6 +40,10 @@ protected:
 	int tileMapXSize;
 	int tileMapYSize;
 
+	float* heightMaxes;
+	float* heightMins;
+	float* stretchFactors;
+
 	//! use Pixel Buffer Objects for async. uploading (DMA)
 	bool usePBO;
 	GLuint pboIDs[10];
@@ -51,4 +54,4 @@ protected:
 	inline bool TexSquareInView(int, int);
 };
 
-#endif // __BF_GROUND_TEXTURES_H__
+#endif // _BF_GROUND_TEXTURES_H_

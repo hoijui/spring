@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "SDL_mouse.h"
 #include "SDL_keyboard.h"
@@ -16,6 +18,7 @@
 #include "glFont.h"
 #include "GL/VertexArray.h"
 #include "EventHandler.h"
+#include "Colors.h"
 #include "NetProtocol.h"
 #include "LogOutput.h"
 #include "Sound/Sound.h"
@@ -41,8 +44,7 @@ CR_REG_METADATA_SUB(CInMapDraw, MapPoint, (
 	CR_MEMBER(label),
 	CR_MEMBER(senderAllyTeam),
 	CR_MEMBER(senderSpectator),
-	CR_RESERVED(4),
-	CR_SERIALIZER(Serialize)
+	CR_RESERVED(4)
 ));
 
 CR_BIND(CInMapDraw::MapLine, );
@@ -52,8 +54,7 @@ CR_REG_METADATA_SUB(CInMapDraw, MapLine, (
 	CR_MEMBER(pos2),
 	CR_MEMBER(senderAllyTeam),
 	CR_MEMBER(senderSpectator),
-	CR_RESERVED(4),
-	CR_SERIALIZER(Serialize)
+	CR_RESERVED(4)
 ));
 
 CR_BIND(CInMapDraw::DrawQuad, );
@@ -212,17 +213,6 @@ void SerializeColor(creg::ISerializer &s, unsigned char **color)
 	}
 }
 
-void CInMapDraw::MapPoint::Serialize(creg::ISerializer &s)
-{
-	SerializeColor(s,&color);
-}
-
-void CInMapDraw::MapLine::Serialize(creg::ISerializer &s)
-{
-	SerializeColor(s,&color);
-}
-
-
 bool CInMapDraw::MapPoint::MaySee(CInMapDraw* imd) const
 {
 	const int allyteam = senderAllyTeam;
@@ -251,7 +241,7 @@ struct InMapDraw_QuadDrawer: public CReadMap::IQuadDrawer
 {
 	CVertexArray *va, *lineva;
 	CInMapDraw* imd;
-	unsigned int texture;
+	std::vector<CInMapDraw::MapPoint*>* visLabels;
 
 	void DrawQuad(int x, int y);
 };
@@ -300,8 +290,7 @@ void InMapDraw_QuadDrawer::DrawQuad(int x, int y)
 			va->AddVertexQTC(pos2 - dir1 * size - dir2 * size, 0.00f, 0, col);
 
 			if (pi->label.size() > 0) {
-				font->SetTextColor(pi->color[0]/255.0f, pi->color[1]/255.0f, pi->color[2]/255.0f, 1.0f); //FIXME (overload!)
-				font->glWorldPrint(pos2 + UpVector * 6, 26.0f, pi->label);
+				visLabels->push_back(&*pi);
 			}
 		}
 	}
@@ -322,25 +311,24 @@ void CInMapDraw::Draw(void)
 {
 	GML_STDMUTEX_LOCK(inmap); //! Draw
 
-	glDepthMask(0);
-
 	CVertexArray* va = GetVertexArray();
 	va->Initialize();
 	CVertexArray* lineva = GetVertexArray();
 	lineva->Initialize();
-	//font->Begin();
-	font->SetColors(); //! default
 
 	InMapDraw_QuadDrawer drawer;
 	drawer.imd = this;
 	drawer.lineva = lineva;
 	drawer.va = va;
-	drawer.texture = texture;
+	drawer.visLabels = &visibleLabels;
+
+	glDepthMask(0);
+	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_BLEND);
+	glBindTexture(GL_TEXTURE_2D, texture);
 
 	readmap->GridVisibility(camera, DRAW_QUAD_SIZE, 3000.0f, &drawer);
 
-	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-	glEnable(GL_BLEND);
 	glDisable(GL_TEXTURE_2D);
 	glLineWidth(3.f);
 	lineva->DrawArrayC(GL_LINES); //! draw lines
@@ -354,9 +342,22 @@ void CInMapDraw::Draw(void)
 	// draw points
 	glLineWidth(1);
 	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, texture);
 	va->DrawArrayTC(GL_QUADS); //! draw point markers 
-	//font->End(); //! draw point markers text
+
+	if (visibleLabels.size() > 0) {
+		font->SetColors(); //! default
+
+		//! draw point labels
+		for (std::vector<MapPoint*>::iterator pi = visibleLabels.begin(); pi != visibleLabels.end(); ++pi) {
+			float3 pos = (*pi)->pos;
+			pos.y += 111.0f;
+
+			font->SetTextColor((*pi)->color[0]/255.0f, (*pi)->color[1]/255.0f, (*pi)->color[2]/255.0f, 1.0f); //FIXME (overload!)
+			font->glWorldPrint(pos, 26.0f, (*pi)->label);
+		}
+
+		visibleLabels.clear();
+	}
 
 	glDepthMask(1);
 }
@@ -500,7 +501,7 @@ void CInMapDraw::LocalPoint(const float3& constPos, const std::string& label,
 	pos.y = ground->GetHeight(pos.x, pos.z) + 2.0f;
 
 	// event clients may process the point
-	// iif their owner is allowed to see it
+	// if their owner is allowed to see it
 	if (allowed && eventHandler.MapDrawCmd(playerID, NET_POINT, &pos, NULL, &label)) {
 		return;
 	}
@@ -510,7 +511,7 @@ void CInMapDraw::LocalPoint(const float3& constPos, const std::string& label,
 	// rendering the quads)
 	MapPoint point;
 	point.pos = pos;
-	point.color = teamHandler->Team(sender->team)->color;
+	point.color = sender->spectator ? color4::white : teamHandler->Team(sender->team)->color;
 	point.label = label;
 	point.senderAllyTeam = teamHandler->AllyTeam(sender->team);
 	point.senderSpectator = sender->spectator;
@@ -553,7 +554,7 @@ void CInMapDraw::LocalLine(const float3& constPos1, const float3& constPos2,
 	MapLine line;
 	line.pos  = pos1;
 	line.pos2 = pos2;
-	line.color = teamHandler->Team(sender->team)->color;
+	line.color = sender->spectator ? color4::white : teamHandler->Team(sender->team)->color;
 	line.senderAllyTeam = teamHandler->AllyTeam(sender->team);
 	line.senderSpectator = sender->spectator;
 

@@ -1,6 +1,4 @@
-// UnitHandler.cpp: implementation of the CUnitHandler class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include <assert.h>
@@ -17,8 +15,9 @@
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
-#include "Rendering/FartextureHandler.h"
+#include "Rendering/FarTextureHandler.h"
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GL/VertexArray.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/AirBaseHandler.h"
@@ -63,9 +62,6 @@ CR_REG_METADATA(CUnitHandler, (
 	CR_MEMBER(lastCmdDamageWarning),
 	CR_MEMBER(limitDgun),
 	CR_MEMBER(dgunRadius),
-	CR_MEMBER(diminishingMetalMakers),
-	CR_MEMBER(metalMakerIncome),
-	CR_MEMBER(metalMakerEfficiency),
 	CR_MEMBER(toBeRemoved),
 	CR_MEMBER(morphUnitToFeature),
 //	CR_MEMBER(toBeRemoved),
@@ -96,9 +92,6 @@ CUnitHandler::CUnitHandler(bool serializing)
 	lastDamageWarning(0),
 	lastCmdDamageWarning(0),
 	limitDgun(false),
-	diminishingMetalMakers(false),
-	metalMakerIncome(0),
-	metalMakerEfficiency(1),
 	morphUnitToFeature(true)
 {
 	const size_t maxUnitsTemp = std::min(gameSetup->maxUnits * teamHandler->ActiveTeams(), MAX_UNITS);
@@ -120,10 +113,6 @@ CUnitHandler::CUnitHandler(bool serializing)
 		limitDgun = true;
 		dgunRadius = gs->mapx * 3;
 	}
-	if (gameSetup->diminishingMMs) {
-		diminishingMetalMakers = true;
-	}
-
 	if (!serializing) {
 		airBaseHandler = new CAirBaseHandler;
 
@@ -217,7 +206,8 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 			break;
 		}
 	}
-	//debug
+
+#ifdef _DEBUG
 	for (usi = activeUnits.begin(); usi != activeUnits.end(); /* no post-op */) {
 		if (*usi == delUnit) {
 			logOutput.Print("Error: Duplicated unit found in active units on erase");
@@ -226,6 +216,7 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 			++usi;
 		}
 	}
+#endif
 
 	GML_STDMUTEX_LOCK(runit); // DeleteUnitNow
 
@@ -257,8 +248,6 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 
 void CUnitHandler::Update()
 {
-	SCOPED_TIMER("Unit handler");
-
 	if(!toBeRemoved.empty()) {
 
 		GML_RECMUTEX_LOCK(unit); // Update - for anti-deadlock purposes.
@@ -276,9 +265,21 @@ void CUnitHandler::Update()
 
 	GML_UPDATE_TICKS();
 
-	std::list<CUnit*>::iterator usi;
-	for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
-		(*usi)->Update();
+	{
+		SCOPED_TIMER("Unit Movetype update");
+		std::list<CUnit*>::iterator usi;
+		for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
+			(*usi)->moveType->Update();
+			GML_GET_TICKS((*usi)->lastUnitUpdate);
+		}
+	}
+
+	{
+		SCOPED_TIMER("Unit update");
+		std::list<CUnit*>::iterator usi;
+		for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
+			(*usi)->Update();
+		}
 	}
 
 	{
@@ -293,12 +294,6 @@ void CUnitHandler::Update()
 			numToUpdate--;
 		}
 	} // for timer destruction
-
-	if (!(gs->frameNum & 15)) {
-		if (diminishingMetalMakers)
-			metalMakerEfficiency = 8.0f / (8.0f + max(0.0f, sqrt(metalMakerIncome / teamHandler->ActiveTeams()) - 4));
-		metalMakerIncome = 0;
-	}
 }
 
 
@@ -405,8 +400,14 @@ int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFe
 	CSolidObject* s;
 
 	if ((s = groundBlockingObjectMap->GroundBlocked(yardypos * gs->mapx + yardxpos))) {
-		if (dynamic_cast<CFeature*>(s)) {
-			feature = (CFeature*) s;
+		CFeature* f;
+		if ((f = dynamic_cast<CFeature*>(s))) {
+			if ((allyteam < 0) || f->IsInLosForAllyTeam(allyteam)) {
+				if (!f->def->reclaimable) {
+					return 0;
+				}
+				feature = f;
+			}
 		} else if (!dynamic_cast<CUnit*>(s) || (allyteam < 0) ||
 			(((CUnit*) s)->losStatus[allyteam] & LOS_INLOS)) {
 			if (s->immobile) {
@@ -459,7 +460,6 @@ int CUnitHandler::ShowUnitBuildSquare(const BuildInfo& buildInfo, const std::vec
 	glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_TEXTURE_2D);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	glBegin(GL_QUADS);
 
 	int xsize=buildInfo.GetXSize();
 	int zsize=buildInfo.GetZSize();
@@ -524,50 +524,61 @@ int CUnitHandler::ShowUnitBuildSquare(const BuildInfo& buildInfo, const std::vec
 	else
 		glColor4f(0.5f,0.5f,0,1.0f);
 
+	CVertexArray *va = GetVertexArray();
+	va->Initialize();
+	va->EnlargeArrays(canbuildpos.size()*4, 0, VA_SIZE_0);
 	for(unsigned int i=0; i<canbuildpos.size(); i++)
 	{
-		glVertexf3(canbuildpos[i]);
-		glVertexf3(canbuildpos[i]+float3(SQUARE_SIZE,0,0));
-		glVertexf3(canbuildpos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
-		glVertexf3(canbuildpos[i]+float3(0,0,SQUARE_SIZE));
+		va->AddVertexQ0(canbuildpos[i]);
+		va->AddVertexQ0(canbuildpos[i]+float3(SQUARE_SIZE,0,0));
+		va->AddVertexQ0(canbuildpos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
+		va->AddVertexQ0(canbuildpos[i]+float3(0,0,SQUARE_SIZE));
 	}
+	va->DrawArray0(GL_QUADS);
+
 	glColor4f(0.5f,0.5f,0,1.0f);
+	va->Initialize();
+	va->EnlargeArrays(featurepos.size()*4, 0, VA_SIZE_0);
 	for(unsigned int i=0; i<featurepos.size(); i++)
 	{
-		glVertexf3(featurepos[i]);
-		glVertexf3(featurepos[i]+float3(SQUARE_SIZE,0,0));
-		glVertexf3(featurepos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
-		glVertexf3(featurepos[i]+float3(0,0,SQUARE_SIZE));
+		va->AddVertexQ0(featurepos[i]);
+		va->AddVertexQ0(featurepos[i]+float3(SQUARE_SIZE,0,0));
+		va->AddVertexQ0(featurepos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
+		va->AddVertexQ0(featurepos[i]+float3(0,0,SQUARE_SIZE));
 	}
+	va->DrawArray0(GL_QUADS);
 
 	glColor4f(0.8f,0.0f,0,1.0f);
+	va->Initialize();
+	va->EnlargeArrays(nobuildpos.size(), 0, VA_SIZE_0);
 	for(unsigned int i=0; i<nobuildpos.size(); i++)
 	{
-		glVertexf3(nobuildpos[i]);
-		glVertexf3(nobuildpos[i]+float3(SQUARE_SIZE,0,0));
-		glVertexf3(nobuildpos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
-		glVertexf3(nobuildpos[i]+float3(0,0,SQUARE_SIZE));
+		va->AddVertexQ0(nobuildpos[i]);
+		va->AddVertexQ0(nobuildpos[i]+float3(SQUARE_SIZE,0,0));
+		va->AddVertexQ0(nobuildpos[i]+float3(SQUARE_SIZE,0,SQUARE_SIZE));
+		va->AddVertexQ0(nobuildpos[i]+float3(0,0,SQUARE_SIZE));
 	}
-
-	glEnd();
+	va->DrawArray0(GL_QUADS);
 
 	if (h < 0.0f) {
-		const float s[4] = { 0.0f, 0.0f, 1.0f, 0.5f }; // start color
-		const float e[4] = { 0.0f, 0.5f, 1.0f, 1.0f }; // end color
+		const unsigned char s[4] = { 0, 0, 255, 128 }; // start color
+		const unsigned char e[4] = { 0, 128, 255, 255 }; // end color
 
-		glBegin(GL_LINES);
-		glColor4fv(s); glVertex3f(x1, h, z1); glColor4fv(e); glVertex3f(x1, 0.0f, z1);
-		glColor4fv(s); glVertex3f(x2, h, z1); glColor4fv(e); glVertex3f(x2, 0.0f, z1);
-		glColor4fv(s); glVertex3f(x1, h, z2); glColor4fv(e); glVertex3f(x1, 0.0f, z2);
-		glColor4fv(s); glVertex3f(x2, h, z2); glColor4fv(e); glVertex3f(x2, 0.0f, z2);
-		glEnd();
-		// using the last end color
-		glBegin(GL_LINE_LOOP);
-		glVertex3f(x1, 0.0f, z1);
-		glVertex3f(x1, 0.0f, z2);
-		glVertex3f(x2, 0.0f, z2);
-		glVertex3f(x2, 0.0f, z1);
-		glEnd();
+		va = GetVertexArray();
+		va->Initialize();
+		va->EnlargeArrays(8, 0, VA_SIZE_C);
+		va->AddVertexQC(float3(x1, h, z1), s); va->AddVertexQC(float3(x1, 0.f, z1), e);
+		va->AddVertexQC(float3(x1, h, z2), s); va->AddVertexQC(float3(x1, 0.f, z2), e);
+		va->AddVertexQC(float3(x2, h, z2), s); va->AddVertexQC(float3(x2, 0.f, z2), e);
+		va->AddVertexQC(float3(x2, h, z1), s); va->AddVertexQC(float3(x2, 0.f, z1), e);
+		va->DrawArrayC(GL_LINES);
+
+		va->Initialize();
+		va->AddVertexQC(float3(x1, 0.0f, z1), e);
+		va->AddVertexQC(float3(x1, 0.0f, z2), e);
+		va->AddVertexQC(float3(x2, 0.0f, z2), e);
+		va->AddVertexQC(float3(x2, 0.0f, z1), e);
+		va->DrawArrayC(GL_LINE_LOOP);
 	}
 
 	glEnable(GL_DEPTH_TEST );

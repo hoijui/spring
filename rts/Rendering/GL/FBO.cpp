@@ -1,11 +1,10 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 /**
- * @file FBO.cpp
  * @brief EXT_framebuffer_object implementation
- *
  * EXT_framebuffer_object class implementation
- * Copyright (C) 2008.  Licensed under the terms of the
- * GNU GPL, v2 or later.
  */
+
 #include "StdAfx.h"
 #include <assert.h>
 #include <vector>
@@ -117,6 +116,9 @@ void FBO::DownloadAttachment(const GLenum attachment)
 			tex->format = GL_BGR;
 		}
 	}
+
+	if(bits < 32) /*FIXME*/
+		bits = 32;
 
 	switch (target) {
 		case GL_TEXTURE_3D:

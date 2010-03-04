@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "GroundMoveMath.h"
 #include "Map/ReadMap.h"
@@ -54,4 +56,10 @@ Gives the ground-level of given square.
 float CGroundMoveMath::yLevel(int xSquare, int zSquare) {
 	return readmap->centerheightmap[xSquare + zSquare * gs->mapx];
 }
+
+float CGroundMoveMath::yLevel(const float3& pos)
+{
+	return ground->GetHeight2(pos.x, pos.z) + 10;
+}
+
 

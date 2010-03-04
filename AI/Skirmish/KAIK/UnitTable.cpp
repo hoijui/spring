@@ -770,8 +770,11 @@ void CUnitTable::Init() {
 		unitTypes[i].category = CAT_LAST;
 
 		// GetUnitDefList() filled our unitDefs
-		// partially with null UnitDef*'s (bad,
-		// nothing much to do if this happens)
+		// partially with NULL UnitDef*'s
+		// This means that there are inconsistencies
+		// in the mod/game archive.
+		// Please inform the mod authors;
+		// they should fix the warnings in the infolog.
 		assert(unitTypes[i].def != 0x0);
 
 		if ((unitTypes[i].def)->movedata != NULL) {
@@ -1002,9 +1005,13 @@ std::string CUnitTable::GetDbgLogName() const {
 }
 
 std::string CUnitTable::GetModCfgName() const {
+	// name is used for human readability,
+	// while hash is used for uniqueness
+	// (in case the modder forgets changing the name inbetween versions)
 	std::string relFile =
 		std::string(CFGFOLDER) +
-		(ai->cb->GetModName()) +
+		AIUtil::MakeFileSystemCompatible(ai->cb->GetModHumanName()) +
+		"-" + IntToString(ai->cb->GetModHash(), "%x") +
 		".cfg";
 	std::string absFile = AIUtil::GetAbsFileName(ai->cb, relFile);
 

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "System/StdAfx.h"
 
 #include "Game/Camera.h"
@@ -14,7 +16,7 @@
 #include "System/GlobalUnsynced.h"
 #include "System/myMath.h"
 
-HUDDrawer* HUDDrawer::Get()
+HUDDrawer* HUDDrawer::GetInstance()
 {
 	static HUDDrawer hud;
 	return &hud;

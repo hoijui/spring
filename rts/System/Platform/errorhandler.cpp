@@ -1,13 +1,10 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 /**
- * @file errorhandler.cpp
  * @brief error messages
- * @author Tobi Vollebregt <tobivollebregt@gmail.com>
- * @author Christopher Han <xiphux@gmail.com>
- *
- * Error handling based on platform
- * Copyright (C) 2005.  Licensed under the terms of the
- * GNU GPL, v2 or later.
+ * Error handling based on platform.
  */
+
 #include <StdAfx.h>
 #include "errorhandler.h"
 
@@ -17,8 +14,6 @@
 #include <SDL.h>
 #ifdef _WIN32
 #include <windows.h>
-#elif defined(__APPLE__)
-#include "Mac/MacUtils.h"
 #endif
 
 // from X_MessageBox.cpp:
@@ -44,15 +39,11 @@ void ErrorMessageBox (const char *msg, const char *caption, unsigned int flags)
 		winFlags |= MB_ICONINFORMATION;
 
 	MessageBox (GetActiveWindow(), msg, caption, winFlags);
-
-// TODO: write Mac OS X specific message box
- #elif defined(__APPLE__)
-	MacMessageBox(msg, caption, flags);
 #else
 	// X implementation
+// TODO: write Mac OS X specific message box
 
 	X_MessageBox(msg, caption, flags);
-
 #endif
 
 	exit(-1); // continuing execution when SDL_Quit has already been run will result in a crash

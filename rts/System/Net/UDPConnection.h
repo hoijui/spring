@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef _REMOTE_CONNECTION
 #define _REMOTE_CONNECTION
 
@@ -165,6 +167,23 @@ private:
 	
 	unsigned sentOverhead, recvOverhead;
 	unsigned sentPackets, recvPackets;
+	
+	class BandwidthUsage
+	{
+	public:
+		BandwidthUsage();
+		void UpdateTime(unsigned newTime);
+		void DataSent(unsigned amount);
+		
+		float GetAverage() const;
+		
+	private:
+		unsigned lastTime;
+		unsigned trafficSinceLastTime;
+		
+		float average;
+	};
+	BandwidthUsage outgoing;
 };
 
 } //namespace netcode

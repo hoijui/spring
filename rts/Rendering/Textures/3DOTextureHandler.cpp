@@ -1,6 +1,4 @@
-// 3DOTextureHandler.cpp: implementation of the C3DOTextureHandler class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 
@@ -271,11 +269,9 @@ C3DOTextureHandler::UnitTexture* C3DOTextureHandler::Get3DOTexture(std::string n
 
 void C3DOTextureHandler::Set3doAtlases() const
 {
-	if(unitDrawer->advShading){
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, atlas3do2);
-		glActiveTexture(GL_TEXTURE0);
-	}
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, atlas3do2);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, atlas3do1);
 }
 

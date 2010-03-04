@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "Rendering/GL/myGL.h"
 
@@ -19,7 +21,7 @@
 #include "Game/GameSetup.h"
 #include "Game/ClientSetup.h"
 #include "Game/GameController.h"
-#include "Game/SelectMenu.h"
+#include "Menu/SelectMenu.h"
 #include "Game/PreGame.h"
 #include "Game/Game.h"
 #include "Sim/Misc/Team.h"
@@ -31,7 +33,7 @@
 #include "ConfigHandler.h"
 #include "Platform/errorhandler.h"
 #include "Platform/CrashHandler.h"
-#include "FileSystem/FileSystem.h"
+#include "FileSystem/FileSystemHandler.h"
 #include "FileSystem/FileHandler.h"
 #include "ExternalAI/IAILibraryManager.h"
 #include "Rendering/glFont.h"
@@ -121,6 +123,18 @@ SpringApp::~SpringApp()
  */
 bool SpringApp::Initialize()
 {
+#if defined(_WIN32) && defined(__GNUC__)
+	// load QTCreator's gdb helper dll; a variant of this should also work on other OSes
+	{
+		// don't display a dialog box if gdb helpers aren't found
+		UINT olderrors = SetErrorMode(SEM_FAILCRITICALERRORS);
+		if(LoadLibrary("gdbmacros.dll")) {
+			LogObject() << "QT Creator's gdbmacros.dll loaded";
+		}
+		SetErrorMode(olderrors);
+	}
+#endif
+
 	// Initialize class system
 	creg::System::InitializeClasses();
 
@@ -189,11 +203,7 @@ bool SpringApp::Initialize()
 	}
 
 	// use some ATI bugfixes?
-	std::string vendor = std::string((char*)glGetString(GL_VENDOR));
-	StringToLowerInPlace(vendor);
-	bool isATi = (vendor.find("ati ") != string::npos);
-	gu->atiHacks = !!configHandler->Get("AtiHacks", isATi?1:0 );
-	if (gu->atiHacks) {
+	if ((gu->atiHacks = !!configHandler->Get("AtiHacks", gu->haveATI? 1: 0))) {
 		logOutput.Print("ATI hacks enabled\n");
 	}
 
@@ -519,7 +529,11 @@ void SpringApp::SetupViewportGeometry()
 		}
 	}
 
-	agui::gui->UpdateScreenGeometry(gu->viewSizeX, gu->viewSizeY);
+	agui::gui->UpdateScreenGeometry(
+			gu->viewSizeX,
+			gu->viewSizeY,
+			gu->viewPosX,
+			(gu->winSizeY - gu->viewSizeY - gu->viewPosY) );
 	gu->pixelX = 1.0f / (float)gu->viewSizeX;
 	gu->pixelY = 1.0f / (float)gu->viewSizeY;
 
@@ -654,7 +668,7 @@ void SpringApp::ParseCmdLine()
 		string configSource = cmdline->GetString("config");
 		logOutput.Print("using configuration source \"" + ConfigHandler::Instantiate(configSource) + "\"");
 	} else {
-		logOutput.Print("using default configuration source \"" + ConfigHandler::Instantiate("") + "\"");
+		logOutput.Print("using default configuration source \"" + ConfigHandler::Instantiate() + "\"");
 	}
 
 	// mutually exclusive options that cause spring to quit immediately
@@ -765,6 +779,7 @@ void SpringApp::Startup()
 	}
 	else
 	{
+		LogObject() << "Loading startscript from: " << inputFile;
 		std::string startscript = inputFile;
 		CFileHandler fh(startscript);
 		if (!fh.FileExists())
@@ -1068,7 +1083,7 @@ void SpringApp::SaveWindowPosition()
 	return;
 #else
 	if (!fullscreen) {
-#if defined(_WIN32)
+  #if defined(_WIN32)
 		SDL_SysWMinfo info;
 		SDL_VERSION(&info.version);
 
@@ -1084,14 +1099,17 @@ void SpringApp::SaveWindowPosition()
 						windowState = 2;
 						break;
 					default:
+						configHandler->Set("WindowPosX", windowPosX);
+						configHandler->Set("WindowPosY", windowPosY);
 						windowState = 0;
 				}
 			}
 		}
 		configHandler->Set("WindowState", windowState);
-#endif
+  #else
 		configHandler->Set("WindowPosX", windowPosX);
 		configHandler->Set("WindowPosY", windowPosY);
+  #endif
 	}
 #endif
 }

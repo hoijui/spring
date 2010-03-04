@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef AAIRMOVETYPE_H_
 #define AAIRMOVETYPE_H_
 
@@ -27,6 +29,7 @@ public:
 	AAirMoveType(CUnit* unit);
 	~AAirMoveType();
 
+	bool UseSmoothMesh() const;
 	/// goalpos to resume flying to after landing
 	float3 oldGoalPos;
 	float3 oldpos;
@@ -36,6 +39,8 @@ public:
 
 	/// mods can use this to disable plane collisions
 	bool collide;
+	/// controls use of smoothGround for determining altitude
+	bool useSmoothMesh;
 	/// unit found to be dangerously close to our path
 	CUnit* lastColWarning;
 	/// 1=generally forward of us, 2=directly in path

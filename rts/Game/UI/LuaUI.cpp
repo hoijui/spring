@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// LuaUI.cpp: implementation of the CLuaUI class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
 #include <set>
@@ -36,16 +35,12 @@ using namespace std;
 #include "Lua/LuaOpenGL.h"
 #include "Lua/LuaVFS.h"
 #include "Lua/LuaIO.h"
-#include "Sim/Units/Groups/Group.h"
-#include "Sim/Units/Groups/GroupHandler.h"
-#include "Sim/Units/CommandAI/Command.h"
 #include "Game/Camera.h"
 #include "Game/Camera/CameraController.h"
 #include "Game/Game.h"
 #include "Game/GameHelper.h"
 #include "Game/PlayerRoster.h"
 #include "Game/SelectedUnits.h"
-#include "Sim/Misc/Team.h"
 #include "CommandColors.h"
 #include "CursorIcons.h"
 #include "GuiHandler.h"
@@ -56,19 +51,11 @@ using namespace std;
 #include "MiniMap.h"
 #include "MouseHandler.h"
 #include "Map/ReadMap.h"
-#include "Map/BaseGroundDrawer.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/InMapDraw.h"
 #include "Rendering/FontTexture.h"
-#include "Sim/Misc/LosHandler.h"
-#include "Sim/Units/Unit.h"
-#include "Sim/Units/UnitDef.h"
-#include "Sim/Units/UnitHandler.h"
-#include "Sim/Units/UnitDefHandler.h"
 #include "EventHandler.h"
 #include "LogOutput.h"
-#include "NetProtocol.h"
-#include "SpringApp.h"
 #include "FileSystem/FileHandler.h"
 #include "FileSystem/VFSHandler.h"
 #include "ConfigHandler.h"

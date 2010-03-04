@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef UNITDEF_H
 #define UNITDEF_H
 
@@ -63,7 +65,6 @@ public:
 	float energyStorage;
 
 	bool extractSquare;
-	bool isMetalMaker;
 
 	float autoHeal;     // amount autohealed
 	float idleAutoHeal; // amount autohealed only during idling
@@ -235,6 +236,7 @@ public:
 	float turnRadius;
 	float wantedHeight;
 	float verticalSpeed;
+	bool useSmoothMesh;
 	bool canCrash;
 	bool hoverAttack;
 	bool airStrafe;
@@ -285,6 +287,7 @@ public:
 
 	bool canKamikaze;								//self destruct if enemy come to close
 	float kamikazeDist;
+	bool kamikazeUseLOS;
 
 	bool targfac;
 	bool canDGun;

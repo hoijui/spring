@@ -1,16 +1,18 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "PlayerBase.h"
 
 #include <cstdlib>
-
-#include "Platform/byteorder.h"
 
 PlayerBase::PlayerBase() :
 	TeamController(),
 	rank(-1),
 	spectator(false),
 	isFromDemo(false),
-	readyToStart(false)
+	readyToStart(false),
+	desynced(false),
+	cpuUsage (0.0f)
 {
 }
 
@@ -30,13 +32,4 @@ void PlayerBase::SetValue(const std::string& key, const std::string& value)
 		isFromDemo = static_cast<bool>(std::atoi(value.c_str()));
 	else
 		customValues[key] = value;
-}
-
-void PlayerStatistics::swab()
-{
-	swabTC();
-
-	mousePixels = swabdword(mousePixels);
-	mouseClicks = swabdword(mouseClicks);
-	keyPresses = swabdword(keyPresses);
 }

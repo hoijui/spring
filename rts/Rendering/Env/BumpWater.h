@@ -1,6 +1,4 @@
-// BumpWater.h: interface for the CBumpWater class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef __BUMP_WATER_H__
 #define __BUMP_WATER_H__
@@ -33,7 +31,7 @@ private:
 	void GetUniformLocations( GLuint& program );
 
 	//! user options
-	bool  reflection;
+	char  reflection;   //! 0:=off, 1:=don't render the terrain, 2:=render everything+terrain
 	char  refraction;   //! 0:=off, 1:=screencopy, 2:=own rendering cycle
 	int   reflTexSize;
 	bool  depthCopy;    //! uses a screen depth copy, which allows a nicer interpolation between deep sea and shallow water

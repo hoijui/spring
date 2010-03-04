@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -166,7 +168,52 @@ void CWeaponProjectile::Collision(CFeature* feature)
 	if(gs->randFloat() < weaponDef->fireStarter)
 		feature->StartFire();
 
-	Collision();
+	if (/* !weaponDef->noExplode || gs->frameNum & 1 */ true) {
+		// don't do damage only on odd-numbered frames
+		// for noExplode projectiles (it breaks coldet)
+		float3 impactDir = speed;
+		impactDir.Normalize();
+
+		// Dynamic Damage
+		DamageArray dynDamages;
+		if (weaponDef->dynDamageExp > 0)
+			dynDamages = weaponDefHandler->DynamicDamages(weaponDef->damages,
+					startpos, pos, (weaponDef->dynDamageRange > 0)
+							? weaponDef->dynDamageRange
+							: weaponDef->range,
+					weaponDef->dynDamageExp, weaponDef->dynDamageMin,
+					weaponDef->dynDamageInverted);
+
+		helper->Explosion(
+			pos,
+			(weaponDef->dynDamageExp > 0)? dynDamages: weaponDef->damages,
+			weaponDef->areaOfEffect,
+			weaponDef->edgeEffectiveness,
+			weaponDef->explosionSpeed,
+			owner(),
+			true,
+			weaponDef->noExplode? 0.3f: 1.0f,
+			weaponDef->noExplode || weaponDef->noSelfDamage,
+			weaponDef->impactOnly,
+			weaponDef->explosionGenerator,
+			0,
+			impactDir,
+			weaponDef->id,
+			feature
+		);
+	}
+
+	if (weaponDef->soundhit.getID(0) > 0) {
+		Channels::Battle.PlaySample(weaponDef->soundhit.getID(0), this, weaponDef->soundhit.getVolume(0));
+	}
+
+	if (!weaponDef->noExplode){
+		CProjectile::Collision();
+	} else {
+		if (TraveledRange()) {
+			CProjectile::Collision();
+		}
+	}
 }
 
 void CWeaponProjectile::Collision(CUnit* unit)
@@ -294,7 +341,7 @@ void CWeaponProjectile::DrawUnitPart()
 	CMatrix44f transMatrix(drawPos, -rightdir, updir, dir);
 
 	glPushMatrix();
-		glMultMatrixf(&transMatrix[0]);
+		glMultMatrixf(transMatrix);
 		glCallList(s3domodel->rootobject->displist); // dont cache displists because of delayed loading
 	glPopMatrix();
 }

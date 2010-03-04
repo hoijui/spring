@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef MOVEMATH_H
 #define MOVEMATH_H
 
@@ -34,7 +36,7 @@ public:
 	bool IsNonBlocking(const MoveData& moveData, const CSolidObject* object);
 
 	// gives the y-coordinate the unit will "stand on"
-	float yLevel(float3 pos);
+	virtual float yLevel(const float3& pos);
 	virtual float yLevel(int xSquare, int Square) = 0;
 
 	// returns the block-status of a single quare

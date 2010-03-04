@@ -1,19 +1,4 @@
-/*
-	Copyright (c) 2008 Robin Vobruba <hoijui.quaero@gmail.com>
-
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef _SSKIRMISHAICALLBACKIMPL_H
 #define	_SSKIRMISHAICALLBACKIMPL_H
@@ -162,8 +147,6 @@ EXPORT(float            ) skirmishAiCallback_UnitDef_0REF1Resource2resourceId0ge
 EXPORT(float            ) skirmishAiCallback_UnitDef_0REF1Resource2resourceId0getStorage(
 		int teamId, int unitDefId, int resourceId);
 EXPORT(bool             ) skirmishAiCallback_UnitDef_0REF1Resource2resourceId0isSquareResourceExtractor(
-		int teamId, int unitDefId, int resourceId);
-EXPORT(bool             ) skirmishAiCallback_UnitDef_0REF1Resource2resourceId0isResourceMaker(
 		int teamId, int unitDefId, int resourceId);
 EXPORT(float            ) skirmishAiCallback_UnitDef_getBuildTime(int teamId, int unitDefId);
 EXPORT(float            ) skirmishAiCallback_UnitDef_getAutoHeal(int teamId, int unitDefId);
@@ -566,6 +549,7 @@ EXPORT(bool             ) skirmishAiCallback_Group_isSelected(int teamId, int gr
 
 // BEGINN OBJECT Mod
 EXPORT(const char*      ) skirmishAiCallback_Mod_getFileName(int teamId);
+EXPORT(int              ) skirmishAiCallback_Mod_getHash(int teamId);
 
 EXPORT(const char*      ) skirmishAiCallback_Mod_getHumanName(int teamId);
 EXPORT(const char*      ) skirmishAiCallback_Mod_getShortName(int teamId);
@@ -654,6 +638,8 @@ EXPORT(float            ) skirmishAiCallback_Map_0ARRAY1VALS0REF1Resource2resour
 EXPORT(struct SAIFloat3 ) skirmishAiCallback_Map_0ARRAY1VALS0REF1Resource2resourceId0initResourceMapSpotsNearest(
 		int teamId, int resourceId, struct SAIFloat3 pos);
 EXPORT(const char*      ) skirmishAiCallback_Map_getName(int teamId);
+EXPORT(const char*      ) skirmishAiCallback_Map_getHumanName(int teamId);
+EXPORT(int              ) skirmishAiCallback_Map_getHash(int teamId);
 EXPORT(float            ) skirmishAiCallback_Map_getElevationAt(int teamId, float x, float z);
 EXPORT(float            ) skirmishAiCallback_Map_0REF1Resource2resourceId0getMaxResource(
 		int teamId, int resourceId);

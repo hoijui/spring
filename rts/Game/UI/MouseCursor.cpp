@@ -1,5 +1,9 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
+
+#include <cstring>
 
 #include "bitops.h"
 #include "CommandColors.h"
@@ -250,7 +254,7 @@ CBitmap* CMouseCursor::getAlignedBitmap(const CBitmap &orig)
 	const int ny = next_power_of_2(orig.ysize);
 
 	unsigned char* data = new unsigned char[nx * ny * 4];
-	memset(data, 0, nx * ny * 4);
+	std::memset(data, 0, nx * ny * 4);
 
 	for (int y = 0; y < orig.ysize; ++y) {
 		for (int x = 0; x < orig.xsize; ++x) {
@@ -303,12 +307,25 @@ void CMouseCursor::Draw(int x, int y, float scale)
 
 	glViewport(xp, gu->viewSizeY - yp, xs, ys);
 
-	glBegin(GL_QUADS);
-		glTexCoord2f(0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 0.0f);
-		glTexCoord2f(0.0f, 1.0f); glVertex3f(0.0f, 1.0f, 0.0f);
-		glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f, 1.0f, 0.0f);
-		glTexCoord2f(1.0f, 0.0f); glVertex3f(1.0f, 0.0f, 0.0f);
-	glEnd();
+	static float vertices[] = {0.f, 0.f, 0.f,
+				   0.f, 1.f, 0.f,
+				   1.f, 1.f, 0.f,
+				   1.f, 0.f, 0.f};
+	static float texcoords[] = {0.f, 0.f,
+				    0.f, 1.f,
+				    1.f, 1.f,
+				    1.f, 0.f};
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+	glTexCoordPointer(2, GL_FLOAT, 0, texcoords);
+	glVertexPointer(3, GL_FLOAT, 0, vertices);
+
+	glDrawArrays(GL_QUADS, 0, 4);
+
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisableClientState(GL_VERTEX_ARRAY);
 
 	glViewport(gu->viewPosX, 0, gu->viewSizeX, gu->viewSizeY);
 }
@@ -328,12 +345,25 @@ void CMouseCursor::DrawQuad(int x, int y)
 
 	glViewport(gu->viewPosX + xp, yp, xs, ys);
 
-	glBegin(GL_QUADS);
-	 	glTexCoord2f(0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 0.0f);
-	 	glTexCoord2f(0.0f, 1.0f); glVertex3f(0.0f, 1.0f, 0.0f);
-	 	glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f, 1.0f, 0.0f);
-	 	glTexCoord2f(1.0f, 0.0f); glVertex3f(1.0f, 0.0f, 0.0f);
-	glEnd();
+	static float vertices[] = {0.f, 0.f, 0.f,
+				   0.f, 1.f, 0.f,
+				   1.f, 1.f, 0.f,
+				   1.f, 0.f, 0.f};
+	static float texcoords[] = {0.f, 0.f,
+				    0.f, 1.f,
+				    1.f, 1.f,
+				    1.f, 0.f};
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+	glTexCoordPointer(2, GL_FLOAT, 0, texcoords);
+	glVertexPointer(3, GL_FLOAT, 0, vertices);
+
+	glDrawArrays(GL_QUADS, 0, 4);
+
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisableClientState(GL_VERTEX_ARRAY);
 }
 
 

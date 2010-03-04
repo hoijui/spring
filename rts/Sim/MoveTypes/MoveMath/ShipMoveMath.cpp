@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "ShipMoveMath.h"
 #include "Map/ReadMap.h"
@@ -27,6 +29,12 @@ float CShipMoveMath::SpeedMod(const MoveData& moveData, float height, float slop
 Ships are always in water level.
 */
 float CShipMoveMath::yLevel(int xSquare, int zSquare) {
+	return 0.0f;
+}
+
+
+float CShipMoveMath::yLevel(const float3& pos)
+{
 	return 0.0f;
 }
 

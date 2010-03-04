@@ -1,8 +1,13 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
+
+#include "Map/SMF/BFGroundTextures.h"
+
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 
-#include "Map/SMF/BFGroundTextures.h"
 #include "Map/SMF/mapfile.h"
 #include "Map/SMF/SmfReadMap.h"
 #include "Map/MapInfo.h"
@@ -10,6 +15,7 @@
 #include "Game/Game.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/Platform/errorhandler.h"
+#include "System/TimeProfiler.h"
 #include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/mmgr.h"
@@ -18,6 +24,7 @@
 using std::sprintf;
 using std::string;
 using std::max;
+using std::min;
 
 CBFGroundTextures::CBFGroundTextures(CSmfReadMap* rm) :
 	bigSquareSize(128),
@@ -55,7 +62,7 @@ CBFGroundTextures::CBFGroundTextures(CSmfReadMap* rm) :
 		if (smf.smtFileNames.size() != tileHeader.numTileFiles) {
 			logOutput.Print(
 				"[CBFGroundTextures] mismatched number of .smt file "
-				"references between map's .smd (%d) and header (%d);"
+				"references between map's .smd ("_STPF_") and header (%d);"
 				" ignoring .smd overrides",
 				smf.smtFileNames.size(), tileHeader.numTileFiles
 			);
@@ -150,6 +157,55 @@ CBFGroundTextures::CBFGroundTextures(CSmfReadMap* rm) :
 			LoadSquare(x, y, 3);
 		}
 	}
+
+
+	ScopedOnceTimer timer("generating MipMaps");
+	const int nb = numBigTexX * numBigTexY;
+	heightMaxes = new float[nb];
+	heightMins = new float[nb];
+	stretchFactors = new float[nb];
+	const float * hdata= map->mipHeightmap[1];
+	const int mx=header->mapx/2;
+	const int nbx=numBigTexX;
+
+	for (int y = 0; y < numBigTexY; ++y) {
+		for (int x = 0; x < numBigTexX; ++x) {
+			heightMaxes[y*numBigTexX+x]	=-100000;
+			heightMins[y*numBigTexX+x]	=100000;
+			stretchFactors[y*numBigTexX+x]=0;
+			for (int x2=x*64+1;x2<(x+1)*64-1;x2++){ //64 is the mipped heightmap square size
+				for (int y2=y*64+1;y2<(y+1)*64-1;y2++){ //we leave out the borders on sampling because it is easier to do the Sobel kernel convolution
+					heightMaxes[y*nbx+x] = max( hdata[y2*mx+x2] , heightMaxes[y*nbx+x]	);
+					heightMins[y*nbx+x] =  min( hdata[y2*mx+x2] , heightMins[y*nbx+x]	);
+					float gx =	-1 * hdata[(y2-1) * mx + x2-1] + //Gx sobel kernel
+								-2 * hdata[(y2  ) * mx + x2-1] +
+								-1 * hdata[(y2+1) * mx + x2-1] +
+								 1 * hdata[(y2-1) * mx + x2+1] +
+								 2 * hdata[(y2  ) * mx + x2+1] +
+								 1 * hdata[(y2+1) * mx + x2+1] ;
+					gx = fabs(gx);
+
+					float gy =	-1 * hdata[(y2+1) * mx + x2-1] + //Gy sobel kernel
+								-2 * hdata[(y2+1) * mx + x2  ] +
+								-1 * hdata[(y2+1) * mx + x2+1] +
+								 1 * hdata[(y2-1) * mx + x2-1] +
+								 2 * hdata[(y2-1) * mx + x2  ] +
+								 1 * hdata[(y2-1) * mx + x2+1] ;
+					gy = fabs(gy);
+
+					float g = (gx+gy)/64; //linear sum, no need for fancy sqrt
+					g *= g;
+					/*square to amplify large stretches of height.
+					in fact, this should probably be different,
+					as g of 64 (8*(1+2+1+1+2+1) would mean a 45 degree angle (which is what I think is streched),
+					we should divide by 64 before squarification to supress lower values*/ 
+					stretchFactors[y*nbx+x] += g;
+
+				}
+			}
+			stretchFactors[y*nbx+x]++;
+		}
+	}
 }
 
 CBFGroundTextures::~CBFGroundTextures(void)
@@ -165,6 +221,10 @@ CBFGroundTextures::~CBFGroundTextures(void)
 	if (usePBO) {
 		glDeleteBuffers(10,pboIDs);
 	}
+
+	delete[] heightMaxes;
+	delete[] heightMins;
+	delete[] stretchFactors;
 }
 
 
@@ -172,7 +232,8 @@ void CBFGroundTextures::SetTexture(int x, int y)
 {
 	GroundSquare* square = &squares[y * numBigTexX + x];
 	glBindTexture(GL_TEXTURE_2D, square->texture);
-	if (game->GetDrawMode() == CGame::normalDraw) {
+
+	if (game->GetDrawMode() == CGame::gameNormalDraw) {
 		square->lastUsed = gu->drawFrame;
 	}
 }
@@ -194,6 +255,7 @@ inline bool CBFGroundTextures::TexSquareInView(int btx, int bty) {
 
 void CBFGroundTextures::DrawUpdate(void)
 {
+	float diag = fastmath::apxsqrt(gu->viewSizeX*gu->viewSizeX + gu->viewSizeY*gu->viewSizeY); //screen diagonal number of pixels
 	for (int y = 0; y < numBigTexY; ++y) {
 		float dy = cam2->pos.z - y * bigSquareSize * SQUARE_SIZE - (SQUARE_SIZE << 6);
 		dy = max(0.0f, float(fabs(dy) - (SQUARE_SIZE << 6)));
@@ -213,9 +275,33 @@ void CBFGroundTextures::DrawUpdate(void)
 
 			float dx = cam2->pos.x - x * bigSquareSize * SQUARE_SIZE - (SQUARE_SIZE << 6);
 			dx = max(0.0f, float(fabs(dx) - (SQUARE_SIZE << 6)));
-			float dist = fastmath::apxsqrt(dx * dx + dy * dy);
+			float dz = max( cam2->pos.y - (heightMaxes[y * numBigTexX + x] + heightMins[y * numBigTexX + x])/2 ,0.0f);
+			float dist = fastmath::apxsqrt(dx * dx + dy * dy + dz * dz);
 
-			int wantedLevel = (int)dist / 1000;
+			// so, we shall work under the following assumptions:
+			// the minimum mip level is the closest ceiling mip level that we can use based on distance, FOV and tile size.
+			// we can increase this mip level IF the stretch factor requires us to do so.
+			// for simplicitys sake we will approximate tile size with a sphere of 512 elmos radius- which is =~ a sqrt2*1024 =~ 1400 diag pixels diameter sphere.
+			// half fov is 45 degs, for default ta and most other camera modes
+			int wantedLevel =0;
+			float dh=heightMaxes[y * numBigTexX + x] - heightMins[y * numBigTexX + x];
+			float sp=0; //screenpixels
+			if (dh > 1024) // this means that is the heightmap chunk is taller than it is wide, then we use the tallness metric instead of the width for calculating the size of it on screen.
+				sp = (dh)*(diag/2)/dist; //dist and viewsize based number (screenpixels).
+			else
+				sp = 1024*(diag/2)/dist;
+
+			if (sp>513)
+				wantedLevel=0;
+			else if (sp > 257)
+				wantedLevel=1;
+			else if (sp > 129)
+				wantedLevel=2;
+			else
+				wantedLevel=3;
+
+			if (stretchFactors[y*numBigTexX+x]>16000 && wantedLevel>0) //16k is an approximation of the sobel sum required to have a heightmap that has double the texture area than a flat square.
+				wantedLevel--;
 
 			if (wantedLevel > 3)
 				wantedLevel = 3;

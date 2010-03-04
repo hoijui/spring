@@ -1,23 +1,28 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
 #include "ShadowHandler.h"
-#include "ConfigHandler.h"
 #include "Game/Camera.h"
+#include "Game/UI/MiniMap.h"
+#include "UnitModels/FeatureDrawer.h"
 #include "UnitModels/UnitDrawer.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
-#include "Matrix44f.h"
 #include "Map/Ground.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
-#include "Game/UI/MiniMap.h"
-#include "LogOutput.h"
+#include "System/ConfigHandler.h"
+#include "System/EventHandler.h"
+#include "System/Matrix44f.h"
+#include "System/LogOutput.h"
 #include "Rendering/GL/FBO.h"
-#include "Sim/Features/FeatureHandler.h"
-#include "EventHandler.h"
+#include "Rendering/GL/VertexArray.h"
+#include "Rendering/Shaders/ShaderHandler.hpp"
 
-CShadowHandler* shadowHandler=0;
+
+CShadowHandler* shadowHandler = 0;
 
 #define DEFAULT_SHADOWMAPSIZE 2048
 
@@ -37,6 +42,10 @@ CShadowHandler::CShadowHandler(void)
 	showShadowMap = false;
 	firstDraw     = true;
 	shadowTexture = 0;
+	drawTerrainShadow = true;
+
+	mdlShadowGenShader = shaderHandler->CreateProgramObject("[ShadowHandler]", "MdlShadowGenShaderARB", true);
+	mapShadowGenShader = shaderHandler->CreateProgramObject("[ShadowHandler]", "MapShadowGenShaderARB", true);
 
 	if (!tmpFirstInstance && !canUseShadows) {
 		return;
@@ -47,7 +56,15 @@ CShadowHandler::CShadowHandler(void)
 		GLEW_ARB_shadow &&
 		GLEW_ARB_depth_texture &&
 		GLEW_ARB_texture_env_combine;
+	//! Shadows possible values:
+	//! -1 : disable and don't try to initialize
+	//!  0 : disable, but still check if the hardware is able to run them
+	//!  1 : enable (full detail)
+	//!  2 : enable (no terrain)
 	const int configValue = configHandler->Get("Shadows", 0);
+
+	if (configValue >= 2)
+		drawTerrainShadow = false;
 
 	if (configValue < 0 || !haveShadowExts) {
 		logOutput.Print("shadows disabled or required OpenGL extension missing");
@@ -58,7 +75,7 @@ CShadowHandler::CShadowHandler(void)
 
 	if (tmpFirstInstance) {
 		// this already checks for GLEW_ARB_fragment_program
-		if (!ProgramStringIsNative(GL_FRAGMENT_PROGRAM_ARB, "unit.fp")) {
+		if (!ProgramStringIsNative(GL_FRAGMENT_PROGRAM_ARB, "units3o.fp")) {
 			logOutput.Print("Your GFX card does not support the fragment programs needed for shadows");
 			return;
 		}
@@ -93,6 +110,11 @@ CShadowHandler::CShadowHandler(void)
 	}
 
 	drawShadows = true;
+
+	mdlShadowGenShader->AttachShaderObject(shaderHandler->CreateShaderObject("unit_genshadow.vp", "", GL_VERTEX_PROGRAM_ARB));
+	mdlShadowGenShader->Link();
+	mapShadowGenShader->AttachShaderObject(shaderHandler->CreateShaderObject("groundshadow.vp", "", GL_VERTEX_PROGRAM_ARB));
+	mapShadowGenShader->Link();
 }
 
 
@@ -133,8 +155,13 @@ bool CShadowHandler::InitDepthTarget()
 
 CShadowHandler::~CShadowHandler(void)
 {
-	if (drawShadows)
+	if (drawShadows) {
 		glDeleteTextures(1, &shadowTexture);
+	}
+
+	shaderHandler->ReleaseProgramObjects("[ShadowHandler]");
+	mdlShadowGenShader = NULL;
+	mapShadowGenShader = NULL;
 }
 
 void CShadowHandler::DrawShadowPasses(void)
@@ -145,12 +172,14 @@ void CShadowHandler::DrawShadowPasses(void)
 		glEnable(GL_CULL_FACE);
 	//	glCullFace(GL_FRONT);
 
-		readmap->GetGroundDrawer()->DrawShadowPass();
-		ph->DrawShadowPass();
+		if (drawTerrainShadow)
+			readmap->GetGroundDrawer()->DrawShadowPass();
+
 		unitDrawer->DrawShadowPass();
-		featureHandler->DrawShadowPass();
+		featureDrawer->DrawShadowPass();
 		treeDrawer->DrawShadowPass();
 		eventHandler.DrawWorldShadow();
+		ph->DrawShadowPass();
 	glPopAttrib();
 
 	inShadowPass = false;
@@ -264,20 +293,29 @@ void CShadowHandler::DrawShadowTex(void)
 	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D,shadowTexture);
 
-	glBegin(GL_QUADS);
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-	glTexCoord2f(0,0);
-	glVertex3f(0,0,1);
+	float3 verts[] = {
+		float3(0,0,1),
+		float3(0, 0.5f, 1),
+		float3(0.5f, 0.5f, 1.f),
+		float3(0.5f, 0, 1),
+	};
 
-	glTexCoord2f(0,1);
-	glVertex3f(0,0.5f,1);
+	GLfloat texcoords[] = {
+		0.f, 0.f,
+		0.f, 1.f,
+		1.f, 1.f,
+		1.f, 0.f,
+	};
 
-	glTexCoord2f(1,1);
-	glVertex3f(0.5f,0.5f,1);
+	glTexCoordPointer(2, GL_FLOAT, 0, texcoords);
+	glVertexPointer(3, GL_FLOAT, 0, verts);
+	glDrawArrays(GL_QUADS, 0, 4);
 
-	glTexCoord2f(1,0);
-	glVertex3f(0.5f,0,1);
-	glEnd();
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glDisableClientState(GL_VERTEX_ARRAY);
 }
 
 void CShadowHandler::CalcMinMaxView(void)
@@ -290,8 +328,8 @@ void CShadowHandler::CalcMinMaxView(void)
 	GetFrustumSide(cam2->leftside,false);
 
 	std::vector<fline>::iterator fli,fli2;
-  for(fli=left.begin();fli!=left.end();fli++){
-	  for(fli2=left.begin();fli2!=left.end();fli2++){
+	for(fli=left.begin();fli!=left.end();fli++){
+		for(fli2=left.begin();fli2!=left.end();fli2++){
 			if(fli==fli2)
 				continue;
 			float colz=0;

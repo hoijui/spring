@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -14,6 +16,7 @@
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/RadarHandler.h"
+#include "Sim/Misc/SmoothHeightMesh.h"
 #include "Sim/Projectiles/Unsynced/SmokeProjectile.h"
 #include "Sim/Units/COB/UnitScript.h"
 #include "Sim/Units/UnitDef.h"
@@ -148,6 +151,9 @@ CAirMoveType::~CAirMoveType(void)
 
 void CAirMoveType::Update(void)
 {
+	if (owner->beingBuilt)
+		return;
+
 	float3& pos = owner->pos;
 
 	// note: this is only set to false after
@@ -334,8 +340,8 @@ EndNormalControl:
 						owner->UpdateMidPos();
 						owner->speed *= 0.99f;
 						float damage = (((*ui)->speed - owner->speed) * 0.1f).SqLength();
-						owner->DoDamage(DamageArray() * damage, 0, ZeroVector);
-						(*ui)->DoDamage(DamageArray() * damage, 0, ZeroVector);
+						owner->DoDamage(DamageArray(damage), 0, ZeroVector);
+						(*ui)->DoDamage(DamageArray(damage), 0, ZeroVector);
 						hitBuilding = true;
 					} else {
 						float part = owner->mass / (owner->mass + (*ui)->mass);
@@ -345,8 +351,8 @@ EndNormalControl:
 						u->pos += dif * (dist - totRad) * (part);
 						u->UpdateMidPos();
 						float damage = (((*ui)->speed - owner->speed) * 0.1f).SqLength();
-						owner->DoDamage(DamageArray() * damage, 0, ZeroVector);
-						(*ui)->DoDamage(DamageArray() * damage, 0, ZeroVector);
+						owner->DoDamage(DamageArray(damage), 0, ZeroVector);
+						(*ui)->DoDamage(DamageArray(damage), 0, ZeroVector);
 						owner->speed *= 0.99f;
 					}
 				}
@@ -703,7 +709,11 @@ void CAirMoveType::UpdateFlying(float wantedHeight, float engine)
 	float elevator = 0.0f;
 	// do not check if the plane can be submerged here, since it'll cause
 	// ground collisions later on
-	float gHeight = ground->GetHeight(pos.x, pos.z);
+	float gHeight;
+	if (UseSmoothMesh())
+		gHeight = std::max(smoothGround->GetHeight(pos.x, pos.z), ground->GetApproximateHeight(pos.x, pos.z));
+	else
+		gHeight = ground->GetHeight(pos.x, pos.z);
 
 	if (!((gs->frameNum + owner->id) & 3))
 		CheckForCollision();
@@ -1056,7 +1066,7 @@ void CAirMoveType::UpdateAirPhysics(float rudder, float aileron, float elevator,
 					damage += (1 - (updir.dot(gNormal))) * 1000;
 				if (damage > 0) {
 					// only do damage while stunned for now
-					owner->DoDamage(DamageArray() * (damage * 0.4f), 0, ZeroVector);
+					owner->DoDamage(DamageArray(damage * 0.4f), 0, ZeroVector);
 				}
 			}
 			pos.y = gHeight + owner->model->radius * 0.2f + 0.01f;

@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// EventClient.cpp: implementation of the CEventClient class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include "EventClient.h"
 using std::string;
@@ -34,7 +33,7 @@ void CEventClient::GameOver() { return; }
 void CEventClient::TeamDied(int teamID) { return; }
 void CEventClient::TeamChanged(int teamID) { return; }
 void CEventClient::PlayerChanged(int playerID) { return; }
-void CEventClient::PlayerRemoved(int playerID) { return; }
+void CEventClient::PlayerRemoved(int playerID, int reason) { return; }
 
 void CEventClient::UnitCreated(const CUnit* unit, const CUnit* builder) { return; }
 void CEventClient::UnitFinished(const CUnit* unit) { return; }

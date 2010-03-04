@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef LUA_SYNCED_INFO_H
 #define LUA_SYNCED_INFO_H
-// LuaSyncedRead.h: interface for the LuaSyncedRead class.
-//
-//////////////////////////////////////////////////////////////////////
 
 struct lua_State;
 
@@ -129,6 +128,8 @@ class LuaSyncedRead {
 		static int GetUnitCollisionVolumeData(lua_State* L);
 		static int GetUnitPieceCollisionVolumeData(lua_State* L);
 
+		static int GetUnitMoveTypeData(lua_State* L);
+
 		static int GetUnitCommands(lua_State* L);
 		static int GetFactoryCounts(lua_State* L);
 		static int GetFactoryCommands(lua_State* L);
@@ -178,6 +179,8 @@ class LuaSyncedRead {
 		static int GetGroundInfo(lua_State* L);
 		static int GetGroundBlocked(lua_State* L);
 		static int GetGroundExtremes(lua_State* L);
+
+		static int GetSmoothMeshHeight(lua_State* L);
 
 		static int TestBuildOrder(lua_State* L);
 		static int Pos2BuildPos(lua_State* L);

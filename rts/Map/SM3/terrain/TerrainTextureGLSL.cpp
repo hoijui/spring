@@ -1,9 +1,5 @@
-/*---------------------------------------------------------------------
- Terrain Renderer using texture splatting and geomipmapping
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
- Copyright (2006) Jelmer Cnossen
- This code is released under GPL license (See LICENSE.html for info)
----------------------------------------------------------------------*/
 #include "StdAfx.h"
 
 #include "TerrainBase.h"
@@ -263,7 +259,7 @@ ShaderBuilder::ShadingMethod  ShaderBuilder::CalculateShadingMethod(ShaderDef* s
 
 	// diffuse + bumpmap in one pass?
 	if (total.Fits(hwmax)) {
-		d_trace("\tnormalMapStages.size()=%d, SM_DiffuseBumpmapSP", sd->normalMapStages.size());
+		d_trace("\tnormalMapStages.size()="_STPF_", SM_DiffuseBumpmapSP", sd->normalMapStages.size());
 		return SM_DiffuseBumpmapSP;
 	}
 
@@ -277,7 +273,7 @@ ShaderBuilder::ShadingMethod  ShaderBuilder::CalculateShadingMethod(ShaderDef* s
 
 	// is multipass possible?
 	if (diffuseRQ.Fits(hwmax) && (bumpmapRQ + special).Fits(hwmax)) {
-		d_trace("\tnormalMapStages.size()=%d, SM_DiffuseBumpmapMP", sd->normalMapStages.size());
+		d_trace("\tnormalMapStages.size()="_STPF_", SM_DiffuseBumpmapMP", sd->normalMapStages.size());
 		return SM_DiffuseBumpmapMP;
 	}
 
@@ -813,6 +809,23 @@ bool GLSLShaderHandler::SetupShader(IShaderSetup* ps, NodeSetupParams& params)
 	bs->Setup(params);
 	curShader = bs;
 	return true;
+}
+
+
+void GLSLShaderHandler::BeginBuild()
+{
+	if (curShader) {
+		curShader->Cleanup();
+		curShader = 0;
+	}
+
+	delete buffer;
+	delete scShader;
+
+	buffer = 0;
+	scShader = 0;
+
+	renderSetups.clear();
 }
 
 

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef WINDOW_H
 #define WINDOW_H
 
@@ -16,6 +18,9 @@ public:
 	virtual void AddChild(GuiElement* elem);
 	boost::signal<void (void)> WantClose;
 
+protected:
+	std::string title;
+
 private:
 	virtual void DrawSelf();
 	virtual bool HandleEventSelf(const SDL_Event& ev);
@@ -23,7 +28,6 @@ private:
 	virtual float Opacity() const;
 	bool dragging;
 	float dragPos[2];
-	std::string title;
 	float titleHeight;
 };
 

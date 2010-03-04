@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 
 #include "Sm3Map.h"
@@ -27,15 +29,12 @@
 // FIXME - temporary, until the LuaParser change is done
 static const TdfParser& GetMapDefParser()
 {
-	static TdfParser tdf(MapParser::GetMapConfigName(gameSetup->mapName));
+	static TdfParser tdf(MapParser::GetMapConfigName(gameSetup->MapFile()));
 	return tdf;
 }
 
 
 CR_BIND_DERIVED(CSm3ReadMap, CReadMap, ())
-
-//CR_REG_METADATA(CSmfReadMap, (
-//				))
 
 CSm3ReadMap::CSm3ReadMap()
 {
@@ -140,10 +139,25 @@ void CSm3ReadMap::Initialize (const char *mapname)
 		LoadFeatureData();
 
 		groundDrawer = new CSm3GroundDrawer (this);
+
+		configHandler->NotifyOnChange(this);
 	}
 	catch(content_error& e)
 	{
 		ErrorMessageBox(e.what(), "Error:", MBF_OK);
+	}
+}
+
+
+void CSm3ReadMap::ConfigNotify(const std::string& key, const std::string& value)
+{
+	if (key == "Shadows") {
+		bool drawShadows = (std::atoi(value.c_str()) > 0);
+
+		if (renderer->config.useShadowMaps != drawShadows) {
+			renderer->config.useShadowMaps = drawShadows;
+			renderer->ReloadShaders();
+		}
 	}
 }
 
@@ -153,7 +167,7 @@ CBaseGroundDrawer *CSm3ReadMap::GetGroundDrawer ()
 	return groundDrawer;
 }
 
-void CSm3ReadMap::HeightmapUpdatedNow(int x1, int x2, int y1, int y2)
+void CSm3ReadMap::UpdateHeightmapUnsynced(int x1, int y1, int x2, int y2)
 {
 	// heightmap is [width+1][height+1]
 	x1 -= 2; x2 += 2;
@@ -174,8 +188,8 @@ void CSm3ReadMap::HeightmapUpdatedNow(int x1, int x2, int y1, int y2)
 
 void CSm3ReadMap::Update() {}
 void CSm3ReadMap::Explosion(float x, float y, float strength) {}
-GLuint CSm3ReadMap::GetShadingTexture() { return 0; } // a texture with RGB for shading and A for height
-void CSm3ReadMap::DrawMinimap()
+GLuint CSm3ReadMap::GetShadingTexture() const { return 0; } // a texture with RGB for shading and A for height
+void CSm3ReadMap::DrawMinimap() const
 {
 	if (!minimapTexture)
 		return;
@@ -244,7 +258,7 @@ void CSm3ReadMap::GetFeatureInfo (MapFeatureInfo* f)
 	std::copy(featureInfo,featureInfo+numFeatures,f);
 }
 
-const char *CSm3ReadMap::GetFeatureType (int typeID)
+const char *CSm3ReadMap::GetFeatureTypeName (int typeID)
 {
 	return featureTypes[typeID]->c_str();
 }

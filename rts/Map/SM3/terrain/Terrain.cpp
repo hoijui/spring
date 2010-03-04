@@ -1,9 +1,5 @@
-/*---------------------------------------------------------------------
- Terrain Renderer using texture splatting and geomipmapping
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
- Copyright (2006) Jelmer Cnossen
- This code is released under GPL license (See LICENSE.html for info)
----------------------------------------------------------------------*/
 #include "StdAfx.h"
 #include <cstdarg>
 #include <cstring>
@@ -928,6 +924,11 @@ namespace terrain {
 		// calculate index table
 		indexTable=new IndexTable;
 		d_trace ("Index buffer data size: %d\n", VertexBuffer::TotalSize ());
+	}
+
+	void Terrain::ReloadShaders ()
+	{
+		texturing->ReloadShaders (quadtree, &config);
 	}
 
 	void FindRAWProps(int len, int& width, int& bytespp, ILoadCallback* cb)

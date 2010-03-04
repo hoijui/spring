@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef _GLFONT_H
 #define _GLFONT_H
 
@@ -40,7 +42,16 @@ public:
 	void End();
 
 	void glWorldPrint(const float3 p, const float size, const std::string& str);
+	/**
+	 * @param s  absolute font size, or relative scale, if option FONT_SCALE is set
+	 * @param options  FONT_SCALE | FONT_NORM |
+	 *                 (FONT_LEFT | FONT_CENTER | FONT_RIGHT) |
+	 *                 (FONT_BASELINE | FONT_DESCENDER | FONT_VCENTER |
+	 *                  FONT_TOP | FONT_ASCENDER | FONT_BOTTOM) |
+	 *                 FONT_NEAREST | FONT_OUTLINE | FONT_SHADOW
+	 */
 	void glPrint(GLfloat x, GLfloat y, float s, const int& options, const std::string& str);
+	void glPrintTable(GLfloat x, GLfloat y, float s, const int& options, const std::string& str);
 	void glFormat(GLfloat x, GLfloat y, float s, const int& options, const std::string& fmt, ...);
 	void glFormat(GLfloat x, GLfloat y, float s, const int& options, const char* fmt, ...);
 

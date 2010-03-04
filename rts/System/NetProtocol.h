@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef NETPROTOCOL_H
 #define NETPROTOCOL_H
 
@@ -27,7 +29,7 @@ public:
 	/**
 	@brief Initialise in client mode (remote server)
 	*/
-	void InitClient(const char* server,unsigned portnum,unsigned sourceport, const std::string& myName, const std::string& myPasswd, const std::string& myVersion);
+	void InitClient(const char* server,unsigned portnum, const std::string& myName, const std::string& myPasswd, const std::string& myVersion);
 	
 	/**
 	@brief Initialise in client mode (local server)
@@ -73,10 +75,13 @@ public:
 	/// Must be called to send / recieve packets
 	void Update();
 	volatile bool loading;
+	
+	void DisableDemoRecording();
 
 private:
 	boost::scoped_ptr<netcode::CConnection> serverConn;
 	boost::scoped_ptr<CDemoRecorder> record;
+	bool disableDemo;
 };
 
 extern CNetProtocol* net;

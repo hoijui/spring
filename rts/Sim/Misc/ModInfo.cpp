@@ -1,3 +1,4 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
 #include "mmgr.h"
@@ -18,13 +19,13 @@
 CModInfo modInfo;
 
 
-void CModInfo::Init(const char* modname)
+void CModInfo::Init(const char* modArchive)
 {
-	filename = modname;
+	filename = modArchive;
 
-	humanName = archiveScanner->ModArchiveToModName(modname);
+	humanName = archiveScanner->NameFromArchive(modArchive);
 
-	const CArchiveScanner::ModData md = archiveScanner->ModArchiveToModData(modname);
+	const CArchiveScanner::ArchiveData md = archiveScanner->GetArchiveData(humanName);
 
 	shortName   = md.shortName;
 	version     = md.version;
@@ -54,7 +55,7 @@ void CModInfo::Init(const char* modname)
 	allowTeamColors = nanosprayTbl.GetBool("allow_team_colors", true);
 	if (allowTeamColors) {
 		// Load the users preference for team coloured nanospray
-		gu->teamNanospray = !!configHandler->Get("TeamNanoSpray", 0);
+		gu->teamNanospray = !!configHandler->Get("TeamNanoSpray", 1);
 	}
 
 	// constructions
@@ -85,6 +86,10 @@ void CModInfo::Init(const char* modname)
 	// capture
 	const LuaTable captureTbl = root.SubTable("capture");
 	captureEnergyCostFactor = captureTbl.GetFloat("energyCostFactor", 0.0);
+
+	// paralyze
+	const LuaTable paralyzeTbl = root.SubTable("paralyze");
+	paralyzeOnMaxHealth = paralyzeTbl.GetBool("paralyzeOnMaxHealth", true);
 
 	// fire-at-dead-units
 	const LuaTable fireAtDeadTbl = root.SubTable("fireAtDead");

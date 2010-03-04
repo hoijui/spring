@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef __GAME_SERVER_H__
 #define __GAME_SERVER_H__
 
@@ -9,6 +11,7 @@
 #include <deque>
 #include <set>
 #include <vector>
+#include <list>
 
 #include "GameData.h"
 #include "Sim/Misc/TeamBase.h"
@@ -58,7 +61,7 @@ class CGameServer
 {
 	friend class CLoadSaveHandler;     //For initialize server state after load
 public:
-	CGameServer(const ClientSetup* settings, bool onlyLocal, const GameData* const gameData, const CGameSetup* const setup);
+	CGameServer(int hostport, bool onlyLocal, const GameData* const gameData, const CGameSetup* const setup);
 	~CGameServer();
 
 	void AddLocalClient(const std::string& myName, const std::string& myVersion);
@@ -125,6 +128,7 @@ private:
 	void SkipTo(int targetframe);
 
 	void Message(const std::string& message, bool broadcast=true);
+	void PrivateMessage(int playernum, const std::string& message);
 
 	/////////////////// game status variables ///////////////////
 
@@ -147,15 +151,13 @@ private:
 	float internalSpeed;
 	bool cheating;
 
-	// Ugly hax for letting the script define initial team->isAI and team->leader for AI teams
-	friend class CSkirmishAITestScript;
 	std::vector<GameParticipant> players;
 	size_t ReserveNextAvailableSkirmishAIId();
-private:
+	
 	std::map<size_t, GameSkirmishAI> ais;
 	std::list<size_t> usedSkirmishAIIds;
 	void FreeSkirmishAIId(const size_t skirmishAIId);
-public:
+	
 	std::vector<GameTeam> teams;
 
 	float medianCpu;
@@ -176,6 +178,7 @@ public:
 	bool noHelperAIs;
 	bool allowSpecDraw;
 	bool allowAdditionalPlayers;
+	std::list< boost::shared_ptr<const netcode::RawPacket> > packetCache; //waaa, the overhead
 
 	/////////////////// sync stuff ///////////////////
 #ifdef SYNCCHECK
@@ -183,7 +186,6 @@ public:
 #endif
 	int syncErrorFrame;
 	int syncWarningFrame;
-	int delayedSyncResponseFrame;
 
 	///////////////// internal stuff //////////////////
 	void InternalSpeedChange(float newSpeed);
@@ -204,6 +206,9 @@ public:
 	UnsyncedRNG rng;
 	boost::thread* thread;
 	mutable boost::recursive_mutex gameServerMutex;
+	typedef std::set<unsigned char> PlayersToForwardMsgvec;
+	typedef std::map<unsigned char, PlayersToForwardMsgvec> MsgToForwardMap;
+	MsgToForwardMap relayingMessagesMap;
 };
 
 extern CGameServer* gameServer;

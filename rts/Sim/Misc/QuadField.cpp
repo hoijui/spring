@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "Rendering/GL/myGL.h"
-// QuadField.cpp: implementation of the CQuadField class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include "mmgr.h"
 
@@ -63,7 +62,7 @@ CQuadField::CQuadField()
 
 	baseQuads.resize(numQuadsX * numQuadsZ);
 
-	tempQuads = new int[1000];
+	tempQuads = new int[std::max(1000, numQuadsX * numQuadsZ)];
 }
 
 CQuadField::~CQuadField()

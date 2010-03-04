@@ -1,6 +1,4 @@
-// Game.h: interface for the CGame class.
-//
-//////////////////////////////////////////////////////////////////////
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifndef __GAME_H__
 #define __GAME_H__
@@ -15,7 +13,6 @@
 
 #include "lib/gml/gml.h"
 
-class CScript;
 class CBaseWater;
 class CAVIGenerator;
 class CConsoleHistory;
@@ -57,16 +54,17 @@ public:
 	
 	bool HasLag() const;
 
-	enum DrawMode {
-		notDrawing     = 0,
-		normalDraw     = 1,
-		shadowDraw     = 2,
-		reflectionDraw = 3,
-		refractionDraw = 4
+	enum GameDrawMode {
+		gameNotDrawing     = 0,
+		gameNormalDraw     = 1,
+		gameShadowDraw     = 2,
+		gameReflectionDraw = 3,
+		gameRefractionDraw = 4
 	};
-	DrawMode drawMode;
-	inline void     SetDrawMode(DrawMode mode) { drawMode = mode; }
-	inline DrawMode GetDrawMode() const { return drawMode; }
+	GameDrawMode gameDrawMode;
+
+	inline void         SetDrawMode(GameDrawMode mode) { gameDrawMode = mode; }
+	inline GameDrawMode GetDrawMode() const { return gameDrawMode; }
 
 	LuaParser* defsParser;
 
@@ -100,21 +98,14 @@ public:
 	bool fullscreenEdgeMove;
 	bool showFPS;
 	bool showClock;
+	bool showSpeed;
 	/// Prevents spectator msgs from being seen by players
 	bool noSpectatorChat;
-	bool drawMapMarks;
+
 	/// locked mouse indicator size
 	float crossSize;
 
-	bool drawSky;
-	bool drawWater;
-	bool drawGround;
-
-	bool moveWarnings;
-
 	unsigned char gameID[16];
-
-	CScript* script;
 
 	CInfoConsole *infoConsole;
 

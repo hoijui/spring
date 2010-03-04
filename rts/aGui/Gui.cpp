@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "Gui.h"
 
 #include <boost/bind.hpp>
@@ -84,9 +86,9 @@ void Gui::RmElement(GuiElement* elem)
 	}
 }
 
-void Gui::UpdateScreenGeometry(int screenx, int screeny)
+void Gui::UpdateScreenGeometry(int screenx, int screeny, int screenOffsetX, int screenOffsetY)
 {
-	GuiElement::UpdateDisplayGeo(screenx, screeny);
+	GuiElement::UpdateDisplayGeo(screenx, screeny, screenOffsetX, screenOffsetY);
 }
 
 bool Gui::MouseOverElement(const GuiElement* elem, int x, int y) const

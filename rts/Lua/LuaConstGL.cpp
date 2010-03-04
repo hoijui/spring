@@ -1,7 +1,6 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
-// LuaConstGL.cpp: implementation of the LuaConstGL class.
-//
-//////////////////////////////////////////////////////////////////////
 #include "mmgr.h"
 
 #include "LuaConstGL.h"
@@ -108,6 +107,8 @@ bool LuaConstGL::PushEntries(lua_State* L)
 	PUSH_GL(LINEAR_MIPMAP_NEAREST);
 	PUSH_GL(NEAREST_MIPMAP_LINEAR);
 	PUSH_GL(LINEAR_MIPMAP_LINEAR);
+	PUSH_GL(TEXTURE_FILTER_CONTROL);
+	PUSH_GL(TEXTURE_LOD_BIAS);
 
 	// Texture Clamping
 	PUSH_GL(REPEAT);

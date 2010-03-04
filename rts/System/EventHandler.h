@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef EVENT_HANDLER_H
 #define EVENT_HANDLER_H
-// EventHandler.h: interface for the CEventHandler class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <string>
 #include <vector>
@@ -49,7 +48,7 @@ class CEventHandler
 		void TeamDied(int teamID);
 		void TeamChanged(int teamID);
 		void PlayerChanged(int playerID);
-		void PlayerRemoved(int playerID);
+		void PlayerRemoved(int playerID, int reason);
 
 		void UnitCreated(const CUnit* unit, const CUnit* builder);
 		void UnitFinished(const CUnit* unit);
@@ -196,6 +195,7 @@ class CEventHandler
 		EventClientList listTeamDied;
 		EventClientList listTeamChanged;
 		EventClientList listPlayerChanged;
+		EventClientList listPlayerRemoved;
 
 		EventClientList listUnitCreated;
 		EventClientList listUnitFinished;

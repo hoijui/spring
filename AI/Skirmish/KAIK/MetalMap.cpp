@@ -1,4 +1,7 @@
 #include <string>
+#include <sstream>
+
+#include "System/Util.h"
 
 #include "IncExternAI.h"
 #include "IncGlobalAI.h"
@@ -18,7 +21,8 @@ CMetalMap::CMetalMap(AIClasses* ai) {
 	MetalMapWidth = ai->cb->GetMapWidth() / 2;
 
 	TotalCells = MetalMapHeight * MetalMapWidth;
-	XtractorRadius = int(ai->cb->GetExtractorRadius() / 16);
+	XtractorRadiusOrg = ai->cb->GetExtractorRadius();
+	XtractorRadius = int(ai->cb->GetExtractorRadius() / 16.0f);
 	DoubleRadius = XtractorRadius * 2;
 	SquareRadius = XtractorRadius * XtractorRadius;
 	DoubleSquareRadius = DoubleRadius * DoubleRadius;
@@ -40,8 +44,6 @@ CMetalMap::~CMetalMap() {
 	delete[] TempAverage;
 }
 
-
-
 // KLOOTNOTE: this needs to ignore spots already taken by allies
 float3 CMetalMap::GetNearestMetalSpot(int builderid, const UnitDef* extractor) {
 	float TempScore = 0.0f;
@@ -55,18 +57,45 @@ float3 CMetalMap::GetNearestMetalSpot(int builderid, const UnitDef* extractor) {
 
 			if (spotCoords.x >= 0.0f) {
 				float distance = spotCoords.distance2D(ai->cb->GetUnitPos(builderid)) + 150;
-				float myThreat = ai->tm->ThreatAtThisPoint(VectoredSpots[i]);
+				float myThreat = ai->tm->ThreatAtThisPoint(spotCoords);
 				float spotScore = VectoredSpots[i].y / distance / (myThreat + 10);
-				int numEnemies = ai->ccb->GetEnemyUnits(&ai->unitIDs[0], VectoredSpots[i], XtractorRadius * 2);
 
-				// NOTE: threat at VectoredSpots[i] is determined
+				// along with threatmap try to search for enemy armed units around cause
+				// there could be armored MEX nearby which gives the highest threat anyway...
+				int numEnemies = ai->ccb->GetEnemyUnits(&ai->unitIDs[0], spotCoords, XtractorRadiusOrg * 1.5f);
+				while(numEnemies > 0)
+				{
+					numEnemies--;
+					const UnitDef* ud = ai->ccb->GetUnitDef(ai->unitIDs[numEnemies]);
+					if(ud && !ud->weapons.empty())
+					{
+						numEnemies++;
+						break;
+					}
+				}
+
+				bool bOccupied = false;	// flag: metal spot is occupied by allied unit
+				if(NumSpotsFound < 100)
+				{
+					int numAllies = ai->cb->GetFriendlyUnits(&ai->unitIDs[0], spotCoords, XtractorRadiusOrg * 1.5f);
+					for(unsigned int j = 0; j < numAllies; j++)
+					{
+						if(ai->ut->GetCategory(ai->unitIDs[j]) == CAT_MEX)
+						{
+							bOccupied = true;
+							break;
+						}
+					}
+				}
+
+				// NOTE: threat at spotCoords is determined
 				// by presence of ARMED enemy units or buildings
 				bool b1 = (TempScore < spotScore);
 				bool b2 = (numEnemies == 0);
 				bool b3 = (myThreat <= (ai->tm->GetAverageThreat() * 1.5));
 				bool b4 = (ai->uh->TaskPlanExist(spotCoords, extractor));
 
-				if (b1 && b2 && b3 && !b4) {
+				if (b1 && b2 && b3 && !b4 && !bOccupied) {
 					TempScore = spotScore;
 					bestSpot = spotCoords;
 					bestSpot.y = VectoredSpots[i].y;
@@ -79,8 +108,9 @@ float3 CMetalMap::GetNearestMetalSpot(int builderid, const UnitDef* extractor) {
 	return bestSpot;
 }
 
-
 void CMetalMap::Init() {
+	const int frame = ai->cb->GetCurrentFrame();
+
 	// leave this line if you want to use this class in your AI
 	ai->cb->SendTextMsg("KAI Metal Class by Krogothe", 0);
 
@@ -94,7 +124,10 @@ void CMetalMap::Init() {
 		// ai->debug->MakeBWTGA(MexArrayC, MetalMapWidth, MetalMapHeight, mapname);
 	}
 
-	// "Metal Spots Found: %i", NumSpotsFound);
+	std::stringstream msg;
+	msg << "[CMetalMap::Init()] frame " << frame << "\n";
+	msg << "\tnumber of metal spots found:                    " << NumSpotsFound << "\n";
+	L(ai, msg.str());
 }
 
 
@@ -141,7 +174,7 @@ void CMetalMap::GetMetalPoints() {
 								// get the metal from all pixels around the extractor radius
 								TotalMetal += MexArrayA[sy * MetalMapWidth + sx];
 							}
-						} 
+						}
 					}
 				}
 
@@ -191,7 +224,7 @@ void CMetalMap::GetMetalPoints() {
 				TotalMetal = TotalMetal;
 			}
 
-			//set that spot's metal making ability (divide by cells to values are small)
+			// set that spot's metal making ability (divide by cells to values are small)
 			TempAverage[y * MetalMapWidth + x] = TotalMetal;
 
 			if (MaxMetal < TotalMetal) {
@@ -352,7 +385,7 @@ void CMetalMap::GetMetalPoints() {
 			// plot TGA array (not necessary) for debug
 			MexArrayC[coordy * MetalMapWidth + coordx] = TempMetal;
 			NumSpotsFound += 1;
-			
+
 			// small speedup of "wipes the metal around the spot so its not counted twice"
 			for (int sy = coordy - XtractorRadius, a = 0;  sy <= coordy + XtractorRadius;  sy++, a++) {
 				if (sy >= 0 && sy < MetalMapHeight) {
@@ -496,10 +529,14 @@ bool CMetalMap::LoadMetalMap() {
 
 
 std::string CMetalMap::GetCacheName() const {
+	// name is used for human readability,
+	// while hash is used for uniqueness
+	// (in case the map maker forgets changing the name inbetween versions)
 	std::string relFile =
 		std::string(METALFOLDER) +
-		std::string(ai->cb->GetMapName()) +
-		"Metal";
+		AIUtil::MakeFileSystemCompatible(ai->cb->GetMapName()) +
+		"-" + IntToString(ai->cb->GetMapHash(), "%x") +
+		".Metal";
 	std::string absFile = AIUtil::GetAbsFileName(ai->cb, relFile);
 
 	return absFile;

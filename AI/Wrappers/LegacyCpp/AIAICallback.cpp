@@ -546,7 +546,6 @@ const UnitDef* CAIAICallback::GetUnitDefById(int unitDefId) {
 		unitDef->flareSalvoDelay = sAICallback->Clb_UnitDef_getFlareSalvoDelay(teamId, unitDefId);
 		//unitDef->smoothAnim = sAICallback->Clb_UnitDef_isSmoothAnim(teamId, unitDefId);
 		unitDef->smoothAnim = false;
-		unitDef->isMetalMaker = sAICallback->Clb_UnitDef_0REF1Resource2resourceId0isResourceMaker(teamId, unitDefId, m);
 		unitDef->canLoopbackAttack = sAICallback->Clb_UnitDef_isAbleToLoopbackAttack(teamId, unitDefId);
 		unitDef->levelGround = sAICallback->Clb_UnitDef_isLevelGround(teamId, unitDefId);
 		unitDef->useBuildingGroundDecal = sAICallback->Clb_UnitDef_isUseBuildingGroundDecal(teamId, unitDefId);
@@ -780,12 +779,28 @@ const unsigned char* CAIAICallback::GetMetalMap() {
 	return metalMap;
 }
 
+int CAIAICallback::GetMapHash() {
+	return sAICallback->Clb_Map_getHash(teamId);
+}
+
 const char* CAIAICallback::GetMapName() {
 	return sAICallback->Clb_Map_getName(teamId);
 }
 
+const char* CAIAICallback::GetMapHumanName() {
+	return sAICallback->Clb_Map_getHumanName(teamId);
+}
+
+int CAIAICallback::GetModHash() {
+	return sAICallback->Clb_Mod_getHash(teamId);
+}
+
 const char* CAIAICallback::GetModName() {
 	return sAICallback->Clb_Mod_getFileName(teamId);
+}
+
+const char* CAIAICallback::GetModHumanName() {
+	return sAICallback->Clb_Mod_getHumanName(teamId);
 }
 
 float CAIAICallback::GetElevation(float x, float z) {
@@ -943,10 +958,11 @@ int CAIAICallback::GetMapPoints(PointMarker* pm, int pm_sizeMax, bool includeAll
 	for (int p=0; p < numPoints; ++p) {
 		pm[p].pos = float3(sAICallback->Clb_Map_Point_getPosition(teamId, p));
 		SAIFloat3 tmpColor = sAICallback->Clb_Map_Point_getColor(teamId, p);
-		pm[p].color = (unsigned char*) calloc(3, sizeof(unsigned char));
-		pm[p].color[0] = (unsigned char) tmpColor.x;
-		pm[p].color[1] = (unsigned char) tmpColor.y;
-		pm[p].color[2] = (unsigned char) tmpColor.z;
+		unsigned char* pColor = (unsigned char*) calloc(3, sizeof(unsigned char));
+		pColor[0] = (unsigned char) tmpColor.x;
+		pColor[1] = (unsigned char) tmpColor.y;
+		pColor[2] = (unsigned char) tmpColor.z;
+		pm[p].color = pColor;
 		pm[p].label = sAICallback->Clb_Map_Point_getLabel(teamId, p);
 	}
 
@@ -960,10 +976,11 @@ int CAIAICallback::GetMapLines(LineMarker* lm, int lm_sizeMax, bool includeAllie
 		lm[l].pos = float3(sAICallback->Clb_Map_Line_getFirstPosition(teamId, l));
 		lm[l].pos2 = float3(sAICallback->Clb_Map_Line_getSecondPosition(teamId, l));
 		SAIFloat3 tmpColor = sAICallback->Clb_Map_Line_getColor(teamId, l);
-		lm[l].color = (unsigned char*) calloc(3, sizeof(unsigned char));
-		lm[l].color[0] = (unsigned char) tmpColor.x;
-		lm[l].color[1] = (unsigned char) tmpColor.y;
-		lm[l].color[2] = (unsigned char) tmpColor.z;
+		unsigned char* lColor = (unsigned char*) calloc(3, sizeof(unsigned char));
+		lColor[0] = (unsigned char) tmpColor.x;
+		lColor[1] = (unsigned char) tmpColor.y;
+		lColor[2] = (unsigned char) tmpColor.z;
+		lm[l].color = lColor;
 	}
 
 	return numLines;
@@ -1597,4 +1614,34 @@ const char* CAIAICallback::CallLuaRules(const char* data, int inSize, int* outSi
 		SCallLuaRulesCommand cmd = {data, inSize, outSize}; sAICallback->Clb_Engine_handleCommand(teamId, COMMAND_TO_ID_ENGINE, -1, COMMAND_CALL_LUA_RULES, &cmd); return cmd.ret_outData;
 }
 
+std::map<std::string, std::string> CAIAICallback::GetMyInfo()
+{
+	std::map<std::string, std::string> info;
 
+	const int info_size = sAICallback->Clb_SkirmishAI_Info_getSize(teamId);
+	for (int ii = 0; ii < info_size; ++ii) {
+		const char* key   = sAICallback->Clb_SkirmishAI_Info_getKey(teamId, ii);
+		const char* value = sAICallback->Clb_SkirmishAI_Info_getValue(teamId, ii);
+		if ((key != NULL) && (value != NULL)) {
+			info[key] = value;
+		}
+	}
+
+	return info;
+}
+
+std::map<std::string, std::string> CAIAICallback::GetMyOptionValues()
+{
+	std::map<std::string, std::string> optionVals;
+
+	const int optionVals_size = sAICallback->Clb_SkirmishAI_OptionValues_getSize(teamId);
+	for (int ovi = 0; ovi < optionVals_size; ++ovi) {
+		const char* key   = sAICallback->Clb_SkirmishAI_OptionValues_getKey(teamId, ovi);
+		const char* value = sAICallback->Clb_SkirmishAI_OptionValues_getValue(teamId, ovi);
+		if ((key != NULL) && (value != NULL)) {
+			optionVals[key] = value;
+		}
+	}
+
+	return optionVals;
+}

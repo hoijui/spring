@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef CR_SET_TYPE_IMPL_H
 #define CR_SET_TYPE_IMPL_H
 
@@ -58,11 +60,11 @@ namespace creg
 
 
 	// Set type
-	template<typename T>
-	struct DeduceType < std::set<T> > {
+	template<typename T, typename C>
+	struct DeduceType < std::set<T, C> > {
 		boost::shared_ptr<IType> Get () {
 			DeduceType<T> elemtype;
-			return boost::shared_ptr<IType>(new SetType < std::set <T> > (elemtype.Get()));
+			return boost::shared_ptr<IType>(new SetType < std::set <T, C> > (elemtype.Get()));
 		}
 	};
 	// Multiset
@@ -82,6 +84,6 @@ namespace creg
 		}
 	};
 };
-#endif
 
+#endif
 

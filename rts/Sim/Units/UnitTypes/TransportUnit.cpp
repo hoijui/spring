@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "TransportUnit.h"
 #include "Game/SelectedUnits.h"
@@ -129,7 +131,7 @@ void CTransportUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker
 		if (!unitDef->releaseHeld) {
 			if (!selfDestruct) {
 				// we don't want it to leave a corpse
-				u->DoDamage(DamageArray() * 1000000, 0, ZeroVector);
+				u->DoDamage(DamageArray(1000000), 0, ZeroVector);
 			}
 			u->KillUnit(selfDestruct, reclaimed, attacker);
 		} else {
@@ -155,7 +157,7 @@ void CTransportUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker
 				mt->StartFlying();
 			}
 
-			u->stunned = (u->paralyzeDamage > u->maxHealth);
+			u->stunned = (u->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? u->maxHealth: u->health));
 			u->moveType->LeaveTransport();
 			u->speed = speed*(0.5f + 0.5f*gs->randFloat());
 
@@ -272,7 +274,7 @@ bool CTransportUnit::DetachUnitCore(CUnit* unit)
 			}
 
 			// de-stun in case it isFirePlatform=0
-			unit->stunned = (unit->paralyzeDamage > unit->maxHealth);
+			unit->stunned = (unit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? unit->maxHealth: unit->health));
 			loshandler->MoveUnit(unit, false);
 
 			transportCapacityUsed -= ti->size;

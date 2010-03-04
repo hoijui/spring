@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "GameParticipant.h"
 
 #include "Net/Connection.h"
@@ -5,9 +7,7 @@
 
 GameParticipant::GameParticipant()
 : myState(UNCONNECTED)
-, cpuUsage (0.0f)
-, ping (0)
-, lastKeyframeResponse(0)
+, lastFrameResponse(0)
 , isLocal(false)
 {
 }
@@ -25,12 +25,16 @@ void GameParticipant::Connected(boost::shared_ptr<netcode::CConnection> _link, b
 	myState = CONNECTED;
 }
 
-void GameParticipant::Kill()
+void GameParticipant::Kill(const std::string& reason)
 {
 	if (link)
 	{
-		link->SendData(CBaseNetProtocol::Get().SendQuit());
+		link->SendData(CBaseNetProtocol::Get().SendQuit(reason));
 		link.reset();
 	}
+#ifdef SYNCCHECK
+	syncResponse.clear();
+#endif
 	myState = DISCONNECTED;
 }
+

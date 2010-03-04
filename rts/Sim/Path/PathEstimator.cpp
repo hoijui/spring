@@ -1,27 +1,23 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "PathEstimator.h"
+
 #include <fstream>
 #include <boost/bind.hpp>
 #include <boost/version.hpp>
-#include "lib/minizip/zip.h"
-#include "mmgr.h"
-
 #include <boost/version.hpp>
 
-#include "LogOutput.h"
-#include "Rendering/GL/myGL.h"
-#include "FileSystem/FileHandler.h"
-#include "ConfigHandler.h"
-
+#include "lib/minizip/zip.h"
+#include "mmgr.h"
 #include "Map/Ground.h"
 #include "Game/SelectedUnits.h"
-#include "Game/GameSetup.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
-
 #include "FileSystem/ArchiveZip.h"
 #include "FileSystem/FileSystem.h"
-
+#include "LogOutput.h"
+#include "ConfigHandler.h"
 #include "NetProtocol.h"
 
 #define PATHDEBUG false
@@ -43,15 +39,16 @@ const unsigned int PATHOPT_BLOCKED = 64;
 const unsigned int PATHOPT_SEARCHRELATED = (PATHOPT_OPEN | PATHOPT_CLOSED | PATHOPT_FORBIDDEN | PATHOPT_BLOCKED);
 const unsigned int PATHOPT_OBSOLETE = 128;
 
-const unsigned int PATHESTIMATOR_VERSION = 43;
+const unsigned int PATHESTIMATOR_VERSION = 44;
 const float PATHCOST_INFINITY = 10000000;
 const int SQUARES_TO_UPDATE = 600;
 
+const std::string pathDir = "cache/paths/";
 
-/*
- * constructor, loads precalculated data if it exists
+/**
+ * Constructor, loads precalculated data if it exists
  */
-CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int mmOpt, std::string name):
+CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int mmOpt, std::string cacheFileName, const std::string& map):
 	BLOCK_SIZE(BSIZE),
 	BLOCK_PIXEL_SIZE(BSIZE * SQUARE_SIZE),
 	BLOCKS_TO_UPDATE(SQUARES_TO_UPDATE / (BLOCK_SIZE * BLOCK_SIZE) + 1),
@@ -91,7 +88,7 @@ CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int
 	vertex = new float[nbrOfVertices];
 	openBlockBufferPointer = openBlockBuffer;
 
-	InitEstimator(name);
+	InitEstimator(cacheFileName, map);
 
 	// As all vertexes are bidirectional and have equal values
 	// in both directions, only one value needs to be stored.
@@ -110,10 +107,11 @@ CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int
 }
 
 
-/*
- * free all used memory
+/**
+ * Free all used memory
  */
-CPathEstimator::~CPathEstimator() {
+CPathEstimator::~CPathEstimator()
+{
 	for (int i = 0; i < nbrOfBlocks; i++)
 		delete[] blockState[i].sqrCenter;
 
@@ -123,7 +121,8 @@ CPathEstimator::~CPathEstimator() {
 }
 
 
-void CPathEstimator::InitEstimator(const std::string& name) {
+void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::string& map)
+{
 	int numThreads_tmp = configHandler->Get("HardwareThreadCount", 0);
 	size_t numThreads = ((numThreads_tmp < 0) ? 0 : numThreads_tmp);
 
@@ -149,7 +148,7 @@ void CPathEstimator::InitEstimator(const std::string& name) {
 
 	PrintLoadMsg("Reading estimate path costs");
 
-	if (!ReadFile(name)) {
+	if (!ReadFile(cacheFileName, map)) {
 		char calcMsg[512];
 		sprintf(calcMsg, "Analyzing map accessibility [%d]", BLOCK_SIZE);
 		PrintLoadMsg(calcMsg);
@@ -174,7 +173,7 @@ void CPathEstimator::InitEstimator(const std::string& name) {
 		delete pathBarrier;
 
 		PrintLoadMsg("Writing path data file...");
-		WriteFile(name);
+		WriteFile(cacheFileName, map);
 	}
 }
 
@@ -217,7 +216,8 @@ void CPathEstimator::CalcOffsetsAndPathCosts(int thread) {
 }
 
 
-void CPathEstimator::CalculateBlockOffsets(int idx, int thread) {
+void CPathEstimator::CalculateBlockOffsets(int idx, int thread)
+{
 	int x = idx % nbrOfBlocksX;
 	int z = idx / nbrOfBlocksX;
 
@@ -254,8 +254,8 @@ void CPathEstimator::EstimatePathCosts(int idx, int thread) {
 
 
 
-/*
- * finds a square accessable by the given movedata within the given block
+/**
+ * Finds a square accessable by the given movedata within the given block
  */
 void CPathEstimator::FindOffset(const MoveData& moveData, int blockX, int blockZ) {
 	// lower corner position of block
@@ -292,8 +292,8 @@ void CPathEstimator::FindOffset(const MoveData& moveData, int blockX, int blockZ
 }
 
 
-/*
- * calculate all vertices connected from given block
+/**
+ * Calculate all vertices connected from the given block
  * (always 4 out of 8 vertices connected to the block)
  */
 void CPathEstimator::CalculateVertices(const MoveData& moveData, int blockX, int blockZ, int thread) {
@@ -302,8 +302,8 @@ void CPathEstimator::CalculateVertices(const MoveData& moveData, int blockX, int
 }
 
 
-/*
- * calculate requested vertex
+/**
+ * Calculate requested vertex
  */
 void CPathEstimator::CalculateVertex(const MoveData& moveData, int parentBlockX, int parentBlockZ, unsigned int direction, int thread) {
 	// initial calculations
@@ -351,8 +351,8 @@ void CPathEstimator::CalculateVertex(const MoveData& moveData, int parentBlockX,
 }
 
 
-/*
- * mark affected blocks as obsolete
+/**
+ * Mark affected blocks as obsolete
  */
 void CPathEstimator::MapChanged(unsigned int x1, unsigned int z1, unsigned int x2, unsigned z2) {
 	// find the upper and lower corner of the rectangular area
@@ -401,8 +401,8 @@ void CPathEstimator::MapChanged(unsigned int x1, unsigned int z1, unsigned int x
 }
 
 
-/*
- * update some obsolete blocks using the FIFO-principle
+/**
+ * Update some obsolete blocks using the FIFO-principle
  */
 void CPathEstimator::Update() {
 	pathCache->Update();
@@ -433,8 +433,8 @@ void CPathEstimator::Update() {
 }
 
 
-/*
- * stores data and does some top-administration
+/**
+ * Stores data and does some top-administration
  */
 IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 start, const CPathFinderDef& peDef, Path& path, unsigned int maxSearchedBlocks) {
 	start.CheckInBounds();
@@ -486,8 +486,8 @@ IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 sta
 }
 
 
-/*
- * make some initial calculations and preparations
+/**
+ * Make some initial calculations and preparations
  */
 IPath::SearchResult CPathEstimator::InitSearch(const MoveData& moveData, const CPathFinderDef& peDef) {
 	// is starting square inside goal area?
@@ -530,8 +530,8 @@ IPath::SearchResult CPathEstimator::InitSearch(const MoveData& moveData, const C
 }
 
 
-/*
- * performs the actual search.
+/**
+ * Performs the actual search.
  */
 IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPathFinderDef& peDef) {
 	bool foundGoal = false;
@@ -589,9 +589,9 @@ IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPa
 }
 
 
-/*
- * test the accessability of a block and its value,
- * possibly also add it to the open-blocks pqueue
+/**
+ * Test the accessability of a block and its value,
+ * possibly also add it to the open-blocks pqueue.
  */
 void CPathEstimator::TestBlock(const MoveData& moveData, const CPathFinderDef &peDef, OpenBlock& parentOpenBlock, unsigned int direction) {
 	testedBlocks++;
@@ -665,8 +665,8 @@ void CPathEstimator::TestBlock(const MoveData& moveData, const CPathFinderDef &p
 }
 
 
-/*
- * recreate the path taken to the goal
+/**
+ * Recreate the path taken to the goal
  */
 void CPathEstimator::FinishSearch(const MoveData& moveData, Path& path) {
 	int2 block = goalBlock;
@@ -700,8 +700,8 @@ void CPathEstimator::FinishSearch(const MoveData& moveData, Path& path) {
 }
 
 
-/*
- * clean lists from last search
+/**
+ * Clean lists from last search
  */
 void CPathEstimator::ResetSearch() {
 	while (!openBlocks.empty())
@@ -717,17 +717,17 @@ void CPathEstimator::ResetSearch() {
 }
 
 
-/*
- * try to read offset and vertices data from file, return false on failure
+/**
+ * Try to read offset and vertices data from file, return false on failure
  * TODO: Read-error-check.
  */
-bool CPathEstimator::ReadFile(std::string name)
+bool CPathEstimator::ReadFile(std::string cacheFileName, const std::string& map)
 {
 	unsigned int hash = Hash();
 	char hashString[50];
 	sprintf(hashString, "%u", hash);
 
-	std::string filename = std::string("maps/paths/") + gameSetup->mapName.substr(0, gameSetup->mapName.find_last_of('.') + 1) + hashString + "." + name + ".zip";
+	std::string filename = std::string(pathDir) + map + hashString + "." + cacheFileName + ".zip";
 
 	// open file for reading from a suitable location (where the file exists)
 	CArchiveZip* pfile = new CArchiveZip(filesystem.LocateFile(filename));
@@ -740,23 +740,37 @@ bool CPathEstimator::ReadFile(std::string name)
 	std::auto_ptr<CArchiveZip> auto_pfile(pfile);
 	CArchiveZip& file(*pfile);
 
-	int fh = file.OpenFile("pathinfo");
+	const unsigned fid = file.FindFile("pathinfo");
+	if (fid < file.NumFiles())
+	{
+		pathChecksum = file.GetCrc32(fid);
 
-	if (fh) {
-		pathChecksum = file.GetCrc32("pathinfo");
+		std::vector<boost::uint8_t> buffer;
+		file.GetFile(fid, buffer);
 
-		unsigned int filehash = 0;
- 		// Check hash.
-		file.ReadFile(fh, &filehash, 4);
+		if (buffer.size() < 4)
+			return false;
+
+		unsigned filehash = *((unsigned*)&buffer[0]);
 		if (filehash != hash)
 			return false;
 
+		unsigned pos = sizeof(unsigned);
+
 		// Read block-center-offset data.
+		const unsigned blockSize = moveinfo->moveData.size() * sizeof(int2);
+		if (buffer.size() < pos + blockSize*nbrOfBlocks)
+			return false;
 		for (int blocknr = 0; blocknr < nbrOfBlocks; blocknr++)
-			file.ReadFile(fh, blockState[blocknr].sqrCenter, moveinfo->moveData.size() * sizeof(int2));
+		{
+			std::memcpy(blockState[blocknr].sqrCenter, &buffer[pos], blockSize);
+			pos += blockSize;
+		}
 
 		// Read vertices data.
-		file.ReadFile(fh, vertex, nbrOfVertices * sizeof(float));
+		if (buffer.size() < pos + nbrOfVertices * sizeof(float))
+			return false;
+		std::memcpy(vertex, &buffer[pos], nbrOfVertices * sizeof(float));
 
 		// File read successful.
 		return true;
@@ -766,19 +780,20 @@ bool CPathEstimator::ReadFile(std::string name)
 }
 
 
-/*
- * try to write offset and vertex data to file
+/**
+ * Try to write offset and vertex data to file.
  */
-void CPathEstimator::WriteFile(std::string name) {
+void CPathEstimator::WriteFile(std::string cacheFileName, const std::string& map)
+{
 	// We need this directory to exist
-	if (!filesystem.CreateDirectory("maps/paths"))
+	if (!filesystem.CreateDirectory(pathDir))
 		return;
 
 	unsigned int hash = Hash();
 	char hashString[50];
 	sprintf(hashString,"%u",hash);
 
-	std::string filename = std::string("maps/paths/") + gameSetup->mapName.substr(0, gameSetup->mapName.find_last_of('.') + 1) + hashString + "." + name + ".zip";
+	std::string filename = std::string(pathDir) + map + hashString + "." + cacheFileName + ".zip";
 	zipFile file;
 
 	// open file for writing in a suitable location
@@ -788,7 +803,6 @@ void CPathEstimator::WriteFile(std::string name) {
 		zipOpenNewFileInZip(file, "pathinfo", NULL, NULL, 0, NULL, 0, NULL, Z_DEFLATED, Z_BEST_COMPRESSION);
 
 		// Write hash.
-		unsigned int hash = Hash();
 		zipWriteInFileInZip(file, (void*) &hash, 4);
 
 		// Write block-center-offsets.
@@ -812,15 +826,18 @@ void CPathEstimator::WriteFile(std::string name) {
 
 		std::auto_ptr<CArchiveZip> auto_pfile(pfile);
 		CArchiveZip& file(*pfile);
-		pathChecksum = file.GetCrc32("pathinfo");
+		
+		const unsigned fid = file.FindFile("pathinfo");
+		assert(fid < file.NumFiles());
+		pathChecksum = file.GetCrc32(fid);
 	}
 }
 
 
-/*
-Gives a hash-code identifying the dataset of this estimator.
-*/
-unsigned int CPathEstimator::Hash()
+/**
+ * Returns a hash-code identifying the dataset of this estimator.
+ */
+unsigned int CPathEstimator::Hash() const
 {
 	return (readmap->mapChecksum + moveinfo->moveInfoChecksum + BLOCK_SIZE + moveMathOptions + PATHESTIMATOR_VERSION);
 }

@@ -1,14 +1,21 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef DEMO_READER
 #define DEMO_READER
 
+#include <fstream>
+#include <vector>
+
 #include "Demo.h"
 
-class CFileHandler;
+#include "Game/PlayerStatistics.h"
+#include "Sim/Misc/TeamStatistics.h"
+
 namespace netcode { class RawPacket; }
 
 /**
-@brief Utility class for reading demofiles
-*/
+ * @brief Utility class for reading demofiles
+ */
 class CDemoReader : public CDemo
 {
 public:
@@ -35,14 +42,23 @@ public:
 	{
 		return setupScript;
 	};
+	
+	const std::vector<PlayerStatistics>& GetPlayerStats() const;
+	const std::vector< std::vector<TeamStatistics> >& GetTeamStats() const;
+
+	/// Not needed for normal demo watching
+	void LoadStats();
 
 private:
-	CFileHandler* playbackDemo;
+	std::ifstream playbackDemo;
 	float demoTimeOffset;
 	float nextDemoRead;
 	int bytesRemaining;
 	DemoStreamChunkHeader chunkHeader;
 	std::string setupScript;	// the original, unaltered version from script
+
+	std::vector<PlayerStatistics> playerStats;
+	std::vector< std::vector<TeamStatistics> > teamStats;
 };
 
 #endif

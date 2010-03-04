@@ -1,8 +1,7 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef GUIHANDLER_H
 #define GUIHANDLER_H
-// GuiHandler.h: interface for the CGuiHandler class.
-//
-//////////////////////////////////////////////////////////////////////
 
 #include <vector>
 #include <map>
@@ -219,6 +218,7 @@ class CGuiHandler : public CInputReceiver {
 		std::map<std::string, unsigned int> textureMap; // filename, glTextureID
 
 		std::set<int> changedGroups;
+		int failedSound;
 };
 
 

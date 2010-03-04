@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include <cstdlib>
 
@@ -72,6 +74,7 @@ CCameraHandler::CCameraHandler()
 	RegisterAction("viewtaflip");
 
 	RegisterAction("toggleoverview");
+	RegisterAction("togglecammode");
 
 	RegisterAction("viewsave");
 	RegisterAction("viewload");
@@ -353,6 +356,9 @@ void CCameraHandler::PushAction(const Action& action)
 	}
 	else if (cmd == "toggleoverview") {
 		ToggleOverviewCamera();
+	}
+	else if (cmd == "togglecammode") {
+		ToggleState();
 	}
 }
 

@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "mmgr.h"
 
@@ -11,9 +13,9 @@
 #include "bitops.h"
 #include "Map/BaseGroundDrawer.h"
 #include "BaseSky.h"
+#include "Rendering/UnitModels/FeatureDrawer.h"
 #include "Rendering/UnitModels/UnitDrawer.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
-#include "Sim/Features/FeatureHandler.h"
 #include "Game/UI/MouseHandler.h"
 #include "Game/GameHelper.h"
 #include "Rendering/ShadowHandler.h"
@@ -101,26 +103,24 @@ CDynWater::CDynWater(void)
 
 	delete[] scrap;
 
-	if(ProgramStringIsNative(GL_VERTEX_PROGRAM_ARB,"waterDyn.vp"))
-		waterVP=LoadVertexProgram("waterDyn.vp");
+	if (ProgramStringIsNative(GL_VERTEX_PROGRAM_ARB, "waterDyn.vp"))
+		waterVP = LoadVertexProgram("waterDyn.vp");
 	else
-		waterVP=LoadVertexProgram("waterDynNT.vp");
+		waterVP = LoadVertexProgram("waterDynNT.vp");
 
-	waterFP=LoadFragmentProgram("waterDyn.fp");
-	waveFP=LoadFragmentProgram("waterDynWave.fp");
-	waveVP=LoadVertexProgram("waterDynWave.vp");
-	waveFP2=LoadFragmentProgram("waterDynWave2.fp");
-	waveVP2=LoadVertexProgram("waterDynWave2.vp");
-	waveNormalFP=LoadFragmentProgram("waterDynNormal.fp");
-	waveNormalVP=LoadVertexProgram("waterDynNormal.vp");
-	waveCopyHeightFP=LoadFragmentProgram("waterDynWave3.fp");
-	waveCopyHeightVP=LoadVertexProgram("waterDynWave3.vp");
-	dwGroundRefractVP=LoadVertexProgram("dwgroundrefract.vp");
-	dwGroundReflectIVP=LoadVertexProgram("dwgroundreflectinverted.vp");
-	dwDetailNormalFP=LoadFragmentProgram("dwDetailNormal.fp");
-	dwDetailNormalVP=LoadVertexProgram("dwDetailNormal.vp");
-	dwAddSplashFP=LoadFragmentProgram("dwAddSplash.fp");
-	dwAddSplashVP=LoadVertexProgram("dwAddSplash.vp");
+	waterFP          = LoadFragmentProgram("waterDyn.fp");
+	waveFP           = LoadFragmentProgram("waterDynWave.fp");
+	waveVP           = LoadVertexProgram("waterDynWave.vp");
+	waveFP2          = LoadFragmentProgram("waterDynWave2.fp");
+	waveVP2          = LoadVertexProgram("waterDynWave2.vp");
+	waveNormalFP     = LoadFragmentProgram("waterDynNormal.fp");
+	waveNormalVP     = LoadVertexProgram("waterDynNormal.vp");
+	waveCopyHeightFP = LoadFragmentProgram("waterDynWave3.fp");
+	waveCopyHeightVP = LoadVertexProgram("waterDynWave3.vp");
+	dwDetailNormalFP = LoadFragmentProgram("dwDetailNormal.fp");
+	dwDetailNormalVP = LoadVertexProgram("dwDetailNormal.vp");
+	dwAddSplashFP    = LoadFragmentProgram("dwAddSplash.fp");
+	dwAddSplashVP    = LoadVertexProgram("dwAddSplash.vp");
 
 	waterSurfaceColor = mapInfo->water.surfaceColor;
 
@@ -269,8 +269,6 @@ CDynWater::~CDynWater(void)
 	glSafeDeleteProgram( waveNormalVP );
 	glSafeDeleteProgram( waveCopyHeightFP );
 	glSafeDeleteProgram( waveCopyHeightVP );
-	glSafeDeleteProgram( dwGroundReflectIVP );
-	glSafeDeleteProgram( dwGroundRefractVP );
 	glSafeDeleteProgram( dwDetailNormalVP );
 	glSafeDeleteProgram( dwDetailNormalFP );
 	glSafeDeleteProgram( dwAddSplashVP );
@@ -287,6 +285,7 @@ void CDynWater::Draw()
 	glDisable(GL_ALPHA_TEST);
 	glEnable(GL_FOG);
 
+	glActiveTextureARB(GL_TEXTURE0_ARB);
 	glBindTexture(GL_TEXTURE_2D, waveTex3);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
@@ -297,7 +296,7 @@ void CDynWater::Draw()
 	glActiveTextureARB(GL_TEXTURE3_ARB);
 	glBindTexture(GL_TEXTURE_2D,refractTexture);
 	glActiveTextureARB(GL_TEXTURE4_ARB);
-	glBindTexture(GL_TEXTURE_2D,readmap->GetShadingTexture ());
+	glBindTexture(GL_TEXTURE_2D,readmap->GetShadingTexture());
 	glActiveTextureARB(GL_TEXTURE5_ARB);
 	glBindTexture(GL_TEXTURE_2D,foamTex);
 	glActiveTextureARB(GL_TEXTURE6_ARB);
@@ -445,7 +444,7 @@ void CDynWater::DrawReflection(CGame* game)
 	glClearColor(0.5f,0.6f,0.8f,0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	game->SetDrawMode(CGame::reflectionDraw);
+	game->SetDrawMode(CGame::gameReflectionDraw);
 
 	sky->Draw();
 
@@ -456,8 +455,10 @@ void CDynWater::DrawReflection(CGame* game)
 	bool drawShadows=shadowHandler->drawShadows;
 	shadowHandler->drawShadows=false;
 
-	CBaseGroundDrawer *gd = readmap->GetGroundDrawer ();
-	gd->Draw(true,false,dwGroundReflectIVP);
+	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
+		gd->SetupReflDrawPass();
+		gd->Draw(true, false);
+		gd->SetupBaseDrawPass();
 
 	double plane[4]={0,1,0,1.0f};
 	glClipPlane(GL_CLIP_PLANE2 ,plane);
@@ -467,16 +468,16 @@ void CDynWater::DrawReflection(CGame* game)
 	shadowHandler->drawShadows=drawShadows;
 
 	unitDrawer->Draw(true);
-	featureHandler->Draw();
+	featureDrawer->Draw();
 	unitDrawer->DrawCloakedUnits(false,true);
-	featureHandler->DrawFadeFeatures(false,true);
+	featureDrawer->DrawFadeFeatures(false,true);
 
 	ph->Draw(true);
 	eventHandler.DrawWorldReflection();
 
 	sky->DrawSun();
 
-	game->SetDrawMode(CGame::normalDraw);
+	game->SetDrawMode(CGame::gameNormalDraw);
 
 	drawReflection=false;
 	glDisable(GL_CLIP_PLANE2);
@@ -513,25 +514,27 @@ void CDynWater::DrawRefraction(CGame* game)
 	unitDrawer->unitSunColor*=float3(0.5f,0.7f,0.9f);
 	unitDrawer->unitAmbientColor*=float3(0.6f,0.8f,1.0f);
 
-	game->SetDrawMode(CGame::refractionDraw);
+	game->SetDrawMode(CGame::gameRefractionDraw);
 
-	CBaseGroundDrawer *gd = readmap->GetGroundDrawer();
-	gd->Draw(false,false,dwGroundRefractVP);
+	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
+		gd->SetupRefrDrawPass();
+		gd->Draw(false, false);
+		gd->SetupBaseDrawPass();
 
 	glEnable(GL_CLIP_PLANE2);
 	double plane[4]={0,-1,0,2};
 	glClipPlane(GL_CLIP_PLANE2 ,plane);
 	drawReflection=true;
 	unitDrawer->Draw(false,true);
-	featureHandler->Draw();
+	featureDrawer->Draw();
 	unitDrawer->DrawCloakedUnits(true,true);
-	featureHandler->DrawFadeFeatures(true,true); // FIXME: Make it fade out correctly without "noAdvShading"
+	featureDrawer->DrawFadeFeatures(true,true); // FIXME: Make it fade out correctly without "noAdvShading"
 	drawReflection=false;
 	ph->Draw(false,true);
 	eventHandler.DrawWorldRefraction();
 	glDisable(GL_CLIP_PLANE2);
 
-	game->SetDrawMode(CGame::normalDraw);
+	game->SetDrawMode(CGame::gameNormalDraw);
 
 	drawRefraction=false;
 
@@ -554,10 +557,11 @@ void CDynWater::DrawWaves(void)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
+	glActiveTextureARB(GL_TEXTURE0_ARB);
 	glBindTexture(GL_TEXTURE_2D,waveTex3);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
-	glActiveTextureARB(GL_TEXTURE0_ARB);
+	/*glActiveTextureARB(GL_TEXTURE0_ARB);
 	glBindTexture(GL_TEXTURE_2D,0);
 	glActiveTextureARB(GL_TEXTURE1_ARB);
 	glBindTexture(GL_TEXTURE_2D,0);
@@ -569,7 +573,7 @@ void CDynWater::DrawWaves(void)
 	glBindTexture(GL_TEXTURE_2D,0);
 	glActiveTextureARB(GL_TEXTURE5_ARB);
 	glBindTexture(GL_TEXTURE_2D,0);
-	glActiveTextureARB(GL_TEXTURE0_ARB);
+	glActiveTextureARB(GL_TEXTURE0_ARB);*/
 
 
 	GLenum status;

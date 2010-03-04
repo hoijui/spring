@@ -1,9 +1,12 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #include "StdAfx.h"
 #include "BeamLaser.h"
 #include "Game/GameHelper.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Map/Ground.h"
 #include "Matrix44f.h"
+#include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/InterceptHandler.h"
 #include "Sim/MoveTypes/AirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/BeamLaserProjectile.h"
@@ -121,7 +124,9 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 			return false;
 	}
 
-	float spread = (accuracy + sprayAngle) * (1 - owner->limExperience * 0.7f);
+	const float spread =
+		(accuracy + sprayAngle) *
+		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight);
 
 	if (avoidFeature && helper->LineFeatureCol(weaponMuzzlePos, dir, length)) {
 		return false;
@@ -176,7 +181,7 @@ void CBeamLaser::FireImpl(void)
 		}
 	}
 
-	dir += (salvoError) * (1 - owner->limExperience * 0.7f);
+	dir += ((salvoError) * (1.0f - owner->limExperience * weaponDef->ownerExpAccWeight));
 	dir.ANormalize();
 
 	FireInternal(dir, false);
@@ -201,7 +206,9 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 	float3 curPos = weaponMuzzlePos;
 	float3 hitPos;
 
-	dir += gs->randVector() * sprayAngle * (1 - owner->limExperience * 0.7f);
+	dir +=
+		((gs->randVector() * sprayAngle *
+		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight)));
 	dir.ANormalize();
 
 	bool tryAgain = true;
@@ -220,7 +227,8 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 	}
 
 	// unit at the end of the beam
-	const CUnit* hit = NULL;
+	const CUnit* hit = 0;
+	const CFeature* hitfeature = 0;
 	for (int tries = 0; tries < 5 && tryAgain; ++tries) {
 		tryAgain = false;
 		hit = NULL;
@@ -232,7 +240,8 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 			weaponDef->damages[0],
 			owner,
 			hit,
-			collisionFlags
+			collisionFlags,
+			&hitfeature
 		);
 
 		if (hit && hit->allyteam == owner->allyteam && sweepFire) {
@@ -282,6 +291,7 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 		dir = newDir;
 	}
 	CUnit* hitM = (hit == NULL) ? NULL : uh->units[hit->id];
+	CFeature* hitF = hitfeature ? featureHandler->GetFeature(hitfeature->id) : 0;
 
 	// fix negative damage when hitting big spheres
 	float actualRange = range;
@@ -316,7 +326,7 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 				weaponDef->dynDamageInverted
 			);
 		}
-
+		
 		helper->Explosion(
 			hitPos,
 			weaponDef->dynDamageExp > 0?
@@ -333,7 +343,8 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 			weaponDef->explosionGenerator,
 			hitM,
 			dir,
-			weaponDef->id
+			weaponDef->id,
+			hitF
 		);
 	}
 
