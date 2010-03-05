@@ -48,8 +48,7 @@ static char* i_error = NULL;
 static void util_setError(const char* error) {
 
 	util_clearError();
-	i_error = util_allocStr(i_error_sizeMax);
-	STRCPYS(i_error, i_error_sizeMax, error);
+	i_error = util_allocStrCpy(error);
 }
 
 bool util_hasError() {
@@ -60,12 +59,11 @@ bool util_getError(char* error, const unsigned int error_sizeMax) {
 
 	const bool hasError = util_hasError();
 
-	if (error != NULL) {
-		if (hasError) {
-			if (error_sizeMax > 0) {
-				STRCPYS(error, error_sizeMax, i_error);
-				util_clearError();
-			}
+	if ((error != NULL) && (error_sizeMax > 0)) {
+		if (hasError && (error_sizeMax > 1)) {
+			error[error_sizeMax-1] = '\0';
+			STRNCPY(error, i_error, error_sizeMax-1);
+			util_clearError();
 		} else {
 			error[0] = '\0';
 		}
@@ -97,7 +95,8 @@ char* util_allocStrCpy(const char* toCopy) {
 
 	const size_t copy_sizeMax = strlen(toCopy) + 1;
 	char* copy = (char*) calloc(copy_sizeMax, sizeof(char));
-	STRCPYS(copy, copy_sizeMax, toCopy);
+	copy[copy_sizeMax-1] = '\0';
+	STRNCPYS(copy, toCopy, copy_sizeMax-1);
 	return copy;
 }
 
