@@ -177,11 +177,13 @@ bool util_makeDir(const char* dirPath, bool recursive);
 
 /**
  * Saves the parent directory of a file or dir specified in path
- * into parentPath.
+ * back into path.
  *
  * Example:
  * before: "/home/user/games/spring/AI/Skirmish/RAI/0.1/log.txt"
  * after:  "/home/user/games/spring/AI/Skirmish/RAI/0.1"
+ *
+ * @param  path used as in- and out-buffer
  */
 bool util_getParentDir(char* path);
 
