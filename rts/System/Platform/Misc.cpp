@@ -2,25 +2,16 @@
 
 #include "Misc.h"
 
-#ifdef linux
-#include <unistd.h>
-#include <dlfcn.h> // for dladdr(), dlopen()
+#include <stdlib.h>
 
-#elif WIN32
+#ifdef WIN32
 #include <io.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include "System/Platform/Win/WinVersion.h"
-
-#elif __APPLE__
-#include <mach-o/dyld.h>
-#include <stdlib.h>
-#include <dlfcn.h> // for dladdr(), dlopen()
-
-#else
-
 #endif
 
+#include "lib/cutils/Util.h"
 #include "System/LogOutput.h"
 #include "FileSystem/FileSystem.h"
 
@@ -67,49 +58,15 @@ namespace Platform
 std::string GetProcessExecutableFile()
 {
 	std::string procExeFilePath = "";
-	// will only be used if procExeFilePath stays empty
-	const char* error = "Fetch not implemented";
 
-#ifdef linux
-	char file[512];
-	const int ret = readlink("/proc/self/exe", file, sizeof(file)-1);
-	if (ret >= 0) {
-		file[ret] = '\0';
-		procExeFilePath = std::string(file);
+	char path[2048];
+	const bool pathFetchOk = util_getProcessExecutableFile(path, sizeof(path));
+	if (!pathFetchOk && util_hasError()) {
+		char errorMsg[2048];
+		util_getError(errorMsg, sizeof(errorMsg));
+		logOutput.Print("%s", errorMsg);
 	} else {
-		error = "Failed to read /proc/self/exe";
-	}
-#elif WIN32
-	// with NULL, it will return the handle
-	// for the main executable of the process
-	const HMODULE hModule = GetModuleHandle(NULL);
-
-	// fetch
-	TCHAR procExeFile[MAX_PATH+1];
-	const int ret = ::GetModuleFileName(hModule, procExeFile, sizeof(procExeFile));
-
-	if ((ret != 0) && (ret != sizeof(procExeFile))) {
-		procExeFilePath = std::string(procExeFile);
-	} else {
-		error = "Unknown";
-	}
-
-#elif __APPLE__
-	uint32_t pathlen = PATH_MAX;
-	char path[PATH_MAX];
-	int err = _NSGetExecutablePath(path, &pathlen);
-	if (err == 0)
-	{
-		char pathReal[PATH_MAX];
-		realpath(path, pathReal);
-		procExeFilePath = std::string(pathReal);
-	}
-#else
-	#error implement this
-#endif
-
-	if (procExeFilePath.empty()) {
-		logOutput.Print("WARNING: Failed to get file path of the process executable, reason: %s", error);
+		procExeFilePath = path;
 	}
 
 	return procExeFilePath;
@@ -123,89 +80,15 @@ std::string GetProcessExecutablePath()
 std::string GetModuleFile(std::string moduleName)
 {
 	std::string moduleFilePath = "";
-	// will only be used if moduleFilePath stays empty
-	const char* error = "Fetch not implemented";
 
-#if defined(linux) || defined(__APPLE__)
-#ifdef __APPLE__
-	#define SHARED_LIBRARY_EXTENSION "dylib"
-#else
-	#define SHARED_LIBRARY_EXTENSION "so"
-#endif
-	void* moduleAddress = NULL;
-
-	// find an address in the module we are looking for
-	if (moduleName.empty()) {
-		// look for current module
-		moduleAddress = (void*) GetModuleFile;
+	char path[2048];
+	const bool pathFetchOk = util_getModuleFile(moduleName.c_str(), path, sizeof(path));
+	if (!pathFetchOk && util_hasError()) {
+		char errorMsg[2048];
+		util_getError(errorMsg, sizeof(errorMsg));
+		logOutput.Print("%s", errorMsg);
 	} else {
-		// look for specified module
-
-		// add extension if it is not in the file name
-		// it could also be "libXZY.so-1.2.3"
-		// -> does not have to be the end, my friend
-		if (moduleName.find("."SHARED_LIBRARY_EXTENSION) == std::string::npos) {
-			moduleName = moduleName + "."SHARED_LIBRARY_EXTENSION;
-		}
-
-		// will not not try to load, but return the libs address
-		// if it is already loaded, NULL otherwise
-		moduleAddress = dlopen(moduleName.c_str(), RTLD_LAZY | RTLD_NOLOAD);
-
-		if (moduleAddress == NULL) {
-			// if not found, try with "lib" prefix
-			moduleName = "lib" + moduleName;
-			moduleAddress = dlopen(moduleName.c_str(), RTLD_LAZY | RTLD_NOLOAD);
-		}
-	}
-
-	if (moduleAddress != NULL) {
-		// fetch info about the module containing the address we just evaluated
-		Dl_info moduleInfo;
-		const int ret = dladdr(moduleAddress, &moduleInfo);
-		if ((ret != 0) && (moduleInfo.dli_fname != NULL)) {
-			moduleFilePath = moduleInfo.dli_fname;
-		} else {
-			error = dlerror();
-			if (error == NULL) {
-				error = "Unknown";
-			}
-		}
-	} else {
-		error = "Not loaded";
-	}
-
-#elif WIN32
-	HMODULE hModule = NULL;
-	if (moduleName.empty()) {
-		hModule = GetCurrentModule();
-	} else {
-		// If this fails, we get a NULL handle
-		hModule = GetModuleHandle(moduleName.c_str());
-	}
-
-	if (hModule != NULL) {
-		// fetch module file name
-		TCHAR moduleFile[MAX_PATH+1];
-		const int ret = ::GetModuleFileName(hModule, moduleFile, sizeof(moduleFile));
-
-		if ((ret != 0) && (ret != sizeof(moduleFile))) {
-			moduleFilePath = std::string(moduleFile);
-		} else {
-			error = + "Unknown";
-		}
-	} else {
-		error = "Not found";
-	}
-#else
-	#warning implement this (or use linux version)
-#endif
-
-	if (moduleFilePath.empty()) {
-		if (moduleName.empty()) {
-			moduleName = "<current>";
-		}
-		logOutput.Print("WARNING: Failed to get file path of the module \"%s\", reason: %s", moduleName.c_str(), error);
+		moduleFilePath = path;
 	}
 
 	return moduleFilePath;
