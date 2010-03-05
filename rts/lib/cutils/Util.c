@@ -96,7 +96,7 @@ char* util_allocStrCpy(const char* toCopy) {
 	const size_t copy_sizeMax = strlen(toCopy) + 1;
 	char* copy = (char*) calloc(copy_sizeMax, sizeof(char));
 	copy[copy_sizeMax-1] = '\0';
-	STRNCPYS(copy, toCopy, copy_sizeMax-1);
+	STRNCPY(copy, toCopy, copy_sizeMax-1);
 	return copy;
 }
 
