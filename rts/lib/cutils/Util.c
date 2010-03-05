@@ -29,10 +29,14 @@
 #include <stdio.h>       // fgets()
 #include <stdarg.h>      // var-args
 #include <sys/stat.h>    // used for check if a file exists
-#ifdef _WIN32
+#ifdef    WIN32
 #include <io.h>          // needed for dir listing
 #include <direct.h>      // mkdir()
-#else // WIN32
+#include <shlobj.h>      // for HMODULE, TCHAR
+#include <shlwapi.h>     // for GetModuleHandle(), GetModuleFileName()
+#elif     __APPLE__
+#include <mach-o/dyld.h> // for _NSGetExecutablePath()
+#else  // WIN32, __APPLE__ -> linux, unix, BSD
 #include <sys/stat.h>    // mkdir()
 #include <sys/types.h>   // mkdir()
 #include <dirent.h>      // needed for dir listing
@@ -944,6 +948,98 @@ int util_parsePropertiesFile(const char* propertiesFile,
 	fclose(file);
 
 	return numProperties;
+}
+
+/* -- no doc comment --
+ * Mac OS X:        _NSGetExecutablePath() (man 3 dyld)
+ * Linux:           readlink /proc/self/exe
+ * Solaris:         getexecname()
+ * FreeBSD:         sysctl CTL_KERN KERN_PROC KERN_PROC_PATHNAME -1
+ * BSD with procfs: readlink /proc/curproc/file
+ * Windows:         GetModuleFileName() with hModule = NULL
+ */
+bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) {
+
+	// will only be used if path stays empty
+	const char* error = "Fetch not implemented";
+
+	if (path_sizeMax < 1) {
+		error = "Supplied path buffer is too small";
+		path  = NULL;
+	} else {
+		// ensure the path is null-terminated
+		path[path_sizeMax-1] = '\0';
+
+#ifdef linux
+		char file[path_sizeMax];
+		const int ret = readlink("/proc/self/exe", file, sizeof(file)-1);
+		if (ret >= 0) {
+			file[ret] = '\0';
+			STRNCPY(path, file, path_sizeMax-1);
+			if (strlen(path) == (path_sizeMax-1)) {
+				error = "Path is too long for supplied buffer";
+				path  = NULL;
+			}
+		} else {
+			error = "Failed to read /proc/self/exe";
+			path  = NULL;
+		}
+
+#elif WIN32
+		// with NULL, it will return the handle
+		// for the main executable of the process
+		const HMODULE hModule = GetModuleHandle(NULL);
+
+		// fetch
+		TCHAR procExeFile[MAX_PATH+1];
+		const int ret = GetModuleFileName(hModule, procExeFile, sizeof(procExeFile));
+
+		if (ret != 0) {
+			if (ret != sizeof(procExeFile)) {
+				STRNCPY(path, procExeFile, path_sizeMax-1);
+			} else {
+				error = "Path is too long for used buffer";
+				path  = NULL;
+			}
+		} else {
+			error = "Unknown";
+			path  = NULL;
+		}
+
+#elif __APPLE__
+		uint32_t pathlen = PATH_MAX;
+		char path[PATH_MAX];
+		int err = _NSGetExecutablePath(path, &pathlen);
+		if (err == 0) {
+			char pathReal[PATH_MAX];
+			realpath(path, pathReal);
+			STRNCPY(path, pathReal, path_sizeMax-1);
+			if (strlen(path) == (path_sizeMax-1)) {
+				error = "Path is too long for supplied buffer";
+				path  = NULL;
+			}
+		} else {
+			error = "Call to NSGetExecutablePath() failed";
+			path  = NULL;
+		}
+
+#else
+	#error implement this
+
+#endif
+	}
+
+	if (path == NULL) {
+		const size_t errorMsg_sizeMax = 2048;
+		char errorMsg[errorMsg_sizeMax];
+		errorMsg[errorMsg_sizeMax-1] = '\0';
+		STRNCPY(errorMsg, "WARNING: Failed to get file path of the process executable, reason: ", errorMsg_sizeMax-1);
+		STRNCAT(errorMsg, error, errorMsg_sizeMax-1);
+		util_setError(errorMsg);
+		return false;
+	} else {
+		return true;
+	}
 }
 
 // END: File system realated functions

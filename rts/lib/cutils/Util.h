@@ -225,6 +225,28 @@ bool util_findDir(const char* dirs[], unsigned int numDirs,
 int util_parsePropertiesFile(const char* propertiesFile,
 		const char* keys[], const char* values[], int maxProperties);
 
+/**
+ * Returns the path to the main binary of the running process,
+ * including the file name.
+ *
+ * Examples:
+ * examples when calling from the engine:
+ * - "/usr/games/bin/spring"
+ * - "/home/user/spring/spring"
+ * - "C:\Program Files\Spring\spring.exe"
+ * examples when calling from the synchronization library:
+ * - "/usr/games/bin/springlobby"
+ * - "/home/user/springlobby/springlobby"
+ * - "C:\Program Files\SpringLobby\springlobby.exe"
+ *
+ * @see util_hasError()
+ * @see util_getError()
+ * @param  path out-param which will contain the process executable file path
+ * @param  path_sizeMax max number of chars to put into the path buffer
+ * @return false if an error/problem occured, true otherwise
+ */
+bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax);
+
 // END: File system realated functions
 
 
