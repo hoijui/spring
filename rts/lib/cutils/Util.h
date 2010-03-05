@@ -18,11 +18,11 @@
 #ifndef _CUTILS_UTIL_H
 #define _CUTILS_UTIL_H
 
-#include "cutilsdefines.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdbool.h>
 
 // BEGINN: String realated functions
 
@@ -215,13 +215,6 @@ const char* util_map_getValueByKey(
  * the streflop static library.
  */
 void util_resetEngineEnv();
-
-/**
- * Free memory.
- * Some of the other functions will not work anymore,
- * after calling this function.
- */
-void util_finalize();
 
 #ifdef __cplusplus
 } // extern "C"
