@@ -59,6 +59,11 @@ std::string GetModulePath(const std::string& moduleName = "");
 
 std::string GetOS();
 bool Is64Bit();
+
+/**
+ * @brief checks if the current process is running in 32bit emulation mode
+ * @return FALSE, TRUE, -1 on error (usually no permissions)
+ */
 bool Is32BitEmulation();
 }
 

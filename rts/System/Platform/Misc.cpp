@@ -238,13 +238,11 @@ bool Is64Bit()
 	return (sizeof(void*) == 8);
 }
 
-#ifdef WIN32
+#ifdef    WIN32
 typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
 
 LPFN_ISWOW64PROCESS fnIsWow64Process;
 
-/** @brief checks if the current process is running in 32bit emulation mode
-    @return FALSE, TRUE, -1 on error (usually no permissions) */
 bool Is32BitEmulation()
 {
 	BOOL bIsWow64 = FALSE;
@@ -261,13 +259,13 @@ bool Is32BitEmulation()
 	}
 	return bIsWow64;
 }
-#else
-// simply assume other OS doesn't need 32bit emulation
+#else  // WIN32
+// simply assume other OSs do not need 32bit emulation
 bool Is32BitEmulation()
 {
 	return false;
 }
-#endif
+#endif // WIN32
 
 }
 
