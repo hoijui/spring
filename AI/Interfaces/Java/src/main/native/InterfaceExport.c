@@ -182,7 +182,7 @@ EXPORT(int) releaseStatic() {
 	success = success && java_unloadJNIEnv();
 
 	// release C part of the interface
-	//util_finalize(); // no longer exists, no cleanup required
+	util_clearError();
 
 	return success ? 0 : -1;
 }

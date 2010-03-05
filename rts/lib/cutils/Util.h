@@ -24,6 +24,40 @@ extern "C" {
 
 #include <stdbool.h>
 
+
+// BEGINN: Error handling realated functions
+
+/**
+ * Indicates whether an error happend and did not yet get cleared.
+ * @see util_getError()
+ * @see util_clearError()
+ * @return true if an error happend and did not yet get cleared
+ */
+bool util_hasError();
+
+/**
+ * Allows fetching an error description in case something
+ * went wrong in one of the utility functions.
+ * The error gets cleared automatically, once it got successfully fetched.
+ * @see util_hasError()
+ * @see util_clearError()
+ * @param  error where to store the error description
+ * @param  error_sizeMax max number of chars to store into error
+ * @return true if an error happend and did not yet get cleared
+ */
+bool util_getError(char* error, const unsigned int error_sizeMax);
+
+/**
+ * Allows clearing the internal error buffer.
+ * @see util_hasError()
+ * @see util_getError()
+ * @return true if an error happend and did not yet get cleared
+ */
+bool util_clearError();
+
+// END: Error handling realated functions
+
+
 // BEGINN: String realated functions
 
 /**

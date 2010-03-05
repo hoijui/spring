@@ -39,6 +39,52 @@
 #endif // WIN32
 
 
+// BEGINN: Error handling realated functions
+
+// internal error buffer
+static const unsigned int i_error_sizeMax = 1024;
+static char* i_error = NULL;
+
+static void util_setError(const char* error) {
+
+	util_clearError();
+	i_error = util_allocStr(i_error_sizeMax);
+	STRCPYS(i_error, i_error_sizeMax, error);
+}
+
+bool util_hasError() {
+	return (i_error != NULL);
+}
+
+bool util_getError(char* error, const unsigned int error_sizeMax) {
+
+	const bool hasError = util_hasError();
+
+	if (error != NULL) {
+		if (hasError) {
+			if (error_sizeMax > 0) {
+				STRCPYS(error, error_sizeMax, i_error);
+				util_clearError();
+			}
+		} else {
+			error[0] = '\0';
+		}
+	}
+
+	return hasError;
+}
+
+bool util_clearError() {
+
+	free(i_error);
+	i_error = NULL;
+}
+
+// END: Error handling realated functions
+
+
+// BEGINN: String realated functions
+
 char* util_allocStr(unsigned int length) {
 	return (char*) calloc(length+1, sizeof(char));
 }
@@ -407,6 +453,10 @@ bool util_strToBool(const char* str) {
 	return res;
 }
 
+// END: String realated functions
+
+
+// BEGINN: File system realated functions
 
 #if defined WIN32
 static bool util_isFile(const struct _finddata_t* fileInfo) {
@@ -896,6 +946,9 @@ int util_parsePropertiesFile(const char* propertiesFile,
 
 	return numProperties;
 }
+
+// END: File system realated functions
+
 
 const char* util_map_getValueByKey(
 		unsigned int mapSize,
