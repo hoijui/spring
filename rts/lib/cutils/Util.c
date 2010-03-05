@@ -37,9 +37,13 @@
 #elif     __APPLE__
 #include <mach-o/dyld.h> // for _NSGetExecutablePath()
 #else  // WIN32, __APPLE__ -> linux, unix, BSD
-#include <sys/stat.h>    // mkdir()
-#include <sys/types.h>   // mkdir()
+//#include <sys/types.h>   // mkdir()
 #include <dirent.h>      // needed for dir listing
+#ifndef __USE_GNU
+// this is needed for dladdr() and Dl_info to be available under C
+#define __USE_GNU
+#endif
+#include <dlfcn.h>       // for dladdr(), dlopen(), dlerror()
 #endif // WIN32
 
 
@@ -1034,6 +1038,146 @@ bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) 
 		char errorMsg[errorMsg_sizeMax];
 		errorMsg[errorMsg_sizeMax-1] = '\0';
 		STRNCPY(errorMsg, "WARNING: Failed to get file path of the process executable, reason: ", errorMsg_sizeMax-1);
+		STRNCAT(errorMsg, error, errorMsg_sizeMax-1);
+		util_setError(errorMsg);
+		return false;
+	} else {
+		return true;
+	}
+}
+
+bool util_getModuleFile(const char* moduleName, char* path, const unsigned int path_sizeMax) {
+
+	// will only be used if path stays empty
+	const char* error = "Fetch not implemented";
+
+	if (path_sizeMax < 1) {
+		error = "Supplied path buffer is too small";
+		path  = NULL;
+	} else {
+		// ensure the path is null-terminated
+		path[path_sizeMax-1] = '\0';
+
+#if defined(linux) || defined(__APPLE__)
+#ifdef __APPLE__
+	#define SHARED_LIBRARY_EXTENSION ".dylib"
+#else
+	#define SHARED_LIBRARY_EXTENSION ".so"
+#endif
+		void* moduleAddress = NULL;
+
+		// find an address in the module we are looking for
+		if ((moduleName == NULL) || (strlen(moduleName) == 0)) {
+			// look for current module through the address of this function
+			moduleAddress = (void*) util_getModuleFile;
+		} else {
+			// look for specified module
+
+			char moduleNameExt[strlen(moduleName) + 16];
+			STRCPY(moduleNameExt, moduleName);
+
+			// add extension if it is not in the file name
+			// it could also be "libXZY.so-1.2.3"
+			// -> does not have to be the end, my friend
+			if (strstr(moduleNameExt, SHARED_LIBRARY_EXTENSION) == NULL) {
+				STRCAT(moduleNameExt, SHARED_LIBRARY_EXTENSION);
+			}
+
+			// will not not try to load, but return the libs address
+			// if it is already loaded, NULL otherwise
+			moduleAddress = dlopen(moduleNameExt, RTLD_LAZY | RTLD_NOLOAD);
+
+			if (moduleAddress == NULL) {
+				// if not found, try with "lib" prefix
+				char moduleNameExt2[strlen(moduleNameExt) + 16];
+				STRCPY(moduleNameExt2, "lib");
+				STRCAT(moduleNameExt2, moduleNameExt);
+				moduleAddress = dlopen(moduleNameExt2, RTLD_LAZY | RTLD_NOLOAD);
+			}
+		}
+
+		if (moduleAddress != NULL) {
+			// fetch info about the module containing the address we just evaluated
+			//const int ret = dladdr(moduleAddress, NULL);
+			Dl_info moduleInfo;
+			const int ret = dladdr(moduleAddress, &moduleInfo);
+			if ((ret != 0) && (moduleInfo.dli_fname != NULL)) {
+				STRNCPY(path, moduleInfo.dli_fname, path_sizeMax-1);
+			} else {
+				error = dlerror();
+				if (error == NULL) {
+					error = "Unknown";
+					path  = NULL;
+				}
+			}
+		} else {
+			error = "Not loaded";
+			path  = NULL;
+		}
+
+#elif WIN32
+		HMODULE hModule = NULL;
+		if ((moduleName == NULL) || (strlen(moduleName) == 0)) {
+			// look for current module through the address of this function
+
+			// both solutions use the address of this function
+			// both found at:
+			// http://stackoverflow.com/questions/557081/how-do-i-get-the-hmodule-for-the-currently-executing-code/557774
+
+			// Win 2000+ solution
+			MEMORY_BASIC_INFORMATION mbi = {0};
+			VirtualQuery((void*)util_getModuleFile, &mbi, sizeof(mbi));
+			hModule = (HMODULE) mbi.AllocationBase;
+
+			// Win XP+ solution (cleaner)
+			//::GetModuleHandleEx(
+			//		GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+			//		(LPCTSTR)GetCurrentModule,
+			//		&hModule);
+		} else {
+			// look for specified module
+
+			// If this fails, we get a NULL handle
+			hModule = GetModuleHandle(moduleName);
+		}
+
+		if (hModule != NULL) {
+			// fetch module file name
+			TCHAR moduleFile[MAX_PATH+1];
+			const int ret = GetModuleFileName(hModule, moduleFile, sizeof(moduleFile));
+
+			if ((ret != 0) && (ret != sizeof(moduleFile))) {
+				STRNCPY(path, moduleFile, path_sizeMax-1);
+			} else {
+				error = "Unknown";
+				path  = NULL;
+			}
+		} else {
+			error = "Not found";
+			path  = NULL;
+		}
+
+#else
+	#warning implement this (or use linux version)
+
+#endif
+	}
+
+	if (path == NULL) {
+		char moduleNameStr[2048];
+		moduleNameStr[sizeof(moduleNameStr)-1] = '\0';
+		if ((moduleName == NULL) || (strlen(moduleName) == 0)) {
+			STRNCPY(moduleNameStr, "<current>", sizeof(moduleNameStr)-1);
+		} else {
+			STRNCPY(moduleNameStr, moduleName, sizeof(moduleNameStr)-1);
+		}
+
+		const size_t errorMsg_sizeMax = 2048;
+		char errorMsg[errorMsg_sizeMax];
+		errorMsg[errorMsg_sizeMax-1] = '\0';
+		STRNCPY(errorMsg, "WARNING: Failed to get file path of the module \"", errorMsg_sizeMax-1);
+		STRNCPY(errorMsg, moduleNameStr, errorMsg_sizeMax-1);
+		STRNCPY(errorMsg, "\", reason: ", errorMsg_sizeMax-1);
 		STRNCAT(errorMsg, error, errorMsg_sizeMax-1);
 		util_setError(errorMsg);
 		return false;

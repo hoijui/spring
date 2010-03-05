@@ -25,7 +25,7 @@ extern "C" {
 #include <stdbool.h>
 
 
-// BEGINN: Error handling realated functions
+// BEGINN: Error handling related functions
 
 /**
  * Indicates whether an error happend and did not yet get cleared.
@@ -55,10 +55,10 @@ bool util_getError(char* error, const unsigned int error_sizeMax);
  */
 bool util_clearError();
 
-// END: Error handling realated functions
+// END: Error handling related functions
 
 
-// BEGINN: String realated functions
+// BEGINN: String related functions
 
 /**
  * Allocates fresh memory for storing a C string of the specified length.
@@ -122,10 +122,10 @@ bool util_endsWith(const char* str, const char* suffix);
 
 bool util_strToBool(const char* str);
 
-// END: String realated functions
+// END: String related functions
 
 
-// BEGINN: File system realated functions
+// BEGINN: File system related functions
 
 /**
  * Checks whether a string contians an absolute path.
@@ -230,11 +230,11 @@ int util_parsePropertiesFile(const char* propertiesFile,
  * including the file name.
  *
  * Examples:
- * examples when calling from the engine:
+ * when calling from the engine:
  * - "/usr/games/bin/spring"
  * - "/home/user/spring/spring"
  * - "C:\Program Files\Spring\spring.exe"
- * examples when calling from the synchronization library:
+ * when calling from the synchronization library:
  * - "/usr/games/bin/springlobby"
  * - "/home/user/springlobby/springlobby"
  * - "C:\Program Files\SpringLobby\springlobby.exe"
@@ -247,7 +247,30 @@ int util_parsePropertiesFile(const char* propertiesFile,
  */
 bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax);
 
-// END: File system realated functions
+/**
+ * Returns the path to the module/shared library, including the file name.
+ * If moduleName is NULL or "", the path to the current library is returned.
+ *
+ * Examples:
+ * when calling from the engine:
+ * - "/usr/games/bin/spring"
+ * - "/home/user/spring/spring"
+ * - "C:\Program Files\Spring\spring.exe"
+ * when calling from the synchronization library:
+ * - "/usr/lib/libunitsync.so"
+ * - "/home/user/spring/libunitsync.so"
+ * - "C:\Program Files\Spring\unitsync.dll"
+ *
+ * @see util_hasError()
+ * @see util_getError()
+ * @param  moduleName eg. "spring" or "unitsync", NULL or "" for current
+ * @param  path out-param which will contain the module file path
+ * @param  path_sizeMax max number of chars to put into the path buffer
+ * @return false if an error/problem occured, true otherwise
+ */
+bool util_getModuleFile(const char* moduleName, char* path, const unsigned int path_sizeMax);
+
+// END: File system related functions
 
 
 /**
