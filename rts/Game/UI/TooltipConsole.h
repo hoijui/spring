@@ -7,6 +7,7 @@
 #include <string>
 
 class CUnit;
+class UnitDef;
 class CFeature;
 class float3;
 
@@ -19,6 +20,7 @@ class CTooltipConsole : public CInputReceiver {
 		bool disabled;
 
 		// helpers
+		static float CalculateCost(const UnitDef* unitDef);
 		static std::string MakeUnitString(const CUnit* unit);
 		static std::string MakeFeatureString(const CFeature* feature);
 		static std::string MakeGroundString(const float3& pos);
@@ -26,8 +28,8 @@ class CTooltipConsole : public CInputReceiver {
 			float health, float maxHealth,
 			float currentFuel, float maxFuel,
 			float experience, float cost, float maxRange,
-			float metalMake,  float metalUse,
-			float energyMake, float energyUse);
+			std::vector<float> resourceMake,
+			std::vector<float> resourceUse);
 
 	protected:
 		float x, y, w, h;

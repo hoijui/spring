@@ -17,6 +17,7 @@
 #include "Map/Ground.h"
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/ResourceHandler.h"
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
@@ -336,16 +337,24 @@ void CSelectedUnitsAI::MakeFrontMove(Command* c,int player)
 
 void CSelectedUnitsAI::CreateUnitOrder(std::multimap<float,int>& out,int player)
 {
-	const vector<int>& netUnits = selectedUnits.netSelected[player];
-	for(vector<int>::const_iterator ui = netUnits.begin(); ui != netUnits.end(); ++ui){
+	const std::vector<int>& netUnits = selectedUnits.netSelected[player];
+	for (std::vector<int>::const_iterator ui = netUnits.begin(); ui != netUnits.end(); ++ui) {
 		CUnit* unit=uh->units[*ui];
-		if(unit){
+		if (unit) {
 			const UnitDef* ud = unit->unitDef;
-			float range=unit->maxRange;
-			if(range<1)
-				range=2000;		//give weaponless units a long range to make them go to the back
-			float value=(ud->metalCost*60+ud->energyCost)/unit->maxHealth*range;
-			out.insert(std::pair<float,int>(value,*ui));
+			float range = unit->maxRange;
+			if (range < 1) {
+				// give weaponless units a long range to make them go to the back
+				range = 2000;
+			}
+			float cost = 0;
+			size_t ri = 0;
+			for (std::vector<float>::const_iterator rci = ud->resourceCost.begin(); rci != ud->resourceCost.end(); ++rci) {
+				cost += (*rci) * resourceHandler->GetResource(ri)->normalizationFactor;
+				ri++;
+			}
+			const float value = (cost) / unit->maxHealth * range;
+			out.insert(std::pair<float, int>(value, *ui));
 		}
 	}
 }

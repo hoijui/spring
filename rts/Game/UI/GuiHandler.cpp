@@ -37,6 +37,7 @@
 #include "Rendering/Textures/NamedTextures.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Misc/LosHandler.h"
+#include "Sim/Misc/ResourceHandler.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/CommandAI/BuilderCAI.h"
 #include "Sim/Units/UnitDefHandler.h"
@@ -70,7 +71,6 @@ CGuiHandler::CGuiHandler():
 	buildFacing(0),
 	buildSpacing(0),
 	needShift(false),
-	showingMetal(false),
 	activeMousePress(false),
 	forceLayoutUpdate(false),
 	maxPage(0),
@@ -90,7 +90,10 @@ CGuiHandler::CGuiHandler():
 	miniMapMarker = !!configHandler->Get("MiniMapMarker", 1);
 	invertQueueKey = !!configHandler->Get("InvertQueueKey", 0);
 
-	autoShowMetal = mapInfo->gui.autoShowMetal;
+	for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+		showingResource[r]  = false;
+		autoShowResource[r] = mapInfo->gui.autoShowResource[r];
+	}
 
 	useStencil = false;
 	if (GLEW_NV_depth_clamp && !!configHandler->Get("StencilBufferBits", 1)) {
@@ -475,12 +478,11 @@ void CGuiHandler::RevertToCmdDesc(const CommandDescription& cmdDesc,
 				return;
 			}
 			inCommand = a;
+			const UnitDef* ud = NULL;
 			if (commands[a].type == CMDTYPE_ICON_BUILDING) {
-				const UnitDef* ud = unitDefHandler->GetUnitDefByID(-commands[a].id);
-				SetShowingMetal(ud->extractsMetal > 0);
-			} else {
-				SetShowingMetal(false);
+				ud = unitDefHandler->GetUnitDefByID(-commands[a].id);
 			}
+			ActualiseShowingResourcesFor(ud);
 			if (samePage) {
 				for (int ii = 0; ii < iconsCount; ii++) {
 					if (inCommand == icons[ii].commandsID) {
@@ -899,22 +901,38 @@ void CGuiHandler::ConvertCommands(std::vector<CommandDescription>& cmds)
 }
 
 
-void CGuiHandler::SetShowingMetal(bool show)
+void CGuiHandler::SetShowingResourcesFalse()
+{
+	for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+		SetShowingResource(r, false);
+	}
+}
+void CGuiHandler::SetShowingResource(int resourceId, bool show)
 {
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 	if (!show) {
-		if (showingMetal) {
+		if (showingResource[resourceId]) {
 			gd->DisableExtraTexture();
-			showingMetal = false;
+			showingResource[resourceId] = false;
+		}
+	} else {
+		if (autoShowResource[resourceId]) {
+			if (resourceId == resourceHandler->GetMetalId()) {
+				if (gd->drawMode != CBaseGroundDrawer::drawMetal) {
+					CMetalMap* mm = readmap->metalMap;
+					gd->SetMetalTexture(mm->metalMap, &mm->extractionMap.front(), mm->metalPal, false);
+					showingResource[resourceId] = true;
+				}
+			}
 		}
 	}
-	else {
-		if (autoShowMetal) {
-			if (gd->drawMode != CBaseGroundDrawer::drawMetal) {
-				CMetalMap* mm = readmap->metalMap;
-				gd->SetMetalTexture(mm->metalMap, &mm->extractionMap.front(), mm->metalPal, false);
-				showingMetal = true;
-			}
+}
+void CGuiHandler::ActualiseShowingResourcesFor(const UnitDef* unitDef)
+{
+	SetShowingResourcesFalse();
+	if (unitDef != NULL) {
+		for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+			SetShowingResource(r, unitDef->extractsResource[r] > 0);
 		}
 	}
 }
@@ -936,7 +954,7 @@ void CGuiHandler::Update()
 	}
 
 	if (!invertQueueKey && (needShift && !keys[SDLK_LSHIFT])) {
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		inCommand=-1;
 		needShift=false;
 	}
@@ -944,7 +962,7 @@ void CGuiHandler::Update()
 	const bool commandsChanged = selectedUnits.CommandsChanged();
 
 	if (commandsChanged) {
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		LayoutIcons(true);
 		//fadein = 100;
 	}
@@ -1056,7 +1074,7 @@ bool CGuiHandler::MousePress(int x, int y, int button)
 	if (inCommand >= 0) {
 		if (invertQueueKey && (button == SDL_BUTTON_RIGHT) &&
 		    !mouse->buttons[SDL_BUTTON_LEFT].pressed) { // for rocker gestures
-			SetShowingMetal(false);
+			SetShowingResourcesFalse();
 			inCommand = -1;
 			needShift = false;
 			return false;
@@ -1090,7 +1108,7 @@ void CGuiHandler::MouseRelease(int x, int y, int button, float3& camerapos, floa
 	}
 
 	if (!invertQueueKey && needShift && !keys[SDLK_LSHIFT]) {
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		inCommand = -1;
 		needShift = false;
 	}
@@ -1149,7 +1167,7 @@ bool CGuiHandler::SetActiveCommand(int cmdIndex, bool rmb)
 		defaultCmdMemory = -1;
 		needShift = false;
 		activeMousePress = false;
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		return true;
 	}
 
@@ -1202,14 +1220,14 @@ bool CGuiHandler::SetActiveCommand(int cmdIndex, bool rmb)
 		case CMDTYPE_ICON_UNIT_OR_RECTANGLE:
 		case CMDTYPE_ICON_UNIT_FEATURE_OR_AREA: {
 			inCommand = cmdIndex;
-			SetShowingMetal(false);
+			SetShowingResourcesFalse();
 			activeMousePress = false;
 			break;
 		}
 		case CMDTYPE_ICON_BUILDING: {
 			const UnitDef* ud = unitDefHandler->GetUnitDefByID(-cd.id);
 			inCommand = cmdIndex;
-			SetShowingMetal(ud->extractsMetal > 0);
+			ActualiseShowingResourcesFor(ud);
 			activeMousePress = false;
 			break;
 		}
@@ -1756,12 +1774,12 @@ bool CGuiHandler::KeyPressed(unsigned short key, bool isRepeat)
 	if (key == SDLK_ESCAPE && activeMousePress) {
 		activeMousePress = false;
 		inCommand = -1;
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		return true;
 	}
 	if (key == SDLK_ESCAPE && inCommand >= 0) {
 		inCommand=-1;
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		return true;
 	}
 
@@ -1928,15 +1946,15 @@ bool CGuiHandler::SetActiveCommand(const Action& action,
 			case CMDTYPE_ICON_UNIT_OR_AREA:
 			case CMDTYPE_ICON_UNIT_OR_RECTANGLE:
 			case CMDTYPE_ICON_UNIT_FEATURE_OR_AREA: {
-				SetShowingMetal(false);
+				SetShowingResourcesFalse();
 				actionOffset = actionIndex;
 				lastKeySet = ks;
 				inCommand = a;
 				break;
 			}
 			case CMDTYPE_ICON_BUILDING: {
-				const UnitDef* ud=unitDefHandler->GetUnitDefByID(-cmdDesc.id);
-				SetShowingMetal(ud->extractsMetal > 0);
+				const UnitDef* ud = unitDefHandler->GetUnitDefByID(-cmdDesc.id);
+				ActualiseShowingResourcesFor(ud);
 				actionOffset = actionIndex;
 				lastKeySet = ks;
 				inCommand = a;
@@ -1962,7 +1980,7 @@ bool CGuiHandler::SetActiveCommand(const Action& action,
 			}
 			default:{
 				lastKeySet.Reset();
-				SetShowingMetal(false);
+				SetShowingResourcesFalse();
 				inCommand = a;
 			}
 		}
@@ -1985,7 +2003,7 @@ void CGuiHandler::FinishCommand(int button)
 	if ((button == SDL_BUTTON_LEFT) && (keys[SDLK_LSHIFT] || invertQueueKey)) {
 		needShift=true;
 	} else {
-		SetShowingMetal(false);
+		SetShowingResourcesFalse();
 		inCommand=-1;
 	}
 }
@@ -3648,14 +3666,19 @@ void CGuiHandler::DrawMapStuff(int onMinimap)
 						glBallisticCircle(buildpos, unitdef->weapons[0].def->range,
 						                  NULL, 40, unitdef->weapons[0].def->heightmod);
 					}
-					// draw extraction range
-					if (unitdef->extractRange > 0) {
-						glColor4fv(cmdColors.rangeExtract);
+					// draw extraction ranges
+					size_t ei;
+					for (std::vector<float>::const_iterator er = unitdef->extractRange.begin(); er != unitdef->extractRange.end(); ++er) {
+						const float extractRange = (*er);
+						if (extractRange > 0) {
+							glColor4fv(cmdColors.rangeExtract);
 
-						if (unitdef->extractSquare) {
-							glSurfaceSquare(buildpos, unitdef->extractRange, unitdef->extractRange);
-						} else {
-							glSurfaceCircle(buildpos, unitdef->extractRange, 40);
+							const bool extractSquare = unitdef->extractSquare[ei];
+							if (extractSquare) {
+								glSurfaceSquare(buildpos, extractRange, extractRange);
+							} else {
+								glSurfaceCircle(buildpos, extractRange, 40);
+							}
 						}
 					}
 					// draw build range for immobile builders

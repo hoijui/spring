@@ -97,7 +97,9 @@ class CGuiHandler : public CInputReceiver {
 
 		void CreateOptions(Command& c,bool rmb);
 		void FinishCommand(int button);
-		void SetShowingMetal(bool show);
+		void SetShowingResourcesFalse();
+		void SetShowingResource(int resourceId, bool show);
+		void ActualiseShowingResourcesFor(const UnitDef* unitDef);
 		float GetNumberInput(const CommandDescription& cmdDesc) const;
 
 		void ProcessFrontPositions(float3& pos0, float3& pos1);
@@ -148,8 +150,8 @@ class CGuiHandler : public CInputReceiver {
 
 	private:
 		bool needShift;
-		bool showingMetal;
-		bool autoShowMetal;
+		std::vector<bool> showingResource;
+		std::vector<bool> autoShowResource;
 		bool invertQueueKey;
 		bool activeMousePress;
 		bool forceLayoutUpdate;

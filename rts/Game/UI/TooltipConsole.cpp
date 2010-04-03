@@ -17,12 +17,15 @@
 #include "Sim/Features/FeatureDef.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/ResourceHandler.h"
 #include "Sim/Misc/Wind.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "EventHandler.h"
 #include "ConfigHandler.h"
 #include "Util.h"
+
+#include <vector>
 
 CTooltipConsole* tooltip = 0;
 
@@ -108,20 +111,23 @@ bool CTooltipConsole::IsAbove(int x,int y)
 
 
 static void GetDecoyResources(const CUnit* unit,
-                              float& mMake, float& mUse,
-                              float& eMake, float& eUse)
+                              std::vector<float>& rMake,
+                              std::vector<float>& rUse)
 {
-	mMake = mUse = eMake = eUse = 0.0f;
+	for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+		rMake[r] = rUse[r] = 0.0f;
+	}
 	const UnitDef* rd = unit->unitDef;;
 	const UnitDef* ud = rd->decoyDef;
 	if (ud == NULL) {
 		return;
 	}
 
-	mMake += ud->metalMake;
-	eMake += ud->energyMake;
+	for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+		rMake[r] += ud->makeResource[r];
+	}
 	if (ud->tidalGenerator > 0.0f) {
-		eMake += (ud->tidalGenerator * mapInfo->map.tidalStrength);
+		rMake[resourceHandler->GetEnergyId()] += (ud->tidalGenerator * mapInfo->map.tidalStrength);
 	}
 
 	bool active;
@@ -132,25 +138,42 @@ static void GetDecoyResources(const CUnit* unit,
 	}
 
 	if (active) {
-		mMake += ud->makesMetal;
-		if (ud->extractsMetal > 0.0f) {
-			if (rd->extractsMetal > 0.0f) {
-				mMake += unit->metalExtract * (ud->extractsMetal / rd->extractsMetal);
+		for (size_t rFrom = 0; rFrom < resourceHandler->GetNumResources(); ++rFrom) {
+			for (size_t rTo = 0; rTo < resourceHandler->GetNumResources(); ++rTo) {
+				rMake[rTo] += ud->convertResource[rFrom][rTo];
 			}
 		}
-		mUse += ud->metalUpkeep;
+		for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+			if (ud->extractsResource[r] > 0.0f) {
+				if (rd->extractsResource[r] > 0.0f) {
+					rMake[r] += unit->metalExtract * (ud->extractsResource[r] / rd->extractsResource[r]);
+				}
+			}
+			rUse[r] += ud->resourceUpkeep[r];
 
-		if (ud->windGenerator > 0.0f) {
-			if (wind.GetCurrentStrength() > ud->windGenerator) {
-				eMake += ud->windGenerator;
-			} else {
-				eMake += wind.GetCurrentStrength();
+			if (ud->windGenerator[r] > 0.0f) {
+				if (wind.GetCurrentStrength() > ud->windGenerator[r]) {
+					rMake[r] += ud->windGenerator[r];
+				} else {
+					rMake[r] += wind.GetCurrentStrength();
+				}
 			}
+			rUse[r] += ud->resourceUpkeep[r];
 		}
-		eUse += ud->energyUpkeep;
 	}
 }
 
+
+float CTooltipConsole::CalculateCost(const UnitDef* unitDef) {
+
+	float cost;
+
+	for (size_t r = 0; r < resourceHandler->GetNumResources(); ++r) {
+		cost += unitDef->resourceCost[r] * resourceHandler->GetResource(r)->normalizationFactor;
+	}
+
+	return cost;
+}
 
 std::string CTooltipConsole::MakeUnitString(const CUnit* unit)
 {
@@ -198,7 +221,7 @@ std::string CTooltipConsole::MakeUnitString(const CUnit* unit)
 	// is not in LOS
 	if (!enemyUnit || (!effectiveDef->hideDamage && (losStatus & LOS_INLOS))) {
 		if (!decoyDef) {
-			const float cost = unit->metalCost + (unit->energyCost / 60.0f);
+			const float cost = CalculateCost(unitDef);
 			s += MakeUnitStatsString(
 						 unit->health, unit->maxHealth,
 						 unit->currentFuel, unitDef->maxFuel,
@@ -207,7 +230,7 @@ std::string CTooltipConsole::MakeUnitString(const CUnit* unit)
 						 unit->energyMake, unit->energyUse);
 		} else {
 			// display adjusted decoy stats
-			const float cost = decoyDef->metalCost + (decoyDef->energyCost / 60.0f);
+			const float cost = CalculateCost(decoyDef);
 			const float healthScale = (decoyDef->health / unitDef->health);
 			float fuelScale;
 			if (unitDef->maxFuel > 0.0f) {
@@ -217,15 +240,14 @@ std::string CTooltipConsole::MakeUnitString(const CUnit* unit)
 			}
 
 			// get the adjusted resource stats
-			float metalMake, energyMake, metalUse, energyUse;
-			GetDecoyResources(unit, metalMake, metalUse, energyMake, energyUse);
+			std::vector<float> resourceMake, resourceUse;
+			GetDecoyResources(unit, resourceMake, resourceUse);
 
 			s += MakeUnitStatsString(
 						 unit->health * healthScale, unit->maxHealth * healthScale,
 						 unit->currentFuel * fuelScale, decoyDef->maxFuel,
 						 unit->experience, cost, decoyDef->maxWeaponRange,
-						 metalMake,  metalUse,
-						 energyMake, energyUse);
+						 resourceMake, resourceUse);
 		}
 	}
 
@@ -243,8 +265,8 @@ std::string CTooltipConsole::MakeUnitStatsString(
 	float health, float maxHealth,
 	float currentFuel, float maxFuel,
 	float experience, float cost, float maxRange,
-	float metalMake,  float metalUse,
-	float energyMake, float energyUse)
+	std::vector<float> resourceMake,
+	std::vector<float> resourceUse)
 {
 	string s;
 

@@ -63,15 +63,15 @@ public:
 		    (NOT positive units/second^2 as in the mapfile) */
 		float gravity;
 		float tidalStrength;
-		/// what metal value 255 in the metal map is worth
-		float maxMetal;
-		float extractorRadius; ///< extraction radius for mines
+		/// what resource value 255 in the resource map is worth
+		std::vector<float> maxResource;
+		std::vector<float> extractorRadius; ///< extraction radius for mines
 		bool  voidWater;
 	} map;
 
 	/** GUI settings (used by CGuiHandler) */
 	struct gui_t {
-		bool autoShowMetal;
+		std::vector<bool> autoShowResource;
 	} gui;
 
 	/** settings read from "MAP\ATMOSPHERE" section */
