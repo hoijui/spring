@@ -357,6 +357,9 @@ public:
 	/// how much metal the unit currently extracts from the ground
 	float metalExtract;
 
+	// these also exist in CUnitDef
+	// Lua can change these values right after creation,
+	// while the ones in UnitDef are fixed
 	float metalCost;
 	float energyCost;
 	float buildTime;
