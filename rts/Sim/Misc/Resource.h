@@ -22,6 +22,18 @@ public:
 	float extractorRadius;
 	/// What value 255 in the resource map is worth
 	float maxWorth;
+	/**
+	 * This is used for comparing the overall value of a resources.
+	 * The resulting value comparison is an aproximation value only,
+	 * and differes from mod to mod.
+	 * It may be usefull for AIs, for example.
+	 * example:
+	 * metal.normalizationFactor = 60.0;
+	 * energy.normalizationFactor = 2.0;
+	 * means:
+	 * 60 units of energy are worth 2 units of metal
+	 */
+	float normalizationFactor;
 };
 
 #endif // _RESOURCE_H
