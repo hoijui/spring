@@ -23,29 +23,29 @@ public:
 	~CFeatureDrawer();
 
 	void UpdateDrawQuad(CFeature* feature);
-	void UpdateDraw();
-	void UpdateDrawPos(CFeature* feature);
+	void Update();
 
 	void Draw();
 	void DrawShadowPass();
 
-	void DrawFadeFeatures(bool submerged, bool noAdvShading = false);
+	void DrawFadeFeatures(bool noAdvShading = false);
 
 	void SetShowRezBars(bool b) { showRezBars = b; }
 	bool GetShowRezBars() const { return showRezBars; }
 
-
-
 	bool WantsEvent(const std::string& eventName) {
-		return (eventName == "FeatureCreated" || eventName == "FeatureDestroyed");
+		return (eventName == "RenderFeatureCreated" || eventName == "RenderFeatureDestroyed" || eventName == "RenderFeatureMoved");
 	}
 	bool GetFullRead() const { return true; }
 	int GetReadAllyTeam() const { return AllAccessTeam; }
 
-	void FeatureCreated(const CFeature* feature);
-	void FeatureDestroyed(const CFeature* feature);
+	void RenderFeatureCreated(const CFeature* feature);
+	void RenderFeatureDestroyed(const CFeature* feature);
+	void RenderFeatureMoved(const CFeature* feature);
 
 private:
+	void UpdateDrawPos(CFeature* f);
+
 	void DrawOpaqueFeatures(int);
 	void DrawFarFeatures();
 	void DrawFeatureStats();
@@ -53,9 +53,11 @@ private:
 	bool DrawFeatureNow(const CFeature*);
 	void DrawFadeFeaturesHelper(int);
 	void DrawFadeFeaturesSet(std::set<CFeature*>&, int);
-	void GetVisibleFeatures(int, std::vector<CFeature*>*);
+	void GetVisibleFeatures(int, bool drawFar);
 
 	void PostLoad();
+
+	std::set<CFeature*> unsortedFeatures;
 
 	struct DrawQuad {
 		CR_DECLARE_STRUCT(DrawQuad);
@@ -72,8 +74,6 @@ private:
 	std::vector<IWorldObjectModelRenderer*> opaqueModelRenderers;
 	std::vector<IWorldObjectModelRenderer*> cloakedModelRenderers;
 
-	std::set<CFeature *> updateDrawFeatures;
-	std::vector<CFeature*> drawFar;
 	std::vector<CFeature*> drawStat;
 
 	bool showRezBars;

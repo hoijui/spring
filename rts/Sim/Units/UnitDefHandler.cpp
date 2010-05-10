@@ -302,7 +302,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 	ud.canGuard    = udTable.GetBool("canGuard",    true);
 	ud.canRepeat   = udTable.GetBool("canRepeat",   true);
 
-	ud.builder = udTable.GetBool("builder", true);
+	ud.builder = udTable.GetBool("builder", false);
 
 	ud.canRestore = udTable.GetBool("canRestore", ud.builder);
 	ud.canRepair  = udTable.GetBool("canRepair",  ud.builder);
@@ -403,6 +403,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 	ud.decloakDistance  = udTable.GetFloat("minCloakDistance", 0.0f);
 	ud.decloakSpherical = udTable.GetBool("decloakSpherical", true);
 	ud.decloakOnFire    = udTable.GetBool("decloakOnFire",    true);
+	ud.cloakTimeout     = udTable.GetInt("cloakTimeout", 128);
 
 	ud.highTrajectoryType = udTable.GetInt("highTrajectory", 0);
 
@@ -418,7 +419,6 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 
 	ud.floater = udTable.GetBool("floater", udTable.KeyExists("WaterLine"));
 
-	ud.builder = udTable.GetBool("builder", false);
 	if (ud.builder && !ud.buildSpeed) { // core anti is flagged as builder for some reason
 		ud.builder = false;
 	}
@@ -618,7 +618,7 @@ void CUnitDefHandler::ParseUnitDefTable(const LuaTable& udTable, const string& u
 		ud.type = "Building";
 	}
 
-	ud.movedata = 0;
+	ud.movedata = NULL;
 	if (ud.canmove && !ud.canfly && (ud.type != "Factory")) {
 		string moveclass = StringToLower(udTable.GetString("movementClass", ""));
 		ud.movedata = moveinfo->GetMoveDataFromName(moveclass);
@@ -990,9 +990,9 @@ void CUnitDefHandler::SetUnitDefImage(const UnitDef* unitDef,
                                       const std::string& texName)
 {
 	if (unitDef->buildPic == NULL) {
-		unitDef->buildPic = new UnitDefImage;
-	} else if (unitDef->buildPic->textureOwner) {
-		glDeleteTextures(1, &unitDef->buildPic->textureID);
+		unitDef->buildPic = new UnitDefImage();
+	} else {
+		unitDef->buildPic->Free();
 	}
 
 	CBitmap bitmap;
@@ -1013,7 +1013,6 @@ void CUnitDefHandler::SetUnitDefImage(const UnitDef* unitDef,
 
 	UnitDefImage* unitImage = unitDef->buildPic;
 	unitImage->textureID = texID;
-	unitImage->textureOwner = true;
 	unitImage->imageSizeX = bitmap.xsize;
 	unitImage->imageSizeY = bitmap.ysize;
 }
@@ -1023,14 +1022,13 @@ void CUnitDefHandler::SetUnitDefImage(const UnitDef* unitDef,
                                       unsigned int texID, int xsize, int ysize)
 {
 	if (unitDef->buildPic == NULL) {
-		unitDef->buildPic = new UnitDefImage;
-	} else if (unitDef->buildPic->textureOwner) {
-		glDeleteTextures(1, &unitDef->buildPic->textureID);
+		unitDef->buildPic = new UnitDefImage();
+	} else {
+		unitDef->buildPic->Free();
 	}
 
 	UnitDefImage* unitImage = unitDef->buildPic;
 	unitImage->textureID = texID;
-	unitImage->textureOwner = false;
 	unitImage->imageSizeX = xsize;
 	unitImage->imageSizeY = ysize;
 }

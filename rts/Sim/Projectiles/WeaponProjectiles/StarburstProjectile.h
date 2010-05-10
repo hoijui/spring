@@ -24,18 +24,17 @@ public:
 	CStarburstProjectile(const float3& pos, const float3& speed, CUnit* owner,
 			float3 targetPos,float areaOfEffect, float maxSpeed,float tracking,
 			int uptime, CUnit* target, const WeaponDef* weaponDef,
-			CWeaponProjectile* interceptTarget, float maxdistance, float3 aimError GML_PARG_H);
+			CWeaponProjectile* interceptTarget, float maxdistance, float3 aimError);
 	~CStarburstProjectile(void);
 	void Collision(CUnit* unit);
 	void Collision();
 	void Update(void);
 	void Draw(void);
-	void DrawUnitPart(void);
-	int ShieldRepulse(CPlasmaRepulser* shield,float3 shieldPos, float shieldForce, float shieldMaxSpeed);
+
+	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed);
 
 	float tracking;
 	float maxGoodDif;
-	float3 dir;
 	float maxSpeed;
 	float curSpeed;
 	float acceleration;

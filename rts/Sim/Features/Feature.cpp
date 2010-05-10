@@ -25,6 +25,7 @@
 #include "Sim/Projectiles/Unsynced/SmokeProjectile.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/Unit.h"
+#include "System/EventHandler.h"
 #include "GlobalUnsynced.h"
 #include <assert.h>
 
@@ -37,8 +38,6 @@ CR_REG_METADATA(CFeature, (
 				CR_MEMBER(resurrectProgress),
 				CR_MEMBER(health),
 				CR_MEMBER(reclaimLeft),
-				CR_MEMBER(allyteam),
-				CR_MEMBER(team),
 				CR_MEMBER(noSelect),
 				CR_MEMBER(tempNum),
 				CR_MEMBER(lastReclaim),
@@ -61,8 +60,6 @@ CFeature::CFeature():
 	resurrectProgress(0),
 	health(0),
 	reclaimLeft(1),
-	allyteam(0),
-	team(0),
 	noSelect(false),
 	tempNum(0),
 	lastReclaim(0),
@@ -418,7 +415,7 @@ void CFeature::ForcedMove(const float3& newPos, bool snapToGround)
 
 	pos = newPos;
 
-	featureDrawer->UpdateDrawPos(this);
+	eventHandler.FeatureMoved(this);
 
 	// setup finalHeight
 	if (snapToGround) {
@@ -538,7 +535,7 @@ bool CFeature::UpdatePosition()
 				deathSpeed = ZeroVector;
 			}
 
-			featureDrawer->UpdateDrawPos(this);
+			eventHandler.FeatureMoved(this);
 
 			CalculateTransform();
 		}

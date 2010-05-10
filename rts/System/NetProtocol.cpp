@@ -23,9 +23,9 @@
 
 #include "Game/GameData.h"
 #include "LogOutput.h"
-#include "DemoRecorder.h"
 #include "GlobalUnsynced.h"
 #include "ConfigHandler.h"
+#include "LoadSave/DemoRecorder.h"
 #include "lib/gml/gml.h"
 
 
@@ -52,6 +52,22 @@ void CNetProtocol::InitClient(const char *server_addr, unsigned portnum, const s
 	logOutput.Print("Connecting to %s:%i using name %s", server_addr, portnum, myName.c_str());
 }
 
+void CNetProtocol::AttemptReconnect(const std::string& myName, const std::string& myPasswd, const std::string& myVersion) {
+	GML_STDMUTEX_LOCK(net); // AttemptReconnect
+
+	netcode::UDPConnection* conn = new netcode::UDPConnection(*serverConn);
+	conn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion));
+	conn->Flush(true);
+
+	logOutput.Print("Reconnecting to server... %ds", dynamic_cast<netcode::UDPConnection &>(*serverConn).GetReconnectSecs());
+
+	delete conn;
+}
+
+bool CNetProtocol::NeedsReconnect() {
+	return serverConn->NeedsReconnect();
+}
+
 void CNetProtocol::InitLocalClient()
 {
 	GML_STDMUTEX_LOCK(net); // InitLocalClient
@@ -62,9 +78,8 @@ void CNetProtocol::InitLocalClient()
 	logOutput.Print("Connecting to local server");
 }
 
-bool CNetProtocol::Active() const
-{
-	return !serverConn->CheckTimeout();
+bool CNetProtocol::CheckTimeout(int nsecs, bool initial) const {
+	return serverConn->CheckTimeout(nsecs, initial);
 }
 
 bool CNetProtocol::Connected() const

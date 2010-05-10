@@ -3,8 +3,10 @@
 #ifndef _SSKIRMISHAICALLBACKIMPL_H
 #define	_SSKIRMISHAICALLBACKIMPL_H
 
-// Doc-comments for the functions in this header can be found in this file
-#include "Interface/SSkirmishAICallback.h"
+// Doc-comments for the functions in this header can be found in this file:
+// rts/ExternalAI/Interface/SSkirmishAICallback.h
+
+#include "System/exportdefines.h"
 
 #if	defined(__cplusplus)
 extern "C" {
@@ -58,6 +60,8 @@ EXPORT(int              ) skirmishAiCallback_Game_getMyTeam(int teamId);
 EXPORT(int              ) skirmishAiCallback_Game_getMyAllyTeam(int teamId);
 EXPORT(int              ) skirmishAiCallback_Game_getPlayerTeam(int teamId, int playerId);
 EXPORT(const char*      ) skirmishAiCallback_Game_getTeamSide(int teamId, int otherTeamId);
+EXPORT(int              ) skirmishAiCallback_Game_getTeamAllyTeam(int teamId, int otherTeamId);
+EXPORT(bool             ) skirmishAiCallback_Game_isAllied(int teamId, int firstAllyTeamId, int secondAllyTeamId);
 EXPORT(bool             ) skirmishAiCallback_Game_isExceptionHandlingEnabled(int teamId);
 EXPORT(bool             ) skirmishAiCallback_Game_isDebugModeEnabled(int teamId);
 EXPORT(int              ) skirmishAiCallback_Game_getMode(int teamId);
@@ -499,7 +503,10 @@ EXPORT(float            ) skirmishAiCallback_Unit_0REF1Resource2resourceId0getRe
 		int teamId, int unitId, int resourceId);
 EXPORT(float            ) skirmishAiCallback_Unit_0REF1Resource2resourceId0getResourceMake(
 		int teamId, int unitId, int resourceId);
+
 EXPORT(struct SAIFloat3 ) skirmishAiCallback_Unit_getPos(int teamId, int unitId);
+EXPORT(struct SAIFloat3 ) skirmishAiCallback_Unit_getVel(int teamId, int unitId);
+
 EXPORT(bool             ) skirmishAiCallback_Unit_isActivated(int teamId, int unitId);
 EXPORT(bool             ) skirmishAiCallback_Unit_isBeingBuilt(int teamId, int unitId);
 EXPORT(bool             ) skirmishAiCallback_Unit_isCloaked(int teamId, int unitId);
@@ -950,15 +957,19 @@ EXPORT(void) skirmishAiCallback_WeaponDef_0MAP1VALS0getCustomParams(int teamId,
 		int weaponDefId, const char* values[]);
 // END OBJECT WeaponDef
 
+EXPORT(bool) skirmishAiCallback_Debug_Drawer_isEnabled(int teamId);
+
 #if	defined(__cplusplus)
 } // extern "C"
 #endif
 
 #if defined __cplusplus && !defined BUILDING_AI
-class IGlobalAICallback;
+struct SSkirmishAICallback;
+class CAICallback;
+class CAICheats;
 
 // for engine internal use only
-SSkirmishAICallback* skirmishAiCallback_getInstanceFor(int teamId, IGlobalAICallback* aiGlobalCallback);
+SSkirmishAICallback* skirmishAiCallback_getInstanceFor(int teamId, CAICallback* aiCallback, CAICheats* aiCheats);
 void skirmishAiCallback_release(int teamId);
 #endif // defined __cplusplus && !defined BUILDING_AI
 

@@ -87,6 +87,20 @@ public:
 		std::string skyBox;
 	} atmosphere;
 
+	/** settings read from "MAP\SPLATS" section */
+	struct splats_t {
+		float4 texScales;
+		float4 texMults;
+	} splats;
+
+	/** settings read from "MAP\GRASS" section */
+	struct grass_t {
+		float bladeWaveScale; //! how strongly wind affects grass-blade waving (if 0, disables vertex animation)
+		float bladeWidth;
+		float bladeHeight;    //! actual blades will be (bladeHeight + randf(0, bladeHeight)) tall
+		float bladeAngle;
+	} grass;
+
 	/** settings read from "MAP\LIGHT" section */
 	struct light_t {
 		float4 sunDir;     ///< Holds vector for the direction of the sun
@@ -140,13 +154,13 @@ public:
 
 	/** SMF specific settings */
 	struct smf_t {
-		std::string detailTexName; ///< "MAP\DetailTex"
-		std::string specularTexName; ///< "MAP\SpecularTex"
+		std::string detailTexName;        ///< "MAP\DetailTex"
+		std::string specularTexName;      ///< "MAP\SpecularTex"
 		std::string splatDistrTexName;
 		std::string splatDetailTexName;
-
-		float4 splatTexScales;
-		float4 splatTexMults;
+		std::string grassBladeTexName;    // defaults to internally-generated texture
+		std::string grassShadingTexName;  // defaults to minimap texture
+		std::string skyReflectModTexName;
 
 		float minHeight;
 		bool  minHeightOverride;
@@ -181,6 +195,8 @@ private:
 	void ReadGlobal();
 	void ReadGui();
 	void ReadAtmosphere();
+	void ReadSplats();
+	void ReadGrass();
 	void ReadLight();
 	void ReadWater();
 	void ReadSmf();

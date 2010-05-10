@@ -22,8 +22,10 @@
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
+#include "Sim/Projectiles/PieceProjectile.h"
 #include "Sim/Projectiles/Unsynced/FlyingPiece.hpp"
 #include "Sim/Projectiles/Unsynced/ShieldPartProjectile.h"
+#include "Sim/Projectiles/WeaponProjectiles/WeaponProjectile.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/EventHandler.h"
@@ -41,6 +43,8 @@ bool distcmp::operator() (const CProjectile* arg1, const CProjectile* arg2) cons
 
 
 
+
+
 CProjectileDrawer* projectileDrawer = NULL;
 
 CProjectileDrawer::CProjectileDrawer(): CEventClient("[CProjectileDrawer]", 123456, false) {
@@ -54,9 +58,7 @@ CProjectileDrawer::CProjectileDrawer(): CEventClient("[CProjectileDrawer]", 1234
 	std::set<std::string> blockMapTexNames;
 
 	LuaParser resourcesParser("gamedata/resources.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
-	if (!resourcesParser.Execute()) {
-		logOutput.Print(resourcesParser.GetErrorLog());
-	}
+	resourcesParser.Execute();
 
 	const LuaTable rootTable = resourcesParser.GetRoot();
 	const LuaTable gfxTable = rootTable.SubTable("graphics");
@@ -168,10 +170,8 @@ CProjectileDrawer::CProjectileDrawer(): CEventClient("[CProjectileDrawer]", 1234
 
 	// allow map specified atlas textures for gaia unit projectiles
 	LuaParser mapResParser("gamedata/resources_map.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
-	if (!mapResParser.Execute()) {
-		logOutput.Print(mapResParser.GetErrorLog());
-	}
-	if (mapResParser.IsValid()) {
+	
+	if (mapResParser.Execute()) {
 		const LuaTable mapRoot = mapResParser.GetRoot();
 		const LuaTable mapTable = mapRoot.SubTable("projectileTextures");
 
@@ -491,10 +491,7 @@ void CProjectileDrawer::DrawProjectile(CProjectile* pro, bool drawReflection, bo
 			return;
 		}
 
-		if (pro->model) {
-			// NOTE: this needs refactoring
-			pro->DrawS3O();
-		}
+		DrawProjectileModel(pro, false);
 
 		pro->tempdist = pro->pos.dot(camera->forward);
 		zSortedProjectiles.insert(pro);
@@ -527,10 +524,7 @@ void CProjectileDrawer::DrawProjectileShadow(CProjectile* p)
 	if ((gu->spectatingFullView || loshandler->InLos(p, gu->myAllyTeam) ||
 		(p->owner() && teamHandler->Ally(p->owner()->allyteam, gu->myAllyTeam)))) {
 
-		if (p->model) {
-			// no team-color
-			p->DrawUnitPart();
-		} else {
+		if (!DrawProjectileModel(p, true)) {
 			if (p->castShadow) {
 				// don't need to z-sort particle
 				// effects for the shadow pass
@@ -550,29 +544,31 @@ void CProjectileDrawer::DrawProjectilesMiniMap()
 	typedef std::map<int, ProjectileSet>::const_iterator ProjectileBinIt;
 
 	for (int modelType = MODELTYPE_3DO; modelType < MODELTYPE_OTHER; modelType++) {
-		CVertexArray* lines = GetVertexArray();
-		CVertexArray* points = GetVertexArray();
-
-		lines->Initialize();
-		lines->EnlargeArrays(modelRenderers[modelType]->GetNumProjectiles() * 2, 0, VA_SIZE_C);
-		points->Initialize();
-		points->EnlargeArrays(modelRenderers[modelType]->GetNumProjectiles(), 0, VA_SIZE_C);
-
 		const ProjectileBin& projectileBin = modelRenderers[modelType]->GetProjectileBin();
 
-		for (ProjectileBinIt binIt = projectileBin.begin(); binIt != projectileBin.end(); ++binIt) {
-			for (ProjectileSetIt setIt = (binIt->second).begin(); setIt != (binIt->second).end(); ++setIt) {
-				CProjectile* p = *setIt;
+		if (!projectileBin.empty()) {
+			CVertexArray* lines = GetVertexArray();
+			CVertexArray* points = GetVertexArray();
 
-				if ((p->owner() && (p->owner()->allyteam == gu->myAllyTeam)) ||
-					gu->spectatingFullView || loshandler->InLos(p, gu->myAllyTeam)) {
-					p->DrawOnMinimap(*lines, *points);
+			lines->Initialize();
+			lines->EnlargeArrays(projectileBin.size() * 2, 0, VA_SIZE_C);
+			points->Initialize();
+			points->EnlargeArrays(projectileBin.size(), 0, VA_SIZE_C);
+
+			for (ProjectileBinIt binIt = projectileBin.begin(); binIt != projectileBin.end(); ++binIt) {
+				for (ProjectileSetIt setIt = (binIt->second).begin(); setIt != (binIt->second).end(); ++setIt) {
+					CProjectile* p = *setIt;
+
+					if ((p->owner() && (p->owner()->allyteam == gu->myAllyTeam)) ||
+						gu->spectatingFullView || loshandler->InLos(p, gu->myAllyTeam)) {
+						p->DrawOnMinimap(*lines, *points);
+					}
 				}
 			}
-		}
 
-		lines->DrawArrayC(GL_LINES);
-		points->DrawArrayC(GL_POINTS);
+			lines->DrawArrayC(GL_LINES);
+			points->DrawArrayC(GL_POINTS);
+		}
 	}
 
 	if (!renderProjectiles.empty()) {
@@ -629,6 +625,10 @@ void CProjectileDrawer::DrawFlyingPieces(int modelType, int numFlyingPieces, int
 }
 
 
+void CProjectileDrawer::Update() {
+	eventHandler.UpdateDrawProjectiles();
+}
+
 
 void CProjectileDrawer::Draw(bool drawReflection, bool drawRefraction) {
 	glDisable(GL_BLEND);
@@ -653,6 +653,8 @@ void CProjectileDrawer::Draw(bool drawReflection, bool drawRefraction) {
 
 	int numFlyingPieces = ph->flyingPieces3DO.render_size() + ph->flyingPiecesS3O.render_size();
 	int drawnPieces = 0;
+
+	Update();
 
 	{
 		GML_STDMUTEX_LOCK(proj); // Draw
@@ -764,9 +766,103 @@ void CProjectileDrawer::DrawShadowPass(void)
 
 
 
+bool CProjectileDrawer::DrawProjectileModel(const CProjectile* p, bool shadowPass) {
+	if (!(p->weapon || p->piece) || (p->model == NULL)) {
+		return false;
+	}
+
+	if (p->weapon) {
+		// weapon-projectile
+		const CWeaponProjectile* wp = dynamic_cast<const CWeaponProjectile*>(p);
+
+		#define SET_TRANSFORM_VECTORS()              \
+			float3 rightdir, updir;                  \
+                                                     \
+			if (fabs(wp->dir.y) < 0.95f) {           \
+				rightdir = wp->dir.cross(UpVector);  \
+				rightdir.SafeANormalize();           \
+			} else {                                 \
+				rightdir = float3(1.0f, 0.0f, 0.0f); \
+			}                                        \
+                                                     \
+			updir = rightdir.cross(wp->dir);
+
+		#define TRANSFORM_DRAW(mat)                          \
+			glPushMatrix();                                  \
+				glMultMatrixf(mat);                          \
+				glCallList(wp->model->rootobject->displist); \
+			glPopMatrix();
+
+		switch (wp->GetProjectileType()) {
+			case CWeaponProjectile::WEAPON_MISSILE_PROJECTILE: {
+				if (!shadowPass) {
+					unitDrawer->SetTeamColour(wp->colorTeam);
+				}
+
+				SET_TRANSFORM_VECTORS();
+
+				CMatrix44f transMatrix(wp->drawPos + wp->dir * wp->radius * 0.9f, -rightdir, updir, wp->dir);
+
+				TRANSFORM_DRAW(transMatrix);
+			} break;
+
+			case CWeaponProjectile::WEAPON_STARBURST_PROJECTILE: {
+				SET_TRANSFORM_VECTORS();
+
+				CMatrix44f transMatrix(wp->drawPos, -rightdir, updir, wp->dir);
+
+				TRANSFORM_DRAW(transMatrix);
+			} break;
+
+			case CWeaponProjectile::WEAPON_BASE_PROJECTILE: {
+				if (!shadowPass) {
+					unitDrawer->SetTeamColour(wp->colorTeam);
+				}
+
+				SET_TRANSFORM_VECTORS();
+
+				CMatrix44f transMatrix(wp->drawPos, -rightdir, updir, wp->dir);
+
+				TRANSFORM_DRAW(transMatrix);
+			} break;
+			default: {
+			} break;
+		}
+
+		#undef SET_TRANSFORM_VECTORS
+		#undef TRANSFORM_DRAW
+	} else {
+		// piece-projectile
+		const CPieceProjectile* pp = dynamic_cast<const CPieceProjectile*>(p);
+
+		if (!shadowPass) {
+			unitDrawer->SetTeamColour(pp->colorTeam);
+		}
+
+		if (pp->alphaThreshold != 0.1f) {
+			glPushAttrib(GL_COLOR_BUFFER_BIT);
+			glAlphaFunc(GL_GEQUAL, pp->alphaThreshold);
+		}
+
+		glPushMatrix();
+			glTranslatef3(pp->pos);
+			glRotatef(pp->spinAngle, pp->spinVec.x, pp->spinVec.y, pp->spinVec.z);
+			glCallList(pp->dispList);
+		glPopMatrix();
+
+		if (pp->alphaThreshold != 0.1f) {
+			glPopAttrib();
+		}
+
+		*(pp->numCallback) = 0;
+	}
+
+	return true;
+}
+
 void CProjectileDrawer::DrawGroundFlashes(void)
 {
-	static GLfloat black[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	static const GLfloat black[] = {0.0f, 0.0f, 0.0f, 0.0f};
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
@@ -924,24 +1020,19 @@ void CProjectileDrawer::GenerateNoiseTex(unsigned int tex, int size)
 
 
 
-
-void CProjectileDrawer::ProjectileCreated(const CProjectile* p)
+void CProjectileDrawer::RenderProjectileCreated(const CProjectile* p)
 {
-	GML_STDMUTEX_LOCK(proj);
-
 	if (p->model) {
-		modelRenderers[MDL_TYPE(p)]->AddProjectile(const_cast<CProjectile*>(p));
+		modelRenderers[MDL_TYPE(p)]->AddProjectile(p);
 	} else {
 		renderProjectiles.insert(const_cast<CProjectile*>(p));
 	}
 }
 
-void CProjectileDrawer::ProjectileDestroyed(const CProjectile* p)
+void CProjectileDrawer::RenderProjectileDestroyed(const CProjectile* const p)
 {
-	GML_STDMUTEX_LOCK(proj);
-
 	if (p->model) {
-		modelRenderers[MDL_TYPE(p)]->DelProjectile(const_cast<CProjectile*>(p));
+		modelRenderers[MDL_TYPE(p)]->DelProjectile(p);
 	} else {
 		renderProjectiles.erase(const_cast<CProjectile*>(p));
 	}

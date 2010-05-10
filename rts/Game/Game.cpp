@@ -27,13 +27,14 @@
 #include "float.h"
 #include "Camera.h"
 #include "CameraHandler.h"
+#include "ClientSetup.h"
 #include "ConsoleHistory.h"
 #include "FPUCheck.h"
 #include "GameHelper.h"
 #include "GameServer.h"
+#include "GameVersion.h"
 #include "CommandMessage.h"
 #include "GameSetup.h"
-#include "LoadSaveHandler.h"
 #include "SelectedUnits.h"
 #include "PlayerHandler.h"
 #include "PlayerRoster.h"
@@ -46,6 +47,8 @@
 #ifdef _WIN32
 #  include "winerror.h"
 #endif
+#include "NetProtocol.h"
+#include "ConfigHandler.h"
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/IAILibraryManager.h"
 #include "ExternalAI/SkirmishAIHandler.h"
@@ -54,6 +57,7 @@
 #include "FileSystem/ArchiveScanner.h"
 #include "FileSystem/FileHandler.h"
 #include "FileSystem/VFSHandler.h"
+#include "FileSystem/FileSystem.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Map/Ground.h"
 #include "Map/HeightMapTexture.h"
@@ -61,10 +65,8 @@
 #include "Map/MapInfo.h"
 #include "Map/MetalMap.h"
 #include "Map/ReadMap.h"
-#include "NetProtocol.h"
-#include "DemoRecorder.h"
-#include "ConfigHandler.h"
-#include "FileSystem/FileSystem.h"
+#include "LoadSave/LoadSaveHandler.h"
+#include "LoadSave/DemoRecorder.h"
 #include "Rendering/Env/BaseSky.h"
 #include "Rendering/Env/BaseTreeDrawer.h"
 #include "Rendering/Env/BaseWater.h"
@@ -76,6 +78,7 @@
 #include "Rendering/FeatureDrawer.h"
 #include "Rendering/ProjectileDrawer.hpp"
 #include "Rendering/UnitDrawer.h"
+#include "Rendering/DebugDrawerAI.h"
 #include "Rendering/HUDDrawer.h"
 #include "Rendering/PathDrawer.h"
 #include "Rendering/IconHandler.h"
@@ -207,7 +210,6 @@ CR_REG_METADATA(CGame,(
 	CR_MEMBER(showClock),
 	CR_MEMBER(showSpeed),
 	CR_MEMBER(noSpectatorChat),
-	CR_MEMBER(crossSize),
 	CR_MEMBER(gameID),
 //	CR_MEMBER(script),
 //	CR_MEMBER(infoConsole),
@@ -280,7 +282,7 @@ CGame::CGame(std::string mapname, std::string modName, ILoadSaveHandler *saveFil
 	showFPS   = !!configHandler->Get("ShowFPS",   0);
 	showClock = !!configHandler->Get("ShowClock", 1);
 	showSpeed = !!configHandler->Get("ShowSpeed", 0);
-	crossSize = configHandler->Get("CrossSize", 10.0f);
+
 
 	playerRoster.SetSortTypeByCode((PlayerRoster::SortType)configHandler->Get("ShowPlayerInfo", 1));
 
@@ -1868,15 +1870,15 @@ bool CGame::ActionPressed(const Action& action,
 	}
 	else if (cmd == "cross") {
 		if (action.extra.empty()) {
-			if (crossSize > 0.0f) {
-				crossSize = -crossSize;
+			if (mouse->crossSize > 0.0f) {
+				mouse->crossSize = -mouse->crossSize;
 			} else {
-				crossSize = std::max(1.0f, -crossSize);
+				mouse->crossSize = std::max(1.0f, -mouse->crossSize);
 			}
 		} else {
-			crossSize = atof(action.extra.c_str());
+			mouse->crossSize = atof(action.extra.c_str());
 		}
-		configHandler->Set("CrossSize", crossSize);
+		configHandler->Set("CrossSize", mouse->crossSize);
 	}
 	else if (cmd == "fps") {
 		if (action.extra.empty()) {
@@ -2001,6 +2003,15 @@ bool CGame::ActionPressed(const Action& action,
 		} else {
 			hudDrawer->SetDraw(!!atoi(action.extra.c_str()));
 		}
+	}
+	else if (cmd == "debugdrawai") {
+		if (action.extra.empty()) {
+			debugDrawerAI->SetDraw(!debugDrawerAI->GetDraw());
+		} else {
+			debugDrawerAI->SetDraw(!!atoi(action.extra.c_str()));
+		}
+
+		logOutput.Print("SkirmishAI debug drawing %s", (debugDrawerAI->GetDraw()? "enabled": "disabled"));
 	}
 
 	else if (cmd == "movewarnings") {
@@ -2806,9 +2817,17 @@ bool CGame::Update()
 		gameServer->CreateNewFrame(false, true);
 	}
 
+	if(gs->frameNum == 0 || gs->paused)
+		eventHandler.UpdateObjects(); // we must add new rendering objects even if the game has not started yet
+
 	ClientReadNet();
 
-	if (!net->Active() && !gameOver) {
+	if(net->NeedsReconnect() && !gameOver) {
+		extern ClientSetup* startsetup;
+		net->AttemptReconnect(startsetup->myPlayerName, startsetup->myPasswd, SpringVersion::GetFull());
+	}
+
+	if (net->CheckTimeout(0, gs->frameNum == 0) && !gameOver) {
 		logOutput.Print("Lost connection to gameserver");
 		GameEnd();
 	}
@@ -2875,12 +2894,18 @@ bool CGame::DrawWorld()
 	glDepthFunc(GL_LEQUAL);
 
 	bool noAdvShading = shadowHandler->drawShadows;
-	//! draw cloaked part below surface
+
+	const double plane_below[4] = {0.0f, -1.0f, 0.0f, 0.0f};
+	glClipPlane(GL_CLIP_PLANE3, plane_below);
 	glEnable(GL_CLIP_PLANE3);
-	unitDrawer->DrawCloakedUnits(true,noAdvShading);
-	featureDrawer->DrawFadeFeatures(true,noAdvShading);
+
+		//! draw cloaked part below surface
+		unitDrawer->DrawCloakedUnits(noAdvShading);
+		featureDrawer->DrawFadeFeatures(noAdvShading);
+
 	glDisable(GL_CLIP_PLANE3);
 
+	//! draw water
 	if (gu->drawWater && !mapInfo->map.voidWater) {
 		SCOPED_TIMER("Water");
 		if (!water->drawSolid) {
@@ -2889,10 +2914,14 @@ bool CGame::DrawWorld()
 		}
 	}
 
-	//! draw cloaked part above surface
+	const double plane_above[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+	glClipPlane(GL_CLIP_PLANE3, plane_above);
 	glEnable(GL_CLIP_PLANE3);
-	unitDrawer->DrawCloakedUnits(false, noAdvShading);
-	featureDrawer->DrawFadeFeatures(false, noAdvShading);
+
+		//! draw cloaked part above surface
+		unitDrawer->DrawCloakedUnits(noAdvShading);
+		featureDrawer->DrawFadeFeatures(noAdvShading);
+
 	glDisable(GL_CLIP_PLANE3);
 
 	projectileDrawer->Draw(false);
@@ -3098,15 +3127,13 @@ bool CGame::Draw() {
 	texturehandlerS3O->Update();
 	modelParser->Update();
 	treeDrawer->Update();
-	treeDrawer->UpdateDraw();
 	readmap->UpdateDraw();
 	unitDrawer->Update();
-	featureDrawer->UpdateDraw();
+	featureDrawer->Update();
 	mouse->UpdateCursors();
 	mouse->EmptyMsgQueUpdate();
 	guihandler->Update();
 	lineDrawer.UpdateLineStipple();
-	farTextureHandler->CreateFarTextures();
 
 	LuaUnsyncedCtrl::ClearUnitCommandQueues();
 	eventHandler.Update();
@@ -3146,6 +3173,8 @@ bool CGame::Draw() {
 		}
 	}
 
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glClearColor(mapInfo->atmosphere.fogColor[0], mapInfo->atmosphere.fogColor[1], mapInfo->atmosphere.fogColor[2], 0);
@@ -3177,20 +3206,8 @@ bool CGame::Draw() {
 		eventHandler.DrawScreenEffects();
 	}
 
-	if (mouse->locked && (crossSize > 0.0f)) {
-		glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
-		glLineWidth(1.49f);
-		glDisable(GL_TEXTURE_2D);
-		glBegin(GL_LINES);
-			glVertex2f(0.5f - (crossSize / gu->viewSizeX), 0.5f);
-			glVertex2f(0.5f + (crossSize / gu->viewSizeX), 0.5f);
-			glVertex2f(0.5f, 0.5f - (crossSize / gu->viewSizeY));
-			glVertex2f(0.5f, 0.5f + (crossSize / gu->viewSizeY));
-		glEnd();
-		glLineWidth(1.0f);
-	}
-
 	hudDrawer->Draw(gu->directControl);
+	debugDrawerAI->Draw();
 
 	glEnable(GL_TEXTURE_2D);
 
@@ -3351,11 +3368,7 @@ bool CGame::Draw() {
 
 	mouse->DrawCursor();
 
-//	float tf[]={1,1,1,1,1,1,1,1,1};
-//	glVertexPointer(3,GL_FLOAT,0,tf);
-//	glDrawArrays(GL_TRIANGLES,0,3);
-
-	glEnable(GL_DEPTH_TEST );
+	glEnable(GL_DEPTH_TEST);
 	glLoadIdentity();
 
 	unsigned start = SDL_GetTicks();
@@ -3436,11 +3449,10 @@ void CGame::DrawInputText()
 	}
 
 	// draw the text
+	font->SetColors(textColor, NULL);
 	if (!guihandler->GetOutlineFonts()) {
-		glColor4fv(*textColor);
 		font->glPrint(inputTextPosX, inputTextPosY, fontSize, FONT_DESCENDER | FONT_NORM, tempstring);
 	} else {
-		font->SetColors(textColor, NULL);
 		font->glPrint(inputTextPosX, inputTextPosY, fontSize, FONT_DESCENDER | FONT_OUTLINE | FONT_NORM, tempstring);
 	}
 }
@@ -4049,22 +4061,34 @@ void CGame::ClientReadNet()
 					logOutput.Print("Got invalid player num %i in share msg",player);
 					break;
 				}
-				int team1 = playerHandler->Player(player)->team;
-				int team2 = inbuf[2];
+				int teamID1 = playerHandler->Player(player)->team;
+				int teamID2 = inbuf[2];
 				bool shareUnits = !!inbuf[3];
-				float metalShare = std::min(*(float*)&inbuf[4], (float)teamHandler->Team(team1)->metal);
-				float energyShare = std::min(*(float*)&inbuf[8], (float)teamHandler->Team(team1)->energy);
+				CTeam* team1 = teamHandler->Team(teamID1);
+				CTeam* team2 = teamHandler->Team(teamID2);
+				float metalShare  = std::min(*(float*)&inbuf[4], (float)team1->metal);
+				float energyShare = std::min(*(float*)&inbuf[8], (float)team1->energy);
 
 				if (metalShare != 0.0f) {
-					if (!luaRules || luaRules->AllowResourceTransfer(team1, team2, "m", metalShare)) {
-						teamHandler->Team(team1)->metal -= metalShare;
-						teamHandler->Team(team2)->metal += metalShare;
+					metalShare = std::min(metalShare, team1->metal);
+					if (!luaRules || luaRules->AllowResourceTransfer(teamID1, teamID2, "m", metalShare)) {
+						team1->metal                       -= metalShare;
+						team1->metalSent                   += metalShare;
+						team1->currentStats->metalSent     += metalShare;
+						team2->metal                       += metalShare;
+						team2->metalReceived               += metalShare;
+						team2->currentStats->metalReceived += metalShare;
 					}
 				}
 				if (energyShare != 0.0f) {
-					if (!luaRules || luaRules->AllowResourceTransfer(team1, team2, "e", energyShare)) {
-						teamHandler->Team(team1)->energy -= energyShare;
-						teamHandler->Team(team2)->energy += energyShare;
+					energyShare = std::min(energyShare, team1->energy);
+					if (!luaRules || luaRules->AllowResourceTransfer(teamID1, teamID2, "e", energyShare)) {
+						team1->energy                       -= energyShare;
+						team1->energySent                   += energyShare;
+						team1->currentStats->energySent     += energyShare;
+						team2->energy                       += energyShare;
+						team2->energyReceived               += energyShare;
+						team2->currentStats->energyReceived += energyShare;
 					}
 				}
 
@@ -4073,9 +4097,9 @@ void CGame::ClientReadNet()
 					vector<int>::const_iterator ui;
 					for (ui = netSelUnits.begin(); ui != netSelUnits.end(); ++ui){
 						CUnit* unit = uh->units[*ui];
-						if (unit && unit->team == team1 && !unit->beingBuilt) {
+						if (unit && unit->team == teamID1 && !unit->beingBuilt) {
 							if (!unit->directControl)
-								unit->ChangeTeam(team2, CUnit::ChangeGiven);
+								unit->ChangeTeam(teamID2, CUnit::ChangeGiven);
 						}
 					}
 					netSelUnits.clear();
@@ -4296,7 +4320,6 @@ void CGame::ClientReadNet()
 				const int fromAllyTeam = teamHandler->AllyTeam(playerHandler->Player(player)->team);
 				if (whichAllyTeam < teamHandler->ActiveAllyTeams() && whichAllyTeam >= 0 && fromAllyTeam != whichAllyTeam) {
 					// FIXME - need to reset unit allyTeams
-					//       - need to reset unit texture for 3do
 					//       - need a call-in for AIs
 					teamHandler->SetAlly(fromAllyTeam, whichAllyTeam, allied);
 
@@ -4623,9 +4646,6 @@ void CGame::GameEnd()
 			}
 			for (int i = 0; i < numTeams; ++i) {
 				record->SetTeamStats(i, teamHandler->Team(i)->statHistory);
-				netcode::PackPacket* buf = new netcode::PackPacket(2 + sizeof(CTeam::Statistics), NETMSG_TEAMSTAT);
-				*buf << (uint8_t)teamHandler->Team(i)->teamNum << teamHandler->Team(i)->currentStats;
-				net->Send(buf);
 			}
 		}
 	}

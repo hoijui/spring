@@ -22,16 +22,17 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "CommandAI/Command.h"
+#include "System/EventBatchHandler.h"
 #include "System/GlobalUnsynced.h"
-#include "System/LoadSaveInterface.h"
 #include "System/LogOutput.h"
 #include "System/TimeProfiler.h"
 #include "System/myMath.h"
+#include "System/LoadSave/LoadSaveInterface.h"
 #include "System/Sync/SyncTracer.h"
 #include "System/creg/STL_Deque.h"
 #include "System/creg/STL_List.h"
 #include "System/creg/STL_Set.h"
-
+#include "EventHandler.h"
 using std::min;
 using std::max;
 
@@ -149,8 +150,6 @@ int CUnitHandler::AddUnit(CUnit *unit)
 
 	maxUnitRadius = max(unit->radius, maxUnitRadius);
 
-	GML_STDMUTEX_LOCK(runit); // AddUnit
-
 	return unit->id;
 }
 
@@ -158,6 +157,7 @@ int CUnitHandler::AddUnit(CUnit *unit)
 void CUnitHandler::DeleteUnit(CUnit* unit)
 {
 	toBeRemoved.push_back(unit);
+	(eventBatchHandler->GetUnitCreatedDestroyedBatch()).dequeue_synced(unit);
 }
 
 
@@ -210,18 +210,26 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 
 void CUnitHandler::Update()
 {
-	if (!toBeRemoved.empty()) {
-		GML_RECMUTEX_LOCK(unit); // Update - for anti-deadlock purposes.
-		GML_RECMUTEX_LOCK(sel);  // Update - unit is removed from selectedUnits in ~CObject, which is too late.
-		GML_RECMUTEX_LOCK(quad); // Update - make sure unit does not get partially deleted before before being removed from the quadfield
-		GML_STDMUTEX_LOCK(proj); // Update - projectile drawing may access owner() and lead to crash
+	{
+		GML_STDMUTEX_LOCK(runit); // Update
 
-		while (!toBeRemoved.empty()) {
-			CUnit* delUnit = toBeRemoved.back();
-			toBeRemoved.pop_back();
+		if (!toBeRemoved.empty()) {
+			GML_RECMUTEX_LOCK(unit); // Update - for anti-deadlock purposes.
+			GML_RECMUTEX_LOCK(sel);  // Update - unit is removed from selectedUnits in ~CObject, which is too late.
+			GML_RECMUTEX_LOCK(quad); // Update - make sure unit does not get partially deleted before before being removed from the quadfield
+			GML_STDMUTEX_LOCK(proj); // Update - projectile drawing may access owner() and lead to crash
 
-			DeleteUnitNow(delUnit);
+			eventHandler.DeleteSyncedUnits();
+
+			while (!toBeRemoved.empty()) {
+				CUnit* delUnit = toBeRemoved.back();
+				toBeRemoved.pop_back();
+
+				DeleteUnitNow(delUnit);
+			}
 		}
+
+		eventHandler.UpdateUnits();
 	}
 
 	GML_UPDATE_TICKS();
@@ -245,11 +253,11 @@ void CUnitHandler::Update()
 
 	{
 		SCOPED_TIMER("Unit slow update");
-		if (!(gs->frameNum & 15)) {
+		if (!(gs->frameNum & (UNIT_SLOWUPDATE_RATE-1))) {
 			slowUpdateIterator = activeUnits.begin();
 		}
 
-		int numToUpdate = activeUnits.size() / 16 + 1;
+		int numToUpdate = activeUnits.size() / UNIT_SLOWUPDATE_RATE + 1;
 		for (; slowUpdateIterator != activeUnits.end() && numToUpdate != 0; ++ slowUpdateIterator) {
 			(*slowUpdateIterator)->SlowUpdate();
 			numToUpdate--;

@@ -38,6 +38,7 @@ void CWordCompletion::Reset()
 	words["/ctrlpanel "] = sl;
 	words["/distdraw "] = sl;
 	words["/disticon "] = sl;
+	words["/debugdrawai"] = sl;
 	words["/debuginfo sound"] = sl;
 	words["/debuginfo profiling"] = sl;
 	words["/incguiopacity "] = sl;
@@ -111,6 +112,8 @@ void CWordCompletion::Reset()
 	words["/setmaxspeed "] = sl;
 	words["/setminspeed "] = sl;
 	words["/skip +"] = sl;
+	words["/skip f"] = sl;
+	words["/skip "] = sl;
 	words["/spectator"] = sl;
 	words["/take"] = sl;
 	words["/team "] = sl;

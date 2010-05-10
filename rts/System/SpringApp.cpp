@@ -45,10 +45,10 @@
 #include "aGui/Gui.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Misc/GlobalConstants.h"
+#include "Input/MouseInput.h"
+#include "Input/InputHandler.h"
+#include "Input/Joystick.h"
 #include "LogOutput.h"
-#include "MouseInput.h"
-#include "InputHandler.h"
-#include "Joystick.h"
 #include "bitops.h"
 #include "GlobalUnsynced.h"
 #include "Util.h"
@@ -79,6 +79,7 @@ bool globalQuit = false;
 boost::uint8_t *keys = 0;
 boost::uint16_t currentUnicode = 0;
 bool fullscreen = true;
+ClientSetup* startsetup = NULL;
 
 /**
  * @brief xres default
@@ -158,7 +159,7 @@ bool SpringApp::Initialize()
 	FileSystemHandler::Initialize(true);
 
 	UpdateOldConfigs();
-
+	
 	if (!InitWindow(("Spring " + SpringVersion::Get()).c_str())) {
 		SDL_Quit();
 		return false;
@@ -296,6 +297,8 @@ bool SpringApp::InitWindow(const char* title)
 		return false;
 	}
 
+	PrintAvailableResolutions();
+
 	// Sets window manager properties
 	SDL_WM_SetIcon(SDL_LoadBMP("spring.bmp"),NULL);
 	SDL_WM_SetCaption(title, title);
@@ -399,10 +402,15 @@ bool SpringApp::SetSDLVideoMode()
 		GLContext::Init();
 	}
 
+	VSync.Init();
+
 	int bits;
 	SDL_GL_GetAttribute(SDL_GL_BUFFER_SIZE, &bits);
-	logOutput.Print("Video mode set to  %i x %i / %i bit", screenWidth, screenHeight, bits );
-	VSync.Init();
+	if (fullscreen) {
+		logOutput.Print("Video mode set to %ix%i/%ibit", screenWidth, screenHeight, bits);
+	} else {
+		logOutput.Print("Video mode set to %ix%i/%ibit (windowed)", screenWidth, screenHeight, bits);
+	}
 
 	return true;
 }
@@ -448,8 +456,8 @@ bool SpringApp::GetDisplayGeometry()
 	info.info.x11.unlock_func();
 
 #else
-	gu->screenSizeX = GetSystemMetrics(SM_CXFULLSCREEN);
-	gu->screenSizeY = GetSystemMetrics(SM_CYFULLSCREEN);
+	gu->screenSizeX = GetSystemMetrics(SM_CXSCREEN);
+	gu->screenSizeY = GetSystemMetrics(SM_CYSCREEN);
 
 	RECT rect;
 	if (!GetClientRect(info.window, &rect)) {
@@ -744,7 +752,7 @@ void SpringApp::Startup()
 
 		demoPlayerName += " (spec)";
 
-		ClientSetup* startsetup = new ClientSetup();
+		startsetup = new ClientSetup();
 			startsetup->isHost       = true; // local demo play
 			startsetup->myPlayerName = demoPlayerName;
 
@@ -758,7 +766,7 @@ void SpringApp::Startup()
 	else if (inputFile.rfind("ssf") == inputFile.size() - 3)
 	{
 		std::string savefile = inputFile;
-		ClientSetup* startsetup = new ClientSetup();
+		startsetup = new ClientSetup();
 		startsetup->isHost = true;
 		startsetup->myPlayerName = configHandler->GetString("name", "unnamed");
 #ifdef SYNCDEBUG
@@ -778,7 +786,7 @@ void SpringApp::Startup()
 		std::string buf;
 		if (!fh.LoadStringData(buf))
 			throw content_error("Setup-script cannot be read: " + startscript);
-		ClientSetup* startsetup = new ClientSetup();
+		startsetup = new ClientSetup();
 		startsetup->Init(buf);
 
 		// commandline parameters overwrite setup
@@ -1129,6 +1137,8 @@ void SpringApp::Shutdown()
 	SDL_Quit();
 	delete gs;
 	delete gu;
+	if(startsetup)
+		delete startsetup;
 #ifdef USE_MMGR
 	m_dumpMemoryReport();
 #endif

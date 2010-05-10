@@ -52,7 +52,7 @@ class CPieceProjectile: public CProjectile
 	int colorTeam;
 
 public:
-	CPieceProjectile(const float3& pos, const float3& speed, LocalModelPiece* piece, int flags, CUnit* owner, float radius GML_PARG_H);
+	CPieceProjectile(const float3& pos, const float3& speed, LocalModelPiece* piece, int flags, CUnit* owner, float radius);
 	virtual ~CPieceProjectile(void);
 	void Update();
 	void Draw();
@@ -60,7 +60,6 @@ public:
 	void Collision();
 	void Collision(CUnit* unit);
 
-	void DrawUnitPart(void);
 	void DrawCallback(void);
 
 private:

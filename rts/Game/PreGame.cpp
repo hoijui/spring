@@ -25,9 +25,9 @@
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "NetProtocol.h"
 #include "Net/RawPacket.h"
-#include "DemoRecorder.h"
-#include "DemoReader.h"
-#include "LoadSaveHandler.h"
+#include "LoadSave/DemoRecorder.h"
+#include "LoadSave/DemoReader.h"
+#include "LoadSave/LoadSaveHandler.h"
 #include "TdfParser.h"
 #include "FileSystem/ArchiveScanner.h"
 #include "FileSystem/FileHandler.h"
@@ -137,6 +137,7 @@ bool CPreGame::Draw()
 
 	font->glFormat(0.60f, 0.35f, 1.0f, FONT_SCALE | FONT_NORM, "User name: %s", settings->myPlayerName.c_str());
 
+	font->glFormat(0.5f,0.25f,0.8f,FONT_CENTER | FONT_SCALE | FONT_NORM, "Press SHIFT + ESC to quit");
 	// credits
 	font->glFormat(0.5f,0.06f,1.0f,FONT_CENTER | FONT_SCALE | FONT_NORM, "Spring %s", SpringVersion::GetFull().c_str());
 	font->glPrint(0.5f,0.02f,0.6f,FONT_CENTER | FONT_SCALE | FONT_NORM, "This program is distributed under the GNU General Public License, see license.html for more info");
@@ -196,7 +197,7 @@ void CPreGame::StartServer(const std::string& setupscript)
 
 void CPreGame::UpdateClientNet()
 {
-	if (!net->Active())
+	if (net->CheckTimeout(0, true))
 	{
 		logOutput.Print("Server not reachable");
 		globalQuit = true;
@@ -211,7 +212,7 @@ void CPreGame::UpdateClientNet()
 			case NETMSG_QUIT: {
 				const std::string message((char*)(inbuf+3));
 				logOutput.Print(message);
-				throw std::runtime_error(message);
+				handleerror(NULL, message, "Quit message", MBF_OK | MBF_EXCL);
 				break;
 			}
 			case NETMSG_GAMEDATA: { // server first sends this to let us know about teams, allyteams etc.

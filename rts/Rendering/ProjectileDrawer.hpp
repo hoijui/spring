@@ -7,17 +7,17 @@
 
 #include "lib/gml/ThreadSafeContainers.h"
 #include "Rendering/GL/FBO.h"
+#include "Sim/Projectiles/Projectile.h"
 #include "System/EventClient.h"
 
 class CTextureAtlas;
-class AtlasedTexture;
-class CProjectile;
+struct AtlasedTexture;
 class CGroundFlash;
 struct FlyingPiece;
 struct piececmp;
 class IWorldObjectModelRenderer;
 
-typedef ThreadListSimRender<std::list<CProjectile*>, std::set<CProjectile*>, CProjectile*> ProjectileContainer;
+
 typedef ThreadListSimRender<std::list<CGroundFlash*>, std::set<CGroundFlash*>, CGroundFlash*> GroundFlashContainer;
 #if defined(USE_GML) && GML_ENABLE_SIM
 typedef ThreadListSimRender<std::set<FlyingPiece*>, std::set<FlyingPiece*, piececmp>, FlyingPiece*> FlyingPieceContainer;
@@ -37,24 +37,24 @@ public:
 
 	void Draw(bool drawReflection, bool drawRefraction = false);
 	void DrawProjectilesMiniMap();
+	bool DrawProjectileModel(const CProjectile*, bool);
 	void DrawGroundFlashes(void);
 	void DrawShadowPass(void);
 
 	void LoadWeaponTextures();
 	void UpdateTextures();
 
+	void Update();
 
 
 	bool WantsEvent(const std::string& eventName) {
-		return (eventName == "ProjectileCreated" || eventName == "ProjectileDestroyed");
+		return (eventName == "RenderProjectileCreated" || eventName == "RenderProjectileDestroyed");
 	}
 	bool GetFullRead() const { return true; }
 	int GetReadAllyTeam() const { return AllAccessTeam; }
 
-	void ProjectileCreated(const CProjectile*);
-	void ProjectileDestroyed(const CProjectile*);
-
-
+	void RenderProjectileCreated(const CProjectile*);
+	void RenderProjectileDestroyed(const CProjectile*);
 
 	CTextureAtlas* textureAtlas;  //texture atlas for projectiles
 	CTextureAtlas* groundFXAtlas; //texture atlas for ground fx

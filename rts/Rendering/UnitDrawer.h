@@ -10,8 +10,8 @@
 #include <map>
 #include "Rendering/GL/myGL.h"
 #include "System/EventClient.h"
+#include "lib/gml/ThreadSafeContainers.h"
 
-class CVertexArray;
 struct S3DModel;
 struct UnitDef;
 class CWorldObject;
@@ -35,7 +35,7 @@ public:
 	void Update(void);
 
 	void Draw(bool drawReflection, bool drawRefraction = false);
-	void DrawCloakedUnits(bool submerged, bool noAdvShading = false);  // cloaked units must be drawn after all others
+	void DrawCloakedUnits(bool noAdvShading = false);  // cloaked units must be drawn after all others
 	void DrawShadowPass(void);
 
 	void ApplyUnitTransformMatrix(CUnit*);
@@ -54,24 +54,17 @@ public:
 
 	bool WantsEvent(const std::string& eventName) {
 		return
-			(eventName == "UnitCreated"      || eventName == "UnitDestroyed") ||
-			(eventName == "UnitCloaked"      || eventName == "UnitDecloaked") ||
-			(eventName == "UnitEnteredLos"   || eventName == "UnitLeftLos"  ) ||
-			(eventName == "UnitEnteredRadar" || eventName == "UnitLeftRadar");
+			(eventName == "RenderUnitCreated"      || eventName == "RenderUnitDestroyed") ||
+			(eventName == "RenderUnitCloakChanged"      || eventName == "RenderUnitLOSChanged");
 	}
 	bool GetFullRead() const { return true; }
 	int GetReadAllyTeam() const { return AllAccessTeam; }
 
-	void UnitCreated(const CUnit*, const CUnit*);
-	void UnitDestroyed(const CUnit*, const CUnit*);
-	void UnitCloaked(const CUnit*);
-	void UnitDecloaked(const CUnit*);
-	void UnitEnteredLos(const CUnit*, int);
-	void UnitLeftLos(const CUnit*, int);
-	void UnitEnteredRadar(const CUnit*, int);
-	void UnitLeftRadar(const CUnit*, int);
+	void RenderUnitCreated(const CUnit*);
+	void RenderUnitDestroyed(const CUnit*);
 
-
+	void RenderUnitLOSChanged(const CUnit* unit, int allyTeam, int newStatus);
+	void RenderUnitCloakChanged(const CUnit* unit, int cloaked);
 
 	void SetUnitDrawDist(float dist);
 	void SetUnitIconDist(float dist);
@@ -141,9 +134,9 @@ public:
 
 	volatile bool mt_drawReflection;
 	volatile bool mt_drawRefraction;
-	CUnit* volatile mt_excludeUnit;
+	const CUnit* volatile mt_excludeUnit;
 
-	static void DrawOpaqueUnitsMT(void* c, CUnit* unit) {
+	static void DrawOpaqueUnitMT(void* c, CUnit* unit) {
 		CUnitDrawer* const ud = (CUnitDrawer*) c;
 		ud->DrawOpaqueUnit(unit, ud->mt_excludeUnit, ud->mt_drawReflection, ud->mt_drawRefraction);
 	}
@@ -168,7 +161,6 @@ private:
 	void DrawOpaqueAIUnits();
 	void DrawCloakedAIUnits();
 	void DrawGhostedBuildings(int);
-	void DrawFarTextures();
 	void DrawUnitIcons(bool);
 
 	// note: make these static?
@@ -198,8 +190,6 @@ private:
 	float cloakAlpha2;
 	float cloakAlpha3;
 
-	CVertexArray* va;
-
 	enum ModelShaderProgram {
 		MODEL_SHADER_S3O_SHADOW,   // S3O model shader (V+F) with self-shadowing
 		MODEL_SHADER_S3O_BASIC,    // S3O model shader (V+F) without self-shadowing
@@ -215,22 +205,11 @@ private:
 	// unsorted set of 3DO, S3O, opaque, and cloaked models!)
 	std::set<CUnit*> unsortedUnits;
 
-	#ifdef USE_GML
-	// gmlClientServer::Work only accepts lists
-	std::list<CUnit*> unsortedUnitsGML;
-	#endif
-
-	// holds S3O features and S3O projectiles
-	GML_CLASSVECTOR<GML_VECTOR<CWorldObject*> > quedS3Os;
-	std::set<int> usedS3OTextures;
-
-
 	// buildings that were in LOS_PREVLOS when they died and not in LOS since
 	std::vector<std::set<GhostBuilding*> > deadGhostBuildings;
 	// buildings that left LOS but are still alive
 	std::vector<std::set<CUnit*> > liveGhostBuildings;
 
-	GML_VECTOR<CUnit*> drawFar;
 	GML_VECTOR<CUnit*> drawStat;
 	GML_VECTOR<CUnit*> drawIcon;
 

@@ -35,13 +35,13 @@ public:
 	virtual void Draw();
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 	CProjectile(); // default constructor is needed for creg
-	CProjectile(const float3& pos, const float3& speed, CUnit* owner, bool isSynced, bool isWeapon, bool isPiece GML_PARG_H);
+	CProjectile(const float3& pos, const float3& speed, CUnit* owner, bool isSynced, bool isWeapon, bool isPiece);
 	virtual void Collision();
 	virtual void Collision(CUnit* unit);
 	virtual void Collision(CFeature* feature);
 	virtual ~CProjectile();
 	virtual void Update();
-	virtual void Init(const float3& pos, CUnit* owner GML_PARG_H);
+	virtual void Init(const float3& pos, CUnit* owner);
 
 	bool synced; //! is this projectile part of the simulation?
 	bool weapon; //! is this a weapon projectile? (true implies synced true)
@@ -57,21 +57,20 @@ public:
 	unsigned lastProjUpdate;
 #endif
 
-	inline CUnit* owner() const {
-		return uh->units[ownerId];
-	}
+	CUnit* owner() const { return uh->units[ownerId]; }
+	int GetProjectileType() const { return projectileType; }
 
+	float3 dir;
 	float3 speed;
 	float mygravity;
 
 	virtual void DrawCallback(void) {}
-	virtual void DrawUnitPart(void) {}
-	virtual void DrawS3O() { DrawUnitPart(); }
 
 	float tempdist; // temp distance used for sorting when rendering
 	
-private:
+protected:
 	int ownerId;
+	int projectileType;
 };
 
 #endif /* PROJECTILE_H */

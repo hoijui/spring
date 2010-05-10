@@ -12,7 +12,8 @@ FIND_PACKAGE(Freetype REQUIRED)
 INCLUDE_DIRECTORIES(${FREETYPE_INCLUDE_DIR})
 
 FIND_PACKAGE(GLEW REQUIRED)
-set (unitsync_libs ${GLEW_LIBRARIES} ${DEVIL_IL_LIBRARY} ${DEVIL_ILU_LIBRARY} ${GL_gl_LIBRARY} ${GL_glu_LIBRARY})
+set(unitsync_libs ${GLEW_LIBRARIES} ${DEVIL_IL_LIBRARY} ${GL_gl_LIBRARY} ${GL_glu_LIBRARY})
+#LIST(APPEND unitsync_libs ${DEVIL_ILU_LIBRARY})
 
 ADD_DEFINITIONS(-DUNITSYNC -DBITMAP_NO_OPENGL ${PIC_FLAG} -DNOT_USING_CREG)
 
@@ -27,6 +28,7 @@ set(unitsync_files
 	../../rts/System/TdfParser
 	../../rts/System/Info
 	../../rts/System/Option
+	../../rts/System/Util
 	../../rts/System/float4
 	../../rts/Sim/Misc/SideParser
 	../../rts/Game/GameVersion
@@ -50,3 +52,5 @@ if (MINGW)
 	set_target_properties(unitsync PROPERTIES LINK_FLAGS -Wl,--add-stdcall-alias)
 endif (MINGW)
 install (TARGETS unitsync DESTINATION ${LIBDIR})
+
+Add_Subdirectory(test)

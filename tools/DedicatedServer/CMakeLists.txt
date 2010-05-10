@@ -16,11 +16,12 @@ SET(system_files
 	../../rts/System/LogOutput
 	../../rts/System/TimeUtil
 	../../rts/System/BaseNetProtocol
-	../../rts/System/Demo
-	../../rts/System/DemoReader
-	../../rts/System/DemoRecorder
+	../../rts/System/LoadSave/Demo
+	../../rts/System/LoadSave/DemoReader
+	../../rts/System/LoadSave/DemoRecorder
 	../../rts/System/AutohostInterface
 	../../rts/System/UnsyncedRNG
+	../../rts/System/Util
 	../../rts/System/float4)
 IF (WIN32)
 	SET(system_files

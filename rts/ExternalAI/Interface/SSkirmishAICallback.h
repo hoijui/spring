@@ -222,7 +222,21 @@ int (CALLING_CONV *Clb_Game_getAiInterfaceVersion)(int teamId);
 int (CALLING_CONV *Clb_Game_getMyTeam)(int teamId);
 int (CALLING_CONV *Clb_Game_getMyAllyTeam)(int teamId);
 int (CALLING_CONV *Clb_Game_getPlayerTeam)(int teamId, int playerId);
+/**
+ * Returns the name of the side of a team in the game.
+ *
+ * This should not be used, as it may be "",
+ * and as the AI should rather rely on the units it has,
+ * which will lead to a more stable and versatile AI.
+ * @deprecated
+ *
+ * @return eg. "ARM" or "CORE"; may be "", depending on how the game was setup
+ */
 const char* (CALLING_CONV *Clb_Game_getTeamSide)(int teamId, int otherTeamId);
+/// Returns the ally-team of a team
+int (CALLING_CONV *Clb_Game_getTeamAllyTeam)(int teamId, int otherTeamId);
+/// Returns true, if the two supplied ally-teams are currently allied
+bool (CALLING_CONV *Clb_Game_isAllied)(int teamId, int firstAllyTeamId, int secondAllyTeamId);
 bool (CALLING_CONV *Clb_Game_isExceptionHandlingEnabled)(int teamId);
 bool (CALLING_CONV *Clb_Game_isDebugModeEnabled)(int teamId);
 int (CALLING_CONV *Clb_Game_getMode)(int teamId);
@@ -912,7 +926,10 @@ float (CALLING_CONV *Clb_Unit_0REF1Resource2resourceId0getResourceUse)(
 		int teamId, int unitId, int resourceId);
 float (CALLING_CONV *Clb_Unit_0REF1Resource2resourceId0getResourceMake)(
 		int teamId, int unitId, int resourceId);
+
 struct SAIFloat3 (CALLING_CONV *Clb_Unit_getPos)(int teamId, int unitId);
+struct SAIFloat3 (CALLING_CONV *Clb_Unit_getVel)(int teamId, int unitId);
+
 bool (CALLING_CONV *Clb_Unit_isActivated)(int teamId, int unitId);
 /// Returns true if the unit is currently being built
 bool (CALLING_CONV *Clb_Unit_isBeingBuilt)(int teamId, int unitId);
@@ -1787,6 +1804,8 @@ void (CALLING_CONV *Clb_WeaponDef_0MAP1KEYS0getCustomParams)(int teamId,
 void (CALLING_CONV *Clb_WeaponDef_0MAP1VALS0getCustomParams)(int teamId,
 		int weaponDefId, const char* values[]);
 // END OBJECT WeaponDef
+
+bool (CALLING_CONV *Clb_Debug_Drawer_isEnabled)(int teamId);
 
 };
 

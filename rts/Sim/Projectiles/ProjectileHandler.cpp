@@ -25,7 +25,6 @@
 #include "System/creg/STL_Map.h"
 #include "System/creg/STL_List.h"
 
-
 CProjectileHandler* ph;
 
 using namespace std;
@@ -174,13 +173,16 @@ void CProjectileHandler::UpdateProjectileContainer(ProjectileContainer& pc, bool
 				//! push_back this projectile for deletion
 				pci = pc.erase_delete_synced(pci);
 			} else {
+#if UNSYNCED_PROJ_NOEVENT
+				eventHandler.UnsyncedProjectileDestroyed(p);
+#else
 				pIt = unsyncedProjectileIDs.find(p->id);
 
 				eventHandler.ProjectileDestroyed((pIt->second).first, (pIt->second).second);
 				unsyncedProjectileIDs.erase(pIt);
 
 				freeUnsyncedIDs.push_back(p->id);
-
+#endif
 				pci = pc.erase_delete(pci);
 			}
 		} else {
@@ -215,10 +217,13 @@ void CProjectileHandler::Update()
 			if (syncedProjectiles.can_delete_synced()) {
 				GML_STDMUTEX_LOCK(proj); // Update
 
+				eventHandler.DeleteSyncedProjectiles();
 				//! delete all projectiles that were
 				//! queued (push_back'ed) for deletion
 				syncedProjectiles.delete_erased_synced();
 			}
+
+			eventHandler.UpdateProjectiles();
 		}
 
 
@@ -288,6 +293,10 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 		maxUsedID = &maxUsedSyncedID;
 	} else {
 		unsyncedProjectiles.push(p);
+#if UNSYNCED_PROJ_NOEVENT
+		eventHandler.UnsyncedProjectileCreated(p);
+		return;
+#endif
 		freeIDs = &freeUnsyncedIDs;
 		proIDs = &unsyncedProjectileIDs;
 		maxUsedID = &maxUsedUnsyncedID;
