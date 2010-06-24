@@ -1,3 +1,5 @@
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+
 #ifndef I_PATH_DRAWER_H
 #define I_PATH_DRAWER_H
 
