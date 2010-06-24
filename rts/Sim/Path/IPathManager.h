@@ -7,8 +7,8 @@
 #include "float3.h"
 #include "Vec2.h"
 #include "Map/ReadMap.h"
-#include "Rendering/IPathDrawer.h"
 
+class IPathDrawer;
 struct MoveData;
 class CSolidObject;
 

@@ -20,6 +20,7 @@
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
+#include "Rendering/IPathDrawer.h"
 #include "ConfigHandler.h"
 #include "FastMath.h"
 #include "myMath.h"
