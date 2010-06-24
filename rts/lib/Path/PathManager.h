@@ -157,7 +157,7 @@ public:
 	/** Enable/disable heat mapping */
 	void SetHeatMappingEnabled(bool enabled);
 	bool GetHeatMappingEnabled();
-	IPathDrawer * getDrawer();
+	IPathDrawer* getDrawer();
 
 	void SetHeatOnSquare(int x, int y, int value, int ownerId);
 	void SetHeatOnPos(float3, int value, int ownerId);

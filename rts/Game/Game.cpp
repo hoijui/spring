@@ -2869,7 +2869,10 @@ bool CGame::DrawWorld()
 		gd->DrawTrees();
 	}
 
-	pathDrawer->Draw();
+	IPathDrawer* drawer=pathManager->getDrawer();
+	if (drawer!=NULL){
+		drawer->Draw();
+	}
 
 	//! transparent stuff
 	glEnable(GL_BLEND);

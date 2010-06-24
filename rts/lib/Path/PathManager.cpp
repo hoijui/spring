@@ -37,6 +37,7 @@ CPathManager::CPathManager()
 	// Reset id-counter.
 	nextPathId = 0;
 	lastHeatRequestFrame = 0;
+	drawer = NULL;
 
 	logOutput.Print("[CPathManager] pathing data checksum: %08x\n", GetPathCheckSum());
 

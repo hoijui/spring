@@ -14,9 +14,8 @@ class IPathDrawer {
 		static IPathDrawer* GetInstance();
 		virtual ~IPathDrawer(){};
 		virtual void Draw()=0;
+		virtual void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem)=0;
 };
-
-#define pathDrawer (IPathDrawer::GetInstance())
 
 #endif
 
