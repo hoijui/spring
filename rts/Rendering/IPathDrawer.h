@@ -1,5 +1,5 @@
-#ifndef IPATHDRAWER_H
-#define IPATHDRAWER_H
+#ifndef I_PATH_DRAWER_H
+#define I_PATH_DRAWER_H
 
 #include <cstdlib>
 #include <Rendering/GL/myGL.h>

@@ -66,7 +66,6 @@
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/DebugDrawerAI.h"
 #include "Rendering/HUDDrawer.h"
-#include "Rendering/IPathDrawer.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/InMapDraw.h"
 #include "Rendering/ShadowHandler.h"
@@ -507,7 +506,6 @@ void CGame::LoadSimulation(const std::string& mapname)
 	radarhandler = new CRadarHandler(false);
 
 	IPathManager::Initialize();
-	IPathDrawer::Initialize();
 
 	wind.LoadWind(mapInfo->atmosphere.minWind, mapInfo->atmosphere.maxWind);
 

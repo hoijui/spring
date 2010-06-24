@@ -47,7 +47,6 @@ class IPathManager{
 
 		virtual void TerrainChange(float3 upperCorner, float3 lowerCorner)=0;
 		virtual void TerrainChange(unsigned int x1, unsigned int z1, unsigned int x2, unsigned int z2)=0;
-		virtual void GetDetailedPathSquares(unsigned pathId, std::vector<int2>& points)=0;
 
 		enum { PATH_RESOLUTION = 2 * SQUARE_SIZE };
 		virtual IPathDrawer* getDrawer()=0;
