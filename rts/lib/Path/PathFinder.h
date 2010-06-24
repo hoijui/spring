@@ -9,6 +9,7 @@
 #include "Sim/MoveTypes/MoveMath/MoveMath.h"
 #include <queue>
 #include <list>
+#include "Sim/Path/IPathManager.h"
 
 class CPathFinderDef;
 
@@ -258,20 +259,20 @@ private:
 	bool heatMapping;
 };
 
-class CPathFinderDef {
+class CPathFinderDef: public IPathFinderDef {
 public:
-	CPathFinderDef(float3 goalCenter, float goalRadius);
-	bool IsGoal(int xSquare, int zSquare) const;
-	float Heuristic(int xSquare, int zSquare) const;
-	bool GoalIsBlocked(const MoveData& moveData, unsigned int moveMathOptions) const;
-	virtual bool WithinConstraints(int xSquare, int Square) const {return true;}
-	int2 GoalSquareOffset(int blockSize) const;
+       CPathFinderDef(float3 goalCenter, float goalRadius);
+       bool IsGoal(int xSquare, int zSquare) const;
+       float Heuristic(int xSquare, int zSquare) const;
+       bool GoalIsBlocked(const MoveData& moveData, unsigned int moveMathOptions) const;
+       virtual bool WithinConstraints(int xSquare, int Square) const {return true;}
+       int2 GoalSquareOffset(int blockSize) const;
 
-	float3 goal;
-	float sqGoalRadius;
-	int goalSquareX;
-	int goalSquareZ;
-	virtual ~CPathFinderDef();
+       float3 goal;
+       float sqGoalRadius;
+       int goalSquareX;
+       int goalSquareZ;
+       virtual ~CPathFinderDef();
 };
 
 class CRangedGoalWithCircularConstraint : public CPathFinderDef {

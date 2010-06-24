@@ -2,7 +2,7 @@
 
 #include "StdAfx.h"
 
-#include "Sim/Path/PathManager.h"
+#include "Sim/Path/IPathManager.h"
 #include <stdlib.h>
 #include <algorithm>
 

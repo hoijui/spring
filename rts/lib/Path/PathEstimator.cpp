@@ -837,7 +837,7 @@ void CPathEstimator::WriteFile(std::string cacheFileName, const std::string& map
 
 		std::auto_ptr<CArchiveZip> auto_pfile(pfile);
 		CArchiveZip& file(*pfile);
-		
+
 		const unsigned fid = file.FindFile("pathinfo");
 		assert(fid < file.NumFiles());
 		pathChecksum = file.GetCrc32(fid);

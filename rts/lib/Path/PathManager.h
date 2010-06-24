@@ -3,18 +3,19 @@
 #ifndef PATHMANAGER_H
 #define PATHMANAGER_H
 
+#include "Sim/Path/IPathManager.h"
 #include <map>
 #include "IPath.h"
 #include "PathFinder.h"
 #include <boost/cstdint.hpp> /* Replace with <stdint.h> if appropriate */
+#include "PathDrawer.h"
 
 class CSolidObject;
 class CPathEstimator;
-class CPathFinderDef;
 struct MoveData;
 class CMoveMath;
 
-class CPathManager {
+class CPathManager : public IPathManager {
 public:
 	CPathManager();
 	~CPathManager();
@@ -47,13 +48,14 @@ public:
 		const MoveData* moveData,
 		float3 startPos, float3 goalPos, float goalRadius = 8,
 		CSolidObject* caller = 0,
-		bool synced = true
+		bool synced = true,
+		const int frameNum=0
 	);
 
 	unsigned int RequestPath(
 		const MoveData* moveData,
 		float3 startPos,
-		CPathFinderDef* peDef,
+		IPathFinderDef* peDef,
 		float3 goalPos,
 		CSolidObject* caller,
 		bool synced = true
@@ -79,7 +81,7 @@ public:
 
 	*/
 	float3 NextWaypoint(unsigned int pathId, float3 callerPos, float minDistance = 0,
-			int numRetries=0, int ownerId = 0, bool synced = true) const;
+			int numRetries=0, int ownerId = 0, bool synced = true);
 
 
 	/**
@@ -91,7 +93,7 @@ public:
 		points
 			The list of detail waypoints.
 	*/
-	void GetDetailedPath(unsigned pathId, std::vector<float3>& points) const;
+	void GetDetailedPath(unsigned pathId, std::vector<float3>& points);
 
 
 	/**
@@ -103,7 +105,7 @@ public:
 		points
 			The list of detail waypoints.
 	*/
-	void GetDetailedPathSquares(unsigned pathId, std::vector<int2>& points) const;
+	void GetDetailedPathSquares(unsigned pathId, std::vector<int2>& points);
 
 
 	/*
@@ -117,7 +119,7 @@ public:
 			The list of starting indices for the different estimation levels
 	*/
 	void GetEstimatedPath(unsigned int pathId,
-		std::vector<float3>& points, std::vector<int>& starts) const;
+		std::vector<float3>& points, std::vector<int>& starts);
 
 
 	/*
@@ -155,6 +157,7 @@ public:
 	/** Enable/disable heat mapping */
 	void SetHeatMappingEnabled(bool enabled);
 	bool GetHeatMappingEnabled();
+	IPathDrawer * getDrawer();
 
 	void SetHeatOnSquare(int x, int y, int value, int ownerId);
 	void SetHeatOnPos(float3, int value, int ownerId);
@@ -183,11 +186,16 @@ private:
 		float3 finalGoal;
 		CSolidObject* caller;
 	};
-
-
+	CPathDrawer* drawer;
 	unsigned int Store(MultiPath* path);
 	void Estimate2ToEstimate(MultiPath& path, float3 startPos, int ownerId, bool synced) const;
 	void EstimateToDetailed(MultiPath& path, float3 startPos, int ownerId) const;
+	unsigned int RequestPathStartGoal(
+		const MoveData* moveData,
+		float3 startPos, float3 goalPos, float goalRadius,
+		CSolidObject* caller,
+		bool synced
+	);
 
 
 	CPathFinder* pf;
@@ -196,8 +204,8 @@ private:
 
 	std::map<unsigned int, MultiPath*> pathMap;
 	unsigned int nextPathId;
+	unsigned int lastHeatRequestFrame;
+	void Update(int pathId, CUnit *owner);
 };
-
-extern CPathManager *pathManager;
 
 #endif

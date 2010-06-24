@@ -8,43 +8,38 @@
 
 // FIXME
 #define private public
-#include "Sim/Path/IPath.h"
-#include "Sim/Path/PathFinder.h"
-#include "Sim/Path/PathEstimator.h"
-#include "Sim/Path/PathManager.h"
+#include "lib/Path/IPath.h"
+#include "lib/Path/PathFinder.h"
+#include "lib/Path/PathEstimator.h"
+#include "lib/Path/PathManager.h"
 #undef private
 
 #include "Sim/Units/UnitDef.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/PathDrawer.h"
+#include "lib/Path/PathDrawer.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/glExtra.h"
 #include "System/GlobalUnsynced.h"
+#include "System/myMath.h"
 
-PathDrawer* PathDrawer::GetInstance() {
-	static PathDrawer pd;
-	return &pd;
-}
-
-void PathDrawer::Draw() const {
+void CPathDrawer::Draw(){
 	 // PathManager is not thread safe; making it
 	// so might be too costly (performance-wise)
 	#if !defined(USE_GML) || !GML_ENABLE_SIM
 	if (globalRendering->drawdebug && (gs->cheatEnabled || gu->spectating)) {
 		glPushAttrib(GL_ENABLE_BIT);
-		Draw(pathManager);
+		CPathManager *manager=(CPathManager*)pathManager;
+		Draw(manager);
 
-		Draw(pathManager->pf);
-		Draw(pathManager->pe);
-		Draw(pathManager->pe2);
+		Draw(manager->pf);
+		Draw(manager->pe);
+		Draw(manager->pe2);
 		glPopAttrib();
 	}
 	#endif
 }
 
-
-
-void PathDrawer::Draw(const CPathManager* pm) const {
+void CPathDrawer::Draw(const CPathManager* pm) const {
 	glDisable(GL_TEXTURE_2D);
 	glDisable(GL_LIGHTING);
 	glLineWidth(3);
@@ -88,12 +83,12 @@ void PathDrawer::Draw(const CPathManager* pm) const {
 
 
 
-void PathDrawer::Draw(const CPathFinderDef* pfd) const {
+void CPathDrawer::Draw(const CPathFinderDef* pfd) const {
 	glColor4f(0.0f, 1.0f, 1.0f, 1.0f);
 	glSurfaceCircle(pfd->goal, sqrt(pfd->sqGoalRadius), 20);
 }
 
-void PathDrawer::Draw(const CPathFinder* pf) const {
+void CPathDrawer::Draw(const CPathFinder* pf) const {
 	glColor3f(0.7f, 0.2f, 0.2f);
 	glDisable(GL_TEXTURE_2D);
 	glBegin(GL_LINES);
@@ -131,7 +126,7 @@ void PathDrawer::Draw(const CPathFinder* pf) const {
 
 
 
-void PathDrawer::Draw(const CPathEstimator* pe) const {
+void CPathDrawer::Draw(const CPathEstimator* pe) const {
 	GML_RECMUTEX_LOCK(sel); // Draw
 
 	MoveData* md = NULL;
@@ -281,4 +276,23 @@ void PathDrawer::Draw(const CPathEstimator* pe) const {
 	}
 	glDisable(GL_BLEND);
 	*/
+}
+/*FIXME: duplicate copy in BaseGroundDrawer.cpp */
+#define COLOR_R 2
+#define COLOR_G 1
+#define COLOR_B 0
+#define COLOR_A 3
+
+void CPathDrawer::DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem){
+	for (int y = starty; y < endy; ++y) {
+		const int y_pwr2hmapx = y * pwr2mapx_half;
+		for (int x = 0; x  < gs->hmapx; ++x) {
+			const int i = (y_pwr2hmapx + x) * 4 - offset;
+			CPathManager *manager = (CPathManager*)pathManager;
+			infoTexMem[i + COLOR_R] = (unsigned char)Clamp(8*manager->GetHeatOnSquare(x<<1, y<<1), 32, 255);
+			infoTexMem[i + COLOR_G] = 32;
+			infoTexMem[i + COLOR_B] = 32;
+			infoTexMem[i + COLOR_A] = 255;
+		}
+	}
 }

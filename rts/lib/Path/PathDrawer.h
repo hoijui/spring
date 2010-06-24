@@ -1,26 +1,29 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef PATH_DRAWER_HDR
-#define PATH_DRAWER_HDR
+#ifndef PATH_DRAWER_H
+#define PATH_DRAWER_H
+
+#include "Rendering/IPathDrawer.h"
 
 class CPathManager;
 class CPathFinderDef;
 class CPathFinder;
 class CPathEstimator;
 
-struct PathDrawer {
+class CPathDrawer: public IPathDrawer {
 public:
-	void Draw() const;
-
-	static PathDrawer* GetInstance();
-
+	static IPathDrawer* GetInstance();
+	void Draw();
+	void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem);
+	void SetHeatMappingEnabled(bool enabled){
+		benabled=enabled;
+	};
 private:
 	void Draw(const CPathManager*) const;
 	void Draw(const CPathFinderDef*) const;
 	void Draw(const CPathFinder*) const;
 	void Draw(const CPathEstimator*) const;
+	bool benabled;
 };
-
-#define pathDrawer (PathDrawer::GetInstance())
 
 #endif

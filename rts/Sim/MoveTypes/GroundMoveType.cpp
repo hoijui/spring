@@ -23,7 +23,7 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/RadarHandler.h"
 #include "Sim/Misc/TeamHandler.h"
-#include "Sim/Path/PathManager.h"
+#include "Sim/Path/IPathManager.h"
 #include "Sim/Units/COB/CobInstance.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/UnitDef.h"
@@ -1159,14 +1159,7 @@ float3 CGroundMoveType::ObstacleAvoidance(float3 desiredDir) {
 unsigned int CGroundMoveType::RequestPath(float3 startPos, float3 goalPos,
 		float goalRadius)
 {
-	if (lastHeatRequestFrame + 60 < gs->frameNum) {
-		pathManager->SetHeatMappingEnabled(true);
-		pathId = pathManager->RequestPath(owner->mobility, owner->pos, goalPos, goalRadius, owner);
-		pathManager->SetHeatMappingEnabled(false);
-		lastHeatRequestFrame = gs->frameNum;
-	} else {
-		pathId = pathManager->RequestPath(owner->mobility, owner->pos, goalPos, goalRadius, owner);
-	}
+	pathId = pathManager->RequestPath(owner->mobility, owner->pos, goalPos, goalRadius, owner, gs->frameNum);
 	return pathId;
 }
 
@@ -1175,20 +1168,7 @@ void CGroundMoveType::UpdateHeatMap()
 {
 	if (!pathId)
 		return;
-
-#ifndef USE_GML
-	static std::vector<int2> points;
-#else
-	std::vector<int2> points;
-#endif
-
-	pathManager->GetDetailedPathSquares(pathId, points);
-
-	float scale = 1.0f / points.size();
-	int i = points.size();
-	for (std::vector<int2>::iterator it = points.begin(); it != points.end(); ++it) {
-		pathManager->SetHeatOnSquare(it->x, it->y, (i--) * scale * owner->mobility->heatProduced, owner->id);
-	}
+	pathManager->Update(pathId, owner);
 }
 
 
@@ -1283,7 +1263,7 @@ void CGroundMoveType::GetNextWaypoint()
 		}
 
 		// If the waypoint is very close to the goal, then correct it into the goal.
-		if (waypoint.SqDistance2D(goalPos) < Square(CPathManager::PATH_RESOLUTION)) {
+		if (waypoint.SqDistance2D(goalPos) < Square(IPathManager::PATH_RESOLUTION)) {
 			waypoint = goalPos;
 			haveFinalWaypoint = true;
 		}
@@ -1327,7 +1307,7 @@ based on current speed.
 */
 float CGroundMoveType::MinDistanceToWaypoint()
 {
-	return BreakingDistance(owner->speed.Length2D()) + CPathManager::PATH_RESOLUTION;
+	return BreakingDistance(owner->speed.Length2D()) + IPathManager::PATH_RESOLUTION;
 }
 
 /*

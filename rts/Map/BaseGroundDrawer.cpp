@@ -16,7 +16,7 @@
 #include "Sim/Misc/RadarHandler.h"
 #include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/MoveTypes/MoveMath/MoveMath.h"
-#include "Sim/Path/PathManager.h"
+#include "Rendering/IPathDrawer.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
@@ -413,16 +413,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 				break;
 			}
 			case drawHeat: {
-				for (int y = starty; y < endy; ++y) {
-					const int y_pwr2hmapx = y * pwr2mapx_half;
-					for (int x = 0; x  < gs->hmapx; ++x) {
-						const int i = (y_pwr2hmapx + x) * 4 - offset;
-						infoTexMem[i + COLOR_R] = (unsigned char)Clamp(8*pathManager->GetHeatOnSquare(x<<1, y<<1), 32, 255);
-						infoTexMem[i + COLOR_G] = 32;
-						infoTexMem[i + COLOR_B] = 32;
-						infoTexMem[i + COLOR_A] = 255;
-					}
-				}
+				pathDrawer->DrawHeat(starty, endy, pwr2mapx_half, offset, infoTexMem);
 				break;
 			}
 			case drawHeight: {
