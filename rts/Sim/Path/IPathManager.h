@@ -13,7 +13,6 @@ struct MoveData;
 class CSolidObject;
 
 class IPathManager{
-	static IPathManager* pd;
 public:
 	static void Initialize();
 	virtual ~IPathManager(){};
@@ -119,6 +118,8 @@ public:
 	virtual void Update()=0;
 	//FIXME seems to be an implementation specific function, maybe this could be called by update()
 	virtual void Update(int pathId, CUnit *owner)=0;
+private:
+	static IPathManager* pd;
 
 };
 
