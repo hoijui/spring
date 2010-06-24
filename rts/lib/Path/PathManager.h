@@ -6,10 +6,10 @@
 #include "Sim/Path/IPathManager.h"
 #include <map>
 #include "IPath.h"
-#include "PathFinder.h"
 #include <boost/cstdint.hpp> /* Replace with <stdint.h> if appropriate */
-#include "PathDrawer.h"
+#include "PathFinder.h"
 
+class CPathDrawer;
 class CSolidObject;
 class CPathEstimator;
 struct MoveData;
@@ -51,16 +51,6 @@ public:
 		bool synced = true,
 		const int frameNum=0
 	);
-
-	unsigned int RequestPath(
-		const MoveData* moveData,
-		float3 startPos,
-		IPathFinderDef* peDef,
-		float3 goalPos,
-		CSolidObject* caller,
-		bool synced = true
-	);
-
 
 	/*
 	Gives the next waypoint of the path.
@@ -168,6 +158,15 @@ public:
 	static const unsigned int PATH_RESOLUTION;
 
 private:
+	unsigned int RequestPath(
+		const MoveData* moveData,
+		float3 startPos,
+		CPathFinderDef* peDef,
+		float3 goalPos,
+		CSolidObject* caller,
+		bool synced = true
+	);
+
 	struct MultiPath {
 		MultiPath(const float3 start, const CPathFinderDef* peDef, const MoveData* moveData);
 		~MultiPath();

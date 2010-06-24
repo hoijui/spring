@@ -7,7 +7,6 @@
 #include "float3.h"
 #include "Vec2.h"
 #include "Map/ReadMap.h"
-#include "IPathFinderDef.h"
 #include "Rendering/IPathDrawer.h"
 
 struct MoveData;
@@ -34,15 +33,6 @@ class IPathManager{
 			CSolidObject* caller = 0,
 			bool synced = true,
 			const int frame=0
-		)=0;
-
-		virtual unsigned int RequestPath(
-			const MoveData* moveData,
-			float3 startPos,
-			IPathFinderDef* peDef,
-			float3 goalPos,
-			CSolidObject* caller,
-			bool synced = true
 		)=0;
 
 		virtual void TerrainChange(float3 upperCorner, float3 lowerCorner)=0;

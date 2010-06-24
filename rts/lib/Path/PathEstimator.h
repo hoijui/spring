@@ -18,7 +18,6 @@
 #include <boost/cstdint.hpp>
 
 class CPathEstimatorDef;
-class CPathFinderDef;
 
 
 class CPathEstimator: public IPath

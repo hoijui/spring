@@ -259,7 +259,7 @@ private:
 	bool heatMapping;
 };
 
-class CPathFinderDef: public IPathFinderDef {
+class CPathFinderDef{
 public:
        CPathFinderDef(float3 goalCenter, float goalRadius);
        bool IsGoal(int xSquare, int zSquare) const;
