@@ -9,6 +9,6 @@ void IPathDrawer::Initialize(){
 	pd= new CPathDrawer();
 }
 
-IPathDrawer* IPathDrawer::GetInstance(){
+const IPathDrawer* IPathDrawer::GetInstance(){
 	return pd;
 }

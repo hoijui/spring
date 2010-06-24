@@ -315,7 +315,7 @@ void CPathManager::Estimate2ToEstimate(MultiPath& path, float3 startPos, int own
 Removes and return the next waypoint in the multipath corresponding to given id.
 */
 float3 CPathManager::NextWaypoint(unsigned int pathId, float3 callerPos, float minDistance,
-		int numRetries, int ownerId, bool synced)
+		int numRetries, int ownerId, bool synced) const
 {
 	SCOPED_TIMER("PFS");
 
@@ -474,7 +474,7 @@ void CPathManager::GetDetailedPathSquares(unsigned pathId, std::vector<int2>& po
 
 void CPathManager::GetEstimatedPath(unsigned int pathId,
 	std::vector<float3>& points,
-	std::vector<int>& starts)
+	std::vector<int>& starts) const
 {
 	points.clear();
 	starts.clear();

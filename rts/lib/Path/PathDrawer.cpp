@@ -22,7 +22,7 @@
 #include "System/GlobalUnsynced.h"
 #include "System/myMath.h"
 
-void CPathDrawer::Draw(){
+void CPathDrawer::Draw() const{
 	 // PathManager is not thread safe; making it
 	// so might be too costly (performance-wise)
 	#if !defined(USE_GML) || !GML_ENABLE_SIM
@@ -283,7 +283,7 @@ void CPathDrawer::Draw(const CPathEstimator* pe) const {
 #define COLOR_B 0
 #define COLOR_A 3
 
-void CPathDrawer::DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem){
+void CPathDrawer::DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem) const{
 	for (int y = starty; y < endy; ++y) {
 		const int y_pwr2hmapx = y * pwr2mapx_half;
 		for (int x = 0; x  < gs->hmapx; ++x) {

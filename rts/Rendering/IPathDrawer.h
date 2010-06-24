@@ -11,10 +11,10 @@ class IPathDrawer {
 		static IPathDrawer* pd;
 	public:
 		static void Initialize();
-		static IPathDrawer* GetInstance();
+		static const IPathDrawer* GetInstance();
 		virtual ~IPathDrawer(){};
-		virtual void Draw()=0;
-		virtual void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem)=0;
+		virtual void Draw() const = 0;
+		virtual void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem) const = 0;
 };
 
 #endif

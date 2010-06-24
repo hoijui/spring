@@ -71,7 +71,7 @@ public:
 
 	*/
 	float3 NextWaypoint(unsigned int pathId, float3 callerPos, float minDistance = 0,
-			int numRetries=0, int ownerId = 0, bool synced = true);
+			int numRetries=0, int ownerId = 0, bool synced = true) const;
 
 
 	/**
@@ -109,7 +109,7 @@ public:
 			The list of starting indices for the different estimation levels
 	*/
 	void GetEstimatedPath(unsigned int pathId,
-		std::vector<float3>& points, std::vector<int>& starts);
+		std::vector<float3>& points, std::vector<int>& starts) const;
 
 
 	/*

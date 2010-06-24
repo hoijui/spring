@@ -23,9 +23,9 @@ class IPathManager{
 		virtual boost::uint32_t GetPathCheckSum()=0;
 		virtual void Update()=0;
 		virtual float3 NextWaypoint(unsigned int pathId, float3 callerPos, float minDistance = 0,
-			int numRetries=0, int ownerId = 0, bool synced = true)=0;
+			int numRetries=0, int ownerId = 0, bool synced = true) const=0;
 		virtual void GetEstimatedPath(unsigned int pathId,
-			std::vector<float3>& points, std::vector<int>& starts)=0;
+			std::vector<float3>& points, std::vector<int>& starts) const=0;
 		virtual void DeletePath(unsigned int pathId)=0;
 		virtual unsigned int RequestPath(
 			const MoveData* moveData,

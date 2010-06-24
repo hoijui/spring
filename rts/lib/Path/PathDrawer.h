@@ -13,8 +13,8 @@ class CPathEstimator;
 class CPathDrawer: public IPathDrawer {
 public:
 	static IPathDrawer* GetInstance();
-	void Draw();
-	void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem);
+	void Draw() const;
+	void DrawHeat(int starty, int endy, int pwr2mapx_half, int offset, GLbyte* infoTexMem) const;
 	void SetHeatMappingEnabled(bool enabled){
 		benabled=enabled;
 	};
