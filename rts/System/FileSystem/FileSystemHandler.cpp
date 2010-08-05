@@ -72,10 +72,22 @@ void FileSystemHandler::Initialize(bool verbose)
 			// TODO: move these two out of here; this class is for low level file system abstraction only
 			archiveScanner = new CArchiveScanner();
 			vfsHandler = new CVFSHandler();
-		} catch (...) {
+		} catch (content_error e) {
+			logOutput.Print("Init Error: %s", e.what());
+			FileSystemHandler::Cleanup();
+			throw e;
+		} catch (std::runtime_error e) {
+			logOutput.Print("Init Error: %s", e.what());
+			FileSystemHandler::Cleanup();
+			throw e;
+		} catch (std::exception e) {
+			logOutput.Print("Init Error: %s", e.what());
+			FileSystemHandler::Cleanup();
+			throw e;
+		}/* catch (...) {
 			FileSystemHandler::Cleanup();
 			throw;
-		}
+		}*/
 	}
 }
 
