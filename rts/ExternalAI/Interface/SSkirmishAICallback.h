@@ -222,7 +222,29 @@ int (CALLING_CONV *Clb_Game_getAiInterfaceVersion)(int teamId);
 int (CALLING_CONV *Clb_Game_getMyTeam)(int teamId);
 int (CALLING_CONV *Clb_Game_getMyAllyTeam)(int teamId);
 int (CALLING_CONV *Clb_Game_getPlayerTeam)(int teamId, int playerId);
+/**
+ * Returns the name of the side of a team in the game.
+ *
+ * This should not be used, as it may be "",
+ * and as the AI should rather rely on the units it has,
+ * which will lead to a more stable and versatile AI.
+ * @deprecated
+ *
+ * @return eg. "ARM" or "CORE"; may be "", depending on how the game was setup
+ */
 const char* (CALLING_CONV *Clb_Game_getTeamSide)(int teamId, int otherTeamId);
+/**
+ * Returns the color of a team in the game.
+ *
+ * This should only be used when drawing stuff,
+ * and not for team-identification.
+ * @return the RGB color of a team, with values in [0, 255]
+ */
+struct SAIFloat3 (CALLING_CONV *Clb_Game_getTeamColor)(int teamId, int otherTeamId);
+/// Returns the ally-team of a team
+int (CALLING_CONV *Clb_Game_getTeamAllyTeam)(int teamId, int otherTeamId);
+/// Returns true, if the two supplied ally-teams are currently allied
+bool (CALLING_CONV *Clb_Game_isAllied)(int teamId, int firstAllyTeamId, int secondAllyTeamId);
 bool (CALLING_CONV *Clb_Game_isExceptionHandlingEnabled)(int teamId);
 bool (CALLING_CONV *Clb_Game_isDebugModeEnabled)(int teamId);
 int (CALLING_CONV *Clb_Game_getMode)(int teamId);
@@ -301,7 +323,6 @@ int (CALLING_CONV *Clb_0MULTI1FETCH3UnitDefByName0UnitDef)(int teamId,
 float (CALLING_CONV *Clb_UnitDef_getHeight)(int teamId, int unitDefId);
 /// Forces loading of the unit model
 float (CALLING_CONV *Clb_UnitDef_getRadius)(int teamId, int unitDefId);
-bool (CALLING_CONV *Clb_UnitDef_isValid)(int teamId, int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getName)(int teamId, int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getHumanName)(int teamId, int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getFileName)(int teamId, int unitDefId);
@@ -358,7 +379,6 @@ float (CALLING_CONV *Clb_UnitDef_getTurnInPlaceDistance)(int teamId, int unitDef
  * turnInPlace setting.
  */
 float (CALLING_CONV *Clb_UnitDef_getTurnInPlaceSpeedLimit)(int teamId, int unitDefId);
-int (CALLING_CONV *Clb_UnitDef_getMoveType)(int teamId, int unitDefId);
 bool (CALLING_CONV *Clb_UnitDef_isUpright)(int teamId, int unitDefId);
 bool (CALLING_CONV *Clb_UnitDef_isCollide)(int teamId, int unitDefId);
 float (CALLING_CONV *Clb_UnitDef_getControlRadius)(int teamId, int unitDefId);
@@ -436,29 +456,6 @@ float (CALLING_CONV *Clb_UnitDef_FlankingBonus_getMin)(int teamId,
  */
 float (CALLING_CONV *Clb_UnitDef_FlankingBonus_getMobilityAdd)(int teamId,
 		int unitDefId);
-/**
- * The type of the collision volume's form.
- *
- * @return  "Ell"
- *          "Cyl[T]" (where [T] is one of ['X', 'Y', 'Z'])
- *          "Box"
- */
-const char* (CALLING_CONV *Clb_UnitDef_CollisionVolume_getType)(int teamId,
-		int unitDefId);
-/** The collision volume's full axis lengths. */
-struct SAIFloat3 (CALLING_CONV *Clb_UnitDef_CollisionVolume_getScales)(
-		int teamId, int unitDefId);
-/** The collision volume's offset relative to the unit's center position */
-struct SAIFloat3 (CALLING_CONV *Clb_UnitDef_CollisionVolume_getOffsets)(
-		int teamId, int unitDefId);
-/**
- * Collission test algorithm used.
- *
- * @return  0: discrete
- *          1: continuous
- */
-int (CALLING_CONV *Clb_UnitDef_CollisionVolume_getTest)(int teamId,
-		int unitDefId);
 float (CALLING_CONV *Clb_UnitDef_getMaxWeaponRange)(int teamId, int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getType)(int teamId, int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getTooltip)(int teamId, int unitDefId);
@@ -468,8 +465,6 @@ const char* (CALLING_CONV *Clb_UnitDef_getDeathExplosion)(int teamId,
 const char* (CALLING_CONV *Clb_UnitDef_getSelfDExplosion)(int teamId,
 		int unitDefId);
 // this might be changed later for something better
-const char* (CALLING_CONV *Clb_UnitDef_getTedClassString)(int teamId,
-		int unitDefId);
 const char* (CALLING_CONV *Clb_UnitDef_getCategoryString)(int teamId,
 		int unitDefId);
 bool (CALLING_CONV *Clb_UnitDef_isAbleToSelfD)(int teamId, int unitDefId);
@@ -914,7 +909,10 @@ float (CALLING_CONV *Clb_Unit_0REF1Resource2resourceId0getResourceUse)(
 		int teamId, int unitId, int resourceId);
 float (CALLING_CONV *Clb_Unit_0REF1Resource2resourceId0getResourceMake)(
 		int teamId, int unitId, int resourceId);
+
 struct SAIFloat3 (CALLING_CONV *Clb_Unit_getPos)(int teamId, int unitId);
+struct SAIFloat3 (CALLING_CONV *Clb_Unit_getVel)(int teamId, int unitId);
+
 bool (CALLING_CONV *Clb_Unit_isActivated)(int teamId, int unitId);
 /// Returns true if the unit is currently being built
 bool (CALLING_CONV *Clb_Unit_isBeingBuilt)(int teamId, int unitId);
@@ -1147,20 +1145,29 @@ struct SAIFloat3 (CALLING_CONV *Clb_Map_getStartPos)(int teamId);
 struct SAIFloat3 (CALLING_CONV *Clb_Map_getMousePos)(int teamId);
 bool (CALLING_CONV *Clb_Map_isPosInCamera)(int teamId, struct SAIFloat3 pos,
 		float radius);
-/// Returns the maps width in full resolution
+/** Returns the maps center heightmap width 
+ * 
+ * @see getHeightMap()
+ */
 int (CALLING_CONV *Clb_Map_getWidth)(int teamId);
-/// Returns the maps height in full resolution
+/** Returns the maps center heightmap height 
+ * 
+ * @see getHeightMap()
+ */
 int (CALLING_CONV *Clb_Map_getHeight)(int teamId);
 /**
  * Returns the height for the center of the squares.
  * This differs slightly from the drawn map, since
  * that one uses the height at the corners.
+ * Note that the actual map is 8 times larger (in each dimension) and 
+ * all other maps (slope, los, resources, etc.) are relative to the 
+ * size of the heightmap.
  *
  * - do NOT modify or delete the height-map (native code relevant only)
  * - index 0 is top left
  * - each data position is 8*8 in size
- * - the value for the full resolution position (x, z) is at index ((z * width + x) / 8)
- * - the last value, bottom right, is at index (width/8 * height/8 - 1)
+ * - the value for the full resolution position (x, z) is at index (z * width + x)
+ * - the last value, bottom right, is at index (width * height - 1)
  *
  * @see getCornersHeightMap()
  */
@@ -1175,8 +1182,8 @@ int (CALLING_CONV *Clb_Map_0ARRAY1VALS0getHeightMap)(int teamId,
  * - do NOT modify or delete the height-map (native code relevant only)
  * - index 0 is top left
  * - 4 points mark the edges of an area of 8*8 in size
- * - the value for upper left corner of the full resolution position (x, z) is at index ((z * width + x) / 8)
- * - the last value, bottom right, is at index ((width/8+1) * (height/8+1) - 1)
+ * - the value for upper left corner of the full resolution position (x, z) is at index (z * width + x)
+ * - the last value, bottom right, is at index ((width+1) * (height+1) - 1)
  *
  * @see getHeightMap()
  */
@@ -1380,29 +1387,6 @@ float (CALLING_CONV *Clb_FeatureDef_getReclaimTime)(int teamId,
 		int featureDefId);
 /** Used to see if the object can be overrun by units of a certain heavyness */
 float (CALLING_CONV *Clb_FeatureDef_getMass)(int teamId, int featureDefId);
-/**
- * The type of the collision volume's form.
- *
- * @return  "Ell"
- *          "Cyl[T]" (where [T] is one of ['X', 'Y', 'Z'])
- *          "Box"
- */
-const char* (CALLING_CONV *Clb_FeatureDef_CollisionVolume_getType)(int teamId,
-		int featureDefId);
-/** The collision volume's full axis lengths. */
-struct SAIFloat3 (CALLING_CONV *Clb_FeatureDef_CollisionVolume_getScales)(
-		int teamId, int featureDefId);
-/** The collision volume's offset relative to the feature's center position */
-struct SAIFloat3 (CALLING_CONV *Clb_FeatureDef_CollisionVolume_getOffsets)(
-		int teamId, int featureDefId);
-/**
- * Collission test algorithm used.
- *
- * @return  0: discrete
- *          1: continuous
- */
-int (CALLING_CONV *Clb_FeatureDef_CollisionVolume_getTest)(int teamId,
-		int featureDefId);
 bool (CALLING_CONV *Clb_FeatureDef_isUpright)(int teamId, int featureDefId);
 int (CALLING_CONV *Clb_FeatureDef_getDrawType)(int teamId, int featureDefId);
 const char* (CALLING_CONV *Clb_FeatureDef_getModelName)(int teamId,
@@ -1789,6 +1773,8 @@ void (CALLING_CONV *Clb_WeaponDef_0MAP1KEYS0getCustomParams)(int teamId,
 void (CALLING_CONV *Clb_WeaponDef_0MAP1VALS0getCustomParams)(int teamId,
 		int weaponDefId, const char* values[]);
 // END OBJECT WeaponDef
+
+bool (CALLING_CONV *Clb_Debug_Drawer_isEnabled)(int teamId);
 
 };
 

@@ -13,12 +13,12 @@
 #include <time.h>
 #include <string>
 
-#include "ExternalAI/IAICheats.h"
-#include "ExternalAI/IGlobalAI.h"
-#include "ExternalAI/IGlobalAICallback.h"
-#include "ExternalAI/IAICallback.h"
-#include "ExternalAI/aibase.h"
-#include "Sim/Units/UnitDef.h"
+#include "LegacyCpp/IAICheats.h"
+#include "LegacyCpp/IGlobalAI.h"
+#include "LegacyCpp/IGlobalAICallback.h"
+#include "LegacyCpp/IAICallback.h"
+#include "LegacyCpp/aibase.h"
+#include "LegacyCpp/UnitDef.h"
 #include "Sim/MoveTypes/MoveInfo.h"
 #include "System/Vec2.h"
 #include "System/maindefines.h"

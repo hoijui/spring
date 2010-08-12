@@ -6,6 +6,7 @@
 #include <alc.h>
 #include <SDL_timer.h>
 
+#include "SoundLog.h"
 #include "SoundBuffer.h"
 #include "SoundItem.h"
 #include "OggStream.h"
@@ -13,11 +14,13 @@
 #include "float3.h"
 #include "Util.h"
 #include "LogOutput.h"
+#include "myMath.h"
 
 float SoundSource::globalPitch = 1.0;
 float SoundSource::heightAdjustedRolloffModifier = 1.0;
 float SoundSource::referenceDistance = 200.0f;
-float SoundSource::airAbsorption = 0.0f;
+float SoundSource::airAbsorption = AL_MIN_AIR_ABSORPTION_FACTOR;
+bool SoundSource::airAbsorptionSupported = false;
 
 struct SoundSource::StreamControl
 {
@@ -148,7 +151,7 @@ void SoundSource::Play(SoundItem* item, const float3& pos, float3 velocity, floa
 	alSourcei(id, AL_BUFFER, item->buffer->GetId());
 	alSourcef(id, AL_GAIN, item->GetGain() * volume);
 	alSourcef(id, AL_PITCH, item->GetPitch() * globalPitch);
-	if (airAbsorption > 0.0f) {
+	if (airAbsorptionSupported) {
 		alSourcef(id, AL_AIR_ABSORPTION_FACTOR, airAbsorption);
 	}
 	velocity *= item->dopplerScale;
@@ -281,33 +284,25 @@ void SoundSource::SetVolume(float newVol)
 	}
 }
 
+void SoundSource::SetAirAbsorptionSupported(bool supported)
+{
+	airAbsorptionSupported = supported;
+}
+
 void SoundSource::SetAirAbsorption(float factor)
 {
-	// check if we can use air absorption
-	std::string noAirAbsorpReason = "";
-	ALCcontext* curContext = alcGetCurrentContext();
-	ALCdevice*  curDevice = alcGetContextsDevice(curContext);
-	if (!alcIsExtensionPresent(curDevice, "ALC_EXT_EFX"))
-	{
-		noAirAbsorpReason = "ALC_EXT_EFX not supported";
-	}
-	else if (factor <= AL_MIN_AIR_ABSORPTION_FACTOR)
-	{
-		noAirAbsorpReason = "absorption value (" + FloatToString(factor) + ") <= minimum (" + FloatToString(AL_MIN_AIR_ABSORPTION_FACTOR) + ")";
-	}
-	else if (factor > AL_MAX_AIR_ABSORPTION_FACTOR)
-	{
-		noAirAbsorpReason = "absorption value (" + FloatToString(factor) + ") > maximum (" + FloatToString(AL_MAX_AIR_ABSORPTION_FACTOR) + ")";
-	}
+	if (airAbsorptionSupported) {
+		airAbsorption = Clamp(factor, AL_MIN_AIR_ABSORPTION_FACTOR, AL_MAX_AIR_ABSORPTION_FACTOR);
 
-	if (noAirAbsorpReason.empty())
-	{
-		airAbsorption = factor;
-		LogObject(LOG_SOUND) << "air absorption enabled, value: " << airAbsorption;
-	}
-	else
-	{
-		airAbsorption = 0.0f;
-		LogObject(LOG_SOUND) << "air absorption disabled, reason: " << noAirAbsorpReason;
+		if (airAbsorption == AL_MIN_AIR_ABSORPTION_FACTOR)
+		{
+			LogObject(LOG_SOUND) << "air absorption disabled";
+		}
+		else
+		{
+			LogObject(LOG_SOUND) << "air absorption enabled: " << airAbsorption;
+		}
+	} else {
+		LogObject(LOG_SOUND) << "air absorption not supported by the sound device in use";
 	}
 }

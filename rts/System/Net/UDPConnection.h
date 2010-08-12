@@ -68,6 +68,7 @@ class UDPConnection : public CConnection
 public:
 	UDPConnection(boost::shared_ptr<boost::asio::ip::udp::socket> NetSocket, const boost::asio::ip::udp::endpoint& MyAddr);
 	UDPConnection(int sourceport, const std::string& address, const unsigned port);
+	UDPConnection(CConnection &conn);
 	virtual ~UDPConnection();
 
 	/**
@@ -101,8 +102,18 @@ public:
 	/// send all data waiting in char outgoingData[]
 	virtual void Flush(const bool forced = false);
 	
-	virtual bool CheckTimeout() const;
+	virtual bool CheckTimeout(int nsecs = 0, bool initial = false) const;
 	
+	void InitConnection(boost::asio::ip::udp::endpoint address, boost::shared_ptr<boost::asio::ip::udp::socket> socket);
+
+	void CopyConnection(UDPConnection &conn);
+
+	virtual void ReconnectTo(CConnection &conn);
+
+	bool NeedsReconnect();
+	bool CanReconnect() const;
+	int GetReconnectSecs() const;
+
 	virtual std::string Statistics() const;
 
 	/// do we have these address?
@@ -128,6 +139,8 @@ private:
 
 	/// maximum size of packets to send
 	unsigned mtu;
+
+	int reconnectTime;
 	
 	bool sharedSocket;
 
@@ -173,13 +186,14 @@ private:
 	public:
 		BandwidthUsage();
 		void UpdateTime(unsigned newTime);
-		void DataSent(unsigned amount);
+		void DataSent(unsigned amount, bool prel = false);
 		
-		float GetAverage() const;
+		float GetAverage(bool prel = false) const;
 		
 	private:
 		unsigned lastTime;
 		unsigned trafficSinceLastTime;
+		unsigned prelTrafficSinceLastTime;
 		
 		float average;
 	};

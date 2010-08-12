@@ -7,13 +7,15 @@
 #include "Game/Camera.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
+#include "Rendering/GroundDecalHandler.h"
+#include "Rendering/GlobalRendering.h"
+#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ShadowHandler.h"
+#include "Rendering/Env/CubeMapHandler.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
-#include "Rendering/ShadowHandler.h"
-#include "Rendering/GroundDecalHandler.h"
 #include "Rendering/Shaders/ShaderHandler.hpp"
 #include "Rendering/Shaders/Shader.hpp"
-#include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Misc/SmoothHeightMesh.h"
 #include "System/ConfigHandler.h"
 #include "System/FastMath.h"
@@ -68,8 +70,8 @@ CBFGroundDrawer::CBFGroundDrawer(CSmfReadMap* rm):
 	}
 
 #ifdef USE_GML
-	multiThreadDrawGround=configHandler->Get("MultiThreadDrawGround", 1);
-	multiThreadDrawGroundShadow=configHandler->Get("MultiThreadDrawGroundShadow", 0);
+	multiThreadDrawGround = configHandler->Get("MultiThreadDrawGround", 1);
+	multiThreadDrawGroundShadow = configHandler->Get("MultiThreadDrawGroundShadow", 0);
 #endif
 }
 
@@ -77,9 +79,7 @@ CBFGroundDrawer::~CBFGroundDrawer(void)
 {
 	delete textures;
 
-	if (shadowHandler->canUseShadows) {
-		shaderHandler->ReleaseProgramObjects("[SMFGroundDrawer]");
-	}
+	shaderHandler->ReleaseProgramObjects("[SMFGroundDrawer]");
 
 	configHandler->Set("GroundDetail", viewRadius);
 
@@ -97,7 +97,7 @@ CBFGroundDrawer::~CBFGroundDrawer(void)
 bool CBFGroundDrawer::LoadMapShaders() {
 	CShaderHandler* sh = shaderHandler;
 
-	smfShaderBaseARB = sh->CreateProgramObject("[SMFGroundDrawer]", "smfShaderBaseARB", true);
+	smfShaderBaseARB = sh->CreateProgramObject("[SMFGroundDrawer]", "SMFShaderBaseARB", true);
 	smfShaderReflARB = sh->CreateProgramObject("[SMFGroundDrawer]", "SMFShaderReflARB", true);
 	smfShaderRefrARB = sh->CreateProgramObject("[SMFGroundDrawer]", "SMFShaderRefrARB", true);
 	smfShaderCurrARB = smfShaderBaseARB;
@@ -108,21 +108,31 @@ bool CBFGroundDrawer::LoadMapShaders() {
 			// always use FP shadows (shadowHandler->useFPShadows is short
 			// for "this graphics card supports ARB_FRAGMENT_PROGRAM", and
 			// canUseShadows can not be true while useFPShadows is false)
-			smfShaderBaseARB->AttachShaderObject(sh->CreateShaderObject("ground.vp", "", GL_VERTEX_PROGRAM_ARB));
-			smfShaderBaseARB->AttachShaderObject(sh->CreateShaderObject("groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
+			smfShaderBaseARB->AttachShaderObject(sh->CreateShaderObject("ARB/ground.vp", "", GL_VERTEX_PROGRAM_ARB));
+			smfShaderBaseARB->AttachShaderObject(sh->CreateShaderObject("ARB/groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
 			smfShaderBaseARB->Link();
 
-			smfShaderReflARB->AttachShaderObject(sh->CreateShaderObject("dwgroundreflectinverted.vp", "", GL_VERTEX_PROGRAM_ARB));
-			smfShaderReflARB->AttachShaderObject(sh->CreateShaderObject("groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
+			smfShaderReflARB->AttachShaderObject(sh->CreateShaderObject("ARB/dwgroundreflectinverted.vp", "", GL_VERTEX_PROGRAM_ARB));
+			smfShaderReflARB->AttachShaderObject(sh->CreateShaderObject("ARB/groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
 			smfShaderReflARB->Link();
 
-			smfShaderRefrARB->AttachShaderObject(sh->CreateShaderObject("dwgroundrefract.vp", "", GL_VERTEX_PROGRAM_ARB));
-			smfShaderRefrARB->AttachShaderObject(sh->CreateShaderObject("groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
+			smfShaderRefrARB->AttachShaderObject(sh->CreateShaderObject("ARB/dwgroundrefract.vp", "", GL_VERTEX_PROGRAM_ARB));
+			smfShaderRefrARB->AttachShaderObject(sh->CreateShaderObject("ARB/groundFPshadow.fp", "", GL_FRAGMENT_PROGRAM_ARB));
 			smfShaderRefrARB->Link();
 		} else {
+			std::string defs;
+				defs += (map->haveSplatTexture)?
+					"#define SMF_DETAIL_TEXTURE_SPLATTING 1\n":
+					"#define SMF_DETAIL_TEXTURE_SPLATTING 0\n";
+				defs += (map->minheight > 0.0f || mapInfo->map.voidWater)?
+					"#define SMF_WATER_ABSORPTION 0\n":
+					"#define SMF_WATER_ABSORPTION 1\n";
+				defs += (map->GetSkyReflectModTexture() != 0)?
+					"#define SMF_SKY_REFLECTIONS 1\n":
+					"#define SMF_SKY_REFLECTIONS 0\n";
 
-			smfShaderGLSL->AttachShaderObject(sh->CreateShaderObject("SMFVertProg.glsl", "", GL_VERTEX_SHADER));
-			smfShaderGLSL->AttachShaderObject(sh->CreateShaderObject("SMFFragProg.glsl", "", GL_FRAGMENT_SHADER));
+			smfShaderGLSL->AttachShaderObject(sh->CreateShaderObject("GLSL/SMFVertProg.glsl", defs, GL_VERTEX_SHADER));
+			smfShaderGLSL->AttachShaderObject(sh->CreateShaderObject("GLSL/SMFFragProg.glsl", defs, GL_FRAGMENT_SHADER));
 			smfShaderGLSL->Link();
 			smfShaderGLSL->SetUniformLocation("diffuseTex");          // idx  0
 			smfShaderGLSL->SetUniformLocation("normalsTex");          // idx  1
@@ -135,7 +145,7 @@ bool CBFGroundDrawer::LoadMapShaders() {
 			smfShaderGLSL->SetUniformLocation("texSquareZ");          // idx  8
 			smfShaderGLSL->SetUniformLocation("lightDir");            // idx  9
 			smfShaderGLSL->SetUniformLocation("cameraPos");           // idx 10
-			smfShaderGLSL->SetUniformLocation("cameraMatInv");        // idx 11
+			smfShaderGLSL->SetUniformLocation("$UNUSED$");            // idx 11
 			smfShaderGLSL->SetUniformLocation("shadowMat");           // idx 12
 			smfShaderGLSL->SetUniformLocation("shadowParams");        // idx 13
 			smfShaderGLSL->SetUniformLocation("groundAmbientColor");  // idx 14
@@ -145,6 +155,12 @@ bool CBFGroundDrawer::LoadMapShaders() {
 			smfShaderGLSL->SetUniformLocation("waterMinColor");       // idx 18
 			smfShaderGLSL->SetUniformLocation("waterBaseColor");      // idx 19
 			smfShaderGLSL->SetUniformLocation("waterAbsorbColor");    // idx 20
+			smfShaderGLSL->SetUniformLocation("splatDetailTex");      // idx 21
+			smfShaderGLSL->SetUniformLocation("splatDistrTex");       // idx 22
+			smfShaderGLSL->SetUniformLocation("splatTexScales");      // idx 23
+			smfShaderGLSL->SetUniformLocation("splatTexMults");       // idx 24
+			smfShaderGLSL->SetUniformLocation("skyReflectTex");       // idx 25
+			smfShaderGLSL->SetUniformLocation("skyReflectModTex");    // idx 26
 
 			smfShaderGLSL->Enable();
 			smfShaderGLSL->SetUniform1i(0, 0); // diffuseTex  (idx 0, texunit 0)
@@ -162,6 +178,13 @@ bool CBFGroundDrawer::LoadMapShaders() {
 			smfShaderGLSL->SetUniform3fv(18, const_cast<float*>(&mapInfo->water.minColor[0]));
 			smfShaderGLSL->SetUniform3fv(19, const_cast<float*>(&mapInfo->water.baseColor[0]));
 			smfShaderGLSL->SetUniform3fv(20, const_cast<float*>(&mapInfo->water.absorb[0]));
+			smfShaderGLSL->SetUniform1i(21, 7); // splatDetailTex (idx 21, texunit 7)
+			smfShaderGLSL->SetUniform1i(22, 8); // splatDistrTex (idx 22, texunit 8)
+			smfShaderGLSL->SetUniform4fv(23, const_cast<float*>(&mapInfo->splats.texScales[0]));
+			smfShaderGLSL->SetUniform4fv(24, const_cast<float*>(&mapInfo->splats.texMults[0]));
+			smfShaderGLSL->SetUniform1i(25,  9); // skyReflectTex (idx 25, texunit 9)
+			smfShaderGLSL->SetUniform1i(26, 10); // skyReflectModTex (idx 26, texunit 10)
+
 			smfShaderGLSL->Disable();
 		}
 
@@ -779,7 +802,7 @@ void CBFGroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
 	viewRadius  = (int) (viewRadius * fastmath::apxsqrt(zoom));
 	viewRadius  = max(max(numBigTexY,numBigTexX), viewRadius);
 	viewRadius += (viewRadius & 1); //! we need a multiple of 2
-	neededLod   = int((gu->viewRange * 0.125f) / viewRadius) << 1;
+	neededLod   = int((globalRendering->viewRange * 0.125f) / viewRadius) << 1;
 
 	UpdateCamRestraints();
 
@@ -832,11 +855,9 @@ void CBFGroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
 			DrawWaterPlane(drawWaterReflection);
 		}
 
-		if (groundDecals) {
-			groundDecals->Draw();
-			ph->DrawGroundFlashes();
-			glDepthMask(1);
-		}
+		groundDecals->Draw();
+		projectileDrawer->DrawGroundFlashes();
+		glDepthMask(1);
 	}
 
 //	sky->SetCloudShadow(1);
@@ -1194,9 +1215,9 @@ void CBFGroundDrawer::DrawShadowPass(void)
 
 	const int NUM_LODS = 4;
 
-	Shader::IProgramObject* po = shadowHandler->GetMapShadowGenShader();
+	Shader::IProgramObject* po =
+		shadowHandler->GetShadowGenProg(CShadowHandler::SHADOWGEN_PROGRAM_MAP);
 
-	// glEnable(GL_CULL_FACE);
 	glPolygonOffset(1, 1);
 	glEnable(GL_POLYGON_OFFSET_FILL);
 
@@ -1217,7 +1238,6 @@ void CBFGroundDrawer::DrawShadowPass(void)
 	po->Disable();
 
 	glDisable(GL_POLYGON_OFFSET_FILL);
-	glDisable(GL_CULL_FACE);
 }
 
 
@@ -1225,15 +1245,14 @@ inline void CBFGroundDrawer::SetupBigSquare(const int bigSquareX, const int bigS
 {
 	textures->SetTexture(bigSquareX, bigSquareY);
 
-	//! must be in drawLos mode or shadows must be off
-	if (DrawExtraTex() || !shadowHandler->drawShadows) {
-		SetTexGen(1.0f / 1024, 1.0f / 1024, -bigSquareX, -bigSquareY);
-	}
-
-	if (map->haveSpecularLighting) {
+	if ((map->haveSpecularLighting && shadowHandler->drawShadows) && !DrawExtraTex()) {
 		smfShaderGLSL->SetUniform1i(7, bigSquareX);
 		smfShaderGLSL->SetUniform1i(8, bigSquareY);
 	} else {
+		if (!shadowHandler->drawShadows || DrawExtraTex()) {
+			SetTexGen(1.0f / 1024, 1.0f / 1024, -bigSquareX, -bigSquareY);
+		}
+
 		smfShaderCurrARB->SetUniformTarget(GL_VERTEX_PROGRAM_ARB);
 		smfShaderCurrARB->SetUniform4f(11, -bigSquareX, -bigSquareY, 0, 0);
 	}
@@ -1249,34 +1268,41 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
 	if (DrawExtraTex()) {
-		glActiveTextureARB(GL_TEXTURE1_ARB);
+		glActiveTexture(GL_TEXTURE1);
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, infoTex);
-		glMultiTexCoord4f(GL_TEXTURE1_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
+		glMultiTexCoord4f(GL_TEXTURE1_ARB, 1.0f, 1.0f, 1.0f, 1.0f); //fixes a nvidia bug with gltexgen
 		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD_SIGNED_ARB);
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB);
 		SetTexGen(1.0f / (gs->pwr2mapx * SQUARE_SIZE), 1.0f / (gs->pwr2mapy * SQUARE_SIZE), 0, 0);
 
-		glActiveTextureARB(GL_TEXTURE2_ARB);
+		glActiveTexture(GL_TEXTURE2);
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, map->GetShadingTexture());
+		glMultiTexCoord4f(GL_TEXTURE2_ARB, 1.0f, 1.0f, 1.0f, 1.0f); //fixes a nvidia bug with gltexgen
+		if (drawMode == drawMetal) { // increased brightness for metal spots
+			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD_SIGNED_ARB);
+			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB);
+		}
 		SetTexGen(1.0f / (gs->pwr2mapx * SQUARE_SIZE), 1.0f / (gs->pwr2mapy * SQUARE_SIZE), 0, 0);
-		glMultiTexCoord4f(GL_TEXTURE2_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
 
-		glActiveTextureARB(GL_TEXTURE3_ARB);
+		glActiveTexture(GL_TEXTURE3);
 		if (map->detailTex) {
 			glEnable(GL_TEXTURE_2D);
 			glBindTexture(GL_TEXTURE_2D, map->detailTex);
-			glMultiTexCoord4f(GL_TEXTURE3_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
+			glMultiTexCoord4f(GL_TEXTURE3_ARB, 1.0f, 1.0f, 1.0f, 1.0f); //fixes a nvidia bug with gltexgen
 			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD_SIGNED_ARB);
 			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB);
-			GLfloat plan[]={0.02f,0,0,0};
-			glTexGeni(GL_S,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_S,GL_OBJECT_PLANE,plan);
+
+			static const GLfloat planeX[] = {0.02f, 0.0f, 0.0f, 0.0f};
+			static const GLfloat planeZ[] = {0.0f, 0.0f, 0.02f, 0.0f};
+
+			glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_S, GL_OBJECT_PLANE, planeX);
 			glEnable(GL_TEXTURE_GEN_S);
-			GLfloat plan2[]={0,0,0.02f,0};
-			glTexGeni(GL_T,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_T,GL_OBJECT_PLANE,plan2);
+
+			glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_T, GL_OBJECT_PLANE, planeZ);
 			glEnable(GL_TEXTURE_GEN_T);
 		} else {
 			glDisable(GL_TEXTURE_2D);
@@ -1302,11 +1328,10 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 
 	else if (shadowHandler->drawShadows) {
 		const float3 ambientColor = mapInfo->light.groundAmbientColor * (210.0f / 255.0f);
-		const float4 shadowParams = float4(shadowHandler->xmid, shadowHandler->ymid, shadowHandler->p17, shadowHandler->p18);
 
-		glActiveTextureARB(GL_TEXTURE1_ARB);
+		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, map->GetShadingTexture());
-		glActiveTextureARB(GL_TEXTURE2_ARB);
+		glActiveTexture(GL_TEXTURE2);
 
 		if (map->detailTex) {
 			glBindTexture(GL_TEXTURE_2D, map->detailTex);
@@ -1335,23 +1360,26 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 			glLoadMatrixf(shadowHandler->shadowMatrix.m);
 			glMatrixMode(GL_MODELVIEW);
 
-			glActiveTextureARB(GL_TEXTURE4_ARB);
+			glActiveTexture(GL_TEXTURE4);
 			glBindTexture(GL_TEXTURE_2D, shadowHandler->shadowTexture);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE_ARB, GL_COMPARE_R_TO_TEXTURE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC_ARB, GL_LEQUAL);
 			glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_TEXTURE_MODE_ARB, GL_LUMINANCE);
-			glActiveTextureARB(GL_TEXTURE0_ARB);
+			glActiveTexture(GL_TEXTURE0);
 		} else {
 			smfShaderGLSL->Enable();
 			smfShaderGLSL->SetUniform3fv(10, &camera->pos[0]);
-			smfShaderGLSL->SetUniform4fv(11, (float*) camera->modelviewInverse);
 			smfShaderGLSL->SetUniformMatrix4fv(12, false, &shadowHandler->shadowMatrix.m[0]);
-			smfShaderGLSL->SetUniform4fv(13, const_cast<float*>(&shadowParams[0]));
+			smfShaderGLSL->SetUniform4fv(13, const_cast<float*>(&(shadowHandler->GetShadowParams().x)));
 
-			glActiveTexture(GL_TEXTURE5);
-			glBindTexture(GL_TEXTURE_2D, map->GetNormalsTexture());
-			glActiveTexture(GL_TEXTURE6);
-			glBindTexture(GL_TEXTURE_2D, map->GetSpecularTexture());
+			glActiveTexture(GL_TEXTURE5); glBindTexture(GL_TEXTURE_2D, map->GetNormalsTexture());
+			glActiveTexture(GL_TEXTURE6); glBindTexture(GL_TEXTURE_2D, map->GetSpecularTexture());
+			glActiveTexture(GL_TEXTURE7); glBindTexture(GL_TEXTURE_2D, map->GetSplatDetailTexture());
+			glActiveTexture(GL_TEXTURE8); glBindTexture(GL_TEXTURE_2D, map->GetSplatDistrTexture());
+			glActiveTexture(GL_TEXTURE9);
+				glEnable(GL_TEXTURE_CUBE_MAP_ARB);
+				glBindTexture(GL_TEXTURE_CUBE_MAP_ARB, cubeMapHandler->GetSkyReflectionTextureID());
+			glActiveTexture(GL_TEXTURE10); glBindTexture(GL_TEXTURE_2D, map->GetSkyReflectModTexture());
 
 			// setup for shadow2DProj
 			glActiveTexture(GL_TEXTURE4);
@@ -1365,50 +1393,56 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 
 	else {
 		if (map->detailTex) {
-			glActiveTextureARB(GL_TEXTURE1_ARB);
+			glActiveTexture(GL_TEXTURE1);
 			glEnable(GL_TEXTURE_2D);
 			glBindTexture(GL_TEXTURE_2D, map->detailTex);
-			glMultiTexCoord4f(GL_TEXTURE1_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
+			glMultiTexCoord4f(GL_TEXTURE1_ARB, 1.0f, 1.0f, 1.0f, 1.0f); //fixes a nvidia bug with gltexgen
 			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD_SIGNED_ARB);
 			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB);
-			GLfloat plan[]={0.02f,0,0,0};
-			glTexGeni(GL_S,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_S,GL_OBJECT_PLANE,plan);
+
+			static const GLfloat planeX[] = {0.02f, 0.0f, 0.00f, 0.0f};
+			static const GLfloat planeZ[] = {0.00f, 0.0f, 0.02f, 0.0f};
+
+			glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_S, GL_OBJECT_PLANE, planeX);
 			glEnable(GL_TEXTURE_GEN_S);
-			GLfloat plan2[]={0,0,0.02f,0};
-			glTexGeni(GL_T,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_T,GL_OBJECT_PLANE,plan2);
+
+			glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_T, GL_OBJECT_PLANE, planeZ);
 			glEnable(GL_TEXTURE_GEN_T);
 		} else {
-			glActiveTextureARB(GL_TEXTURE1_ARB);
+			glActiveTexture(GL_TEXTURE1);
 			glDisable(GL_TEXTURE_2D);
 		}
 
-		glActiveTextureARB(GL_TEXTURE2_ARB);
+		glActiveTexture(GL_TEXTURE2);
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, map->GetShadingTexture());
-		glMultiTexCoord4f(GL_TEXTURE2_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
+		glMultiTexCoord4f(GL_TEXTURE2_ARB, 1.0f, 1.0f, 1.0f, 1.0f); //fixes a nvidia bug with gltexgen
 		SetTexGen(1.0f / (gs->pwr2mapx * SQUARE_SIZE), 1.0f / (gs->pwr2mapy * SQUARE_SIZE), 0, 0);
 
 		//! bind the detail texture a 2nd time to increase the details (-> GL_ADD_SIGNED_ARB is limited -0.5 to +0.5)
 		//! (also do this after the shading texture cause of color clamping issues)
 		if (map->detailTex) {
-			glActiveTextureARB(GL_TEXTURE3_ARB);
+			glActiveTexture(GL_TEXTURE3);
 			glEnable(GL_TEXTURE_2D);
 			glBindTexture(GL_TEXTURE_2D, map->detailTex);
 			glMultiTexCoord4f(GL_TEXTURE3_ARB, 1,1,1,1); //fixes a nvidia bug with gltexgen
 			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD_SIGNED_ARB);
 			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB);
-			GLfloat plan[]={0.02f,0,0,0};
-			glTexGeni(GL_S,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_S,GL_OBJECT_PLANE,plan);
+
+			static const GLfloat planeX[] = {0.02f, 0.0f, 0.0f, 0.0f};
+			static const GLfloat planeZ[] = {0.0f, 0.0f, 0.02f, 0.0f};
+
+			glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_S, GL_OBJECT_PLANE, planeX);
 			glEnable(GL_TEXTURE_GEN_S);
-			GLfloat plan2[]={0,0,0.02f,0};
-			glTexGeni(GL_T,GL_TEXTURE_GEN_MODE,GL_OBJECT_LINEAR);
-			glTexGenfv(GL_T,GL_OBJECT_PLANE,plan2);
+
+			glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
+			glTexGenfv(GL_T, GL_OBJECT_PLANE, planeZ);
 			glEnable(GL_TEXTURE_GEN_T);
 		} else {
-			glActiveTextureARB(GL_TEXTURE3_ARB);
+			glActiveTexture(GL_TEXTURE3);
 			glDisable(GL_TEXTURE_2D);
 		}
 
@@ -1430,45 +1464,55 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 		}*/
 	}
 
-	glActiveTextureARB(GL_TEXTURE0_ARB);
+	glActiveTexture(GL_TEXTURE0);
 }
 
 
 void CBFGroundDrawer::ResetTextureUnits(bool drawReflection)
 {
 	if (DrawExtraTex() || !shadowHandler->drawShadows) {
-		glActiveTextureARB(GL_TEXTURE0_ARB);
+		glActiveTexture(GL_TEXTURE0);
 		glDisable(GL_TEXTURE_GEN_S);
 		glDisable(GL_TEXTURE_GEN_T);
 		glDisable(GL_TEXTURE_2D);
 
-		glActiveTextureARB(GL_TEXTURE1_ARB);
+		glActiveTexture(GL_TEXTURE1);
 		glDisable(GL_TEXTURE_2D);
 		glDisable(GL_TEXTURE_GEN_S);
 		glDisable(GL_TEXTURE_GEN_T);
-		glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-		glActiveTextureARB(GL_TEXTURE2_ARB);
+		glActiveTexture(GL_TEXTURE2);
 		glDisable(GL_TEXTURE_2D);
 		glDisable(GL_TEXTURE_GEN_S);
 		glDisable(GL_TEXTURE_GEN_T);
-		glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-		glActiveTextureARB(GL_TEXTURE3_ARB);
+		glActiveTexture(GL_TEXTURE3);
 		glDisable(GL_TEXTURE_2D);
 		glDisable(GL_TEXTURE_GEN_S);
 		glDisable(GL_TEXTURE_GEN_T);
-		glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-		glActiveTextureARB(GL_TEXTURE0_ARB);
+		glActiveTexture(GL_TEXTURE0);
 
 		if (drawReflection) {
 			glDisable(GL_ALPHA_TEST);
 		}
 	} else {
-		glActiveTextureARB(GL_TEXTURE4_ARB);
+		glActiveTexture(GL_TEXTURE4);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE_ARB, GL_NONE);
-		glActiveTextureARB(GL_TEXTURE0_ARB);
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		glActiveTexture(GL_TEXTURE5); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE6); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE7); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE8); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE9);
+			glDisable(GL_TEXTURE_CUBE_MAP_ARB);
+			glBindTexture(GL_TEXTURE_CUBE_MAP_ARB, 0);
+		glActiveTexture(GL_TEXTURE10); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
 
 		if (drawReflection) {
 			glDisable(GL_ALPHA_TEST);
@@ -1545,9 +1589,9 @@ void CBFGroundDrawer::UpdateCamRestraints(void)
 		float3 colpoint;                    // a point on the collision line
 
 		if (side.y > 0.0f)
-			colpoint = cam2->pos + camHorizontal * gu->viewRange * 1.05f - c * (cam2->pos.y / c.y);
+			colpoint = cam2->pos + camHorizontal * globalRendering->viewRange * 1.05f - c * (cam2->pos.y / c.y);
 		else
-			colpoint = cam2->pos + camHorizontal * gu->viewRange * 1.05f - c * ((cam2->pos.y - 255 / 3.5f) / c.y);
+			colpoint = cam2->pos + camHorizontal * globalRendering->viewRange * 1.05f - c * ((cam2->pos.y - 255 / 3.5f) / c.y);
 
 		// get intersection between colpoint and z axis
 		temp.base = (colpoint.x - colpoint.z * temp.dir) / SQUARE_SIZE;

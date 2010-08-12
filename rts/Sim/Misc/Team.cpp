@@ -6,11 +6,11 @@
 #include "Team.h"
 #include "TeamHandler.h"
 
-#include "Messages.h"
 #include "GlobalSynced.h"
 #include "LogOutput.h"
 #include "Game/PlayerHandler.h"
 #include "Game/GameSetup.h"
+#include "Game/Messages.h"
 #include "GlobalUnsynced.h"
 #include "Game/UI/LuaUI.h"
 #include "Lua/LuaRules.h"
@@ -26,7 +26,6 @@
 #include "NetProtocol.h"
 
 CR_BIND(CTeam,);
-
 CR_REG_METADATA(CTeam, (
 // from CTeamBase
 				CR_MEMBER(leader),
@@ -73,7 +72,7 @@ CR_REG_METADATA(CTeam, (
 				CR_MEMBER(energySent),
 				CR_MEMBER(energyReceived),
 				//CR_MEMBER(currentStats),
-				CR_MEMBER(lastStatSave),
+				CR_MEMBER(nextHistoryEntry),
 				CR_MEMBER(numCommanders),
 				//CR_MEMBER(statHistory),
 				CR_MEMBER(modParams),
@@ -110,11 +109,12 @@ CTeam::CTeam()
   metalReceived(0),
   energySent(0),
   energyReceived(0),
-  lastStatSave(0),
-  numCommanders(0)
+  nextHistoryEntry(0),
+  numCommanders(0),
+  highlight(0.0f)
 {
-	memset(&currentStats,0,sizeof(currentStats));
-	statHistory.push_back(currentStats);
+	statHistory.push_back(TeamStatistics());
+	currentStats = &statHistory.back();
 }
 
 
@@ -243,7 +243,7 @@ void CTeam::Died()
 	net->Send(CBaseNetProtocol::Get().SendTeamDied(gu->myPlayerNum, teamNum));
 
 	for (int a = 0; a < playerHandler->ActivePlayers(); ++a) {
-		if (playerHandler->Player(a)->active && (playerHandler->Player(a)->team == teamNum)) {
+		if (playerHandler->Player(a)->team == teamNum) {
 			playerHandler->Player(a)->StartSpectating();
 		}
 	}
@@ -258,9 +258,10 @@ void CTeam::StartposMessage(const float3& pos)
 	startPos = pos;
 }
 
-void CTeam::operator=(const TeamBase& base)
+CTeam& CTeam::operator=(const TeamBase& base)
 {
 	TeamBase::operator=(base);
+	return *this;
 }
 
 void CTeam::ResetFrameVariables()
@@ -291,15 +292,18 @@ void CTeam::ResetFrameVariables()
 
 void CTeam::SlowUpdate()
 {
-	currentStats.metalProduced  += prevMetalIncome;
-	currentStats.energyProduced += prevEnergyIncome;
-	currentStats.metalUsed  += prevMetalUpkeep + prevMetalExpense;
-	currentStats.energyUsed += prevEnergyUpkeep + prevEnergyExpense;
+	currentStats->metalProduced  += prevMetalIncome;
+	currentStats->energyProduced += prevEnergyIncome;
+	currentStats->metalUsed  += prevMetalUpkeep + prevMetalExpense;
+	currentStats->energyUsed += prevEnergyUpkeep + prevEnergyExpense;
 
 	float eShare = 0.0f, mShare = 0.0f;
 	for (int a = 0; a < teamHandler->ActiveTeams(); ++a) {
 		if ((a != teamNum) && (teamHandler->AllyTeam(teamNum) == teamHandler->AllyTeam(a))) {
 			CTeam* team = teamHandler->Team(a);
+			if (team->isDead)
+				continue;
+
 			eShare += std::max(0.0f, (team->energyStorage * 0.99f) - team->energy);
 			mShare += std::max(0.0f, (team->metalStorage  * 0.99f) - team->metal);
 		}
@@ -323,38 +327,47 @@ void CTeam::SlowUpdate()
 	for (int a = 0; a < teamHandler->ActiveTeams(); ++a) {
 		if ((a != teamNum) && (teamHandler->AllyTeam(teamNum) == teamHandler->AllyTeam(a))) {
 			CTeam* team = teamHandler->Team(a);
+			if (team->isDead)
+				continue;
 
 			const float edif = std::max(0.0f, (team->energyStorage * 0.99f) - team->energy) * de;
 			energy -= edif;
 			energySent += edif;
-			currentStats.energySent += edif;
+			currentStats->energySent += edif;
 			team->energy += edif;
 			team->energyReceived += edif;
-			team->currentStats.energyReceived += edif;
+			team->currentStats->energyReceived += edif;
 
 			const float mdif = std::max(0.0f, (team->metalStorage * 0.99f) - team->metal) * dm;
 			metal -= mdif;
 			metalSent += mdif;
-			currentStats.metalSent += mdif;
+			currentStats->metalSent += mdif;
 			team->metal += mdif;
 			team->metalReceived += mdif;
-			team->currentStats.metalReceived += mdif;
+			team->currentStats->metalReceived += mdif;
 		}
 	}
 
 	if (metal > metalStorage) {
-		currentStats.metalExcess += (metal - metalStorage);
+		currentStats->metalExcess += (metal - metalStorage);
 		metal = metalStorage;
 	}
 	if (energy > energyStorage) {
-		currentStats.energyExcess += (energy - energyStorage);
+		currentStats->energyExcess += (energy - energyStorage);
 		energy = energyStorage;
 	}
 
-	const int statsFrames = (statsPeriod * GAME_SPEED);
-	if ((lastStatSave + statsFrames) < gs->frameNum) {
-		lastStatSave += statsFrames;
-		statHistory.push_back(currentStats);
+	//! make sure the stats update is always in a SlowUpdate
+	assert(((TeamStatistics::statsPeriod * GAME_SPEED) % TEAM_SLOWUPDATE_RATE) == 0);
+
+	const int statsFrames = TeamStatistics::statsPeriod * GAME_SPEED;
+	if (nextHistoryEntry <= gs->frameNum) {
+		currentStats->frame = gs->frameNum;
+		statHistory.push_back(*currentStats);
+		currentStats = &statHistory.back();
+
+		nextHistoryEntry = gs->frameNum + statsFrames;
+		currentStats->frame = nextHistoryEntry;
 	}
 
 	/* Kill the player on 'com dies = game ends' games.  This can't be done in
@@ -379,15 +392,15 @@ void CTeam::AddUnit(CUnit* unit,AddType type)
 	units.insert(unit);
 	switch (type) {
 		case AddBuilt: {
-			currentStats.unitsProduced++;
+			currentStats->unitsProduced++;
 			break;
 		}
 		case AddGiven: {
-			currentStats.unitsReceived++;
+			currentStats->unitsReceived++;
 			break;
 		}
 		case AddCaptured: {
-			currentStats.unitsCaptured++;
+			currentStats->unitsCaptured++;
 			break;
 		}
 	}
@@ -402,15 +415,15 @@ void CTeam::RemoveUnit(CUnit* unit,RemoveType type)
 	units.erase(unit);
 	switch (type) {
 		case RemoveDied: {
-			currentStats.unitsDied++;
+			currentStats->unitsDied++;
 			break;
 		}
 		case RemoveGiven: {
-			currentStats.unitsSent++;
+			currentStats->unitsSent++;
 			break;
 		}
 		case RemoveCaptured: {
-			currentStats.unitsOutCaptured++;
+			currentStats->unitsOutCaptured++;
 			break;
 		}
 	}

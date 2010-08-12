@@ -9,6 +9,8 @@
 
 #include "GL/myGL.h"
 
+#include "Net/RawPacket.h"
+
 class CPlayer;
 
 class CInMapDraw
@@ -29,7 +31,8 @@ public:
 	void MouseRelease(int x,int y,int button);
 	void MouseMove(int x, int y, int dx, int dy, int button);
 	bool AllowedMsg(const CPlayer*) const;
-	void GotNetMsg(const unsigned char* msg);
+	/** @return playerId */
+	int GotNetMsg(boost::shared_ptr<const netcode::RawPacket> &packet);
 	void ToggleAllVisible() { drawAll = !drawAll; }
 	void SetAllVisible(bool b) { drawAll = b; }
 
@@ -40,12 +43,6 @@ public:
 	void SendPoint(const float3& pos, const std::string& label, bool fromLua);
 	void SendLine(const float3& pos1, const float3& pos2, bool fromLua);
 	void SendErase(const float3& pos);
-
-	enum NetTypes {
-		NET_POINT,
-		NET_ERASE,
-		NET_LINE
-	};
 
 	bool keyPressed;
 	float lastLeftClickTime;

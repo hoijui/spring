@@ -10,15 +10,18 @@
 
 #include "lib/minizip/zip.h"
 #include "mmgr.h"
-#include "Map/Ground.h"
-#include "Game/SelectedUnits.h"
+#include "PathCache.h"
+#include "PathFinder.h"
+#include "Map/ReadMap.h"
+#include "Sim/MoveTypes/MoveInfo.h"
+#include "Sim/MoveTypes/MoveMath/MoveMath.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
-#include "FileSystem/ArchiveZip.h"
-#include "FileSystem/FileSystem.h"
-#include "LogOutput.h"
-#include "ConfigHandler.h"
-#include "NetProtocol.h"
+#include "System/FileSystem/ArchiveZip.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/LogOutput.h"
+#include "System/ConfigHandler.h"
+#include "System/NetProtocol.h"
 
 #define PATHDEBUG false
 
@@ -45,6 +48,11 @@ const int SQUARES_TO_UPDATE = 600;
 
 const std::string pathDir = "cache/paths/";
 
+#if !defined(USE_MMGR)
+void* CPathEstimator::operator new(size_t size) { return ::PF_ALLOC(size); }
+void CPathEstimator::operator delete(void* p, size_t size) { ::PF_FREE(p, size); }
+#endif
+
 /**
  * Constructor, loads precalculated data if it exists
  */
@@ -56,6 +64,7 @@ CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int
 	nbrOfBlocksX(gs->mapx / BLOCK_SIZE),
 	nbrOfBlocksZ(gs->mapy / BLOCK_SIZE),
 	nbrOfBlocks(nbrOfBlocksX * nbrOfBlocksZ),
+	openBlockBufferIndex(0),
 	moveMathOptions(mmOpt),
 	pathChecksum(0),
 	offsetBlockNum(nbrOfBlocks),costBlockNum(nbrOfBlocks),
@@ -86,7 +95,6 @@ CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, unsigned int
 	blockState = new BlockInfo[nbrOfBlocks];
 	nbrOfVertices = moveinfo->moveData.size() * nbrOfBlocks * PATH_DIRECTION_VERTICES;
 	vertex = new float[nbrOfVertices];
-	openBlockBufferPointer = openBlockBuffer;
 
 	InitEstimator(cacheFileName, map);
 
@@ -275,7 +283,7 @@ void CPathEstimator::FindOffset(const MoveData& moveData, int blockX, int blockZ
 			float cost = (dx * dx + dz * dz) + num / (0.001f + moveData.moveMath->SpeedMod(moveData, (int)(lowerX + x), (int)(lowerZ + z)));
 			int mask = CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN;
 
-			if (moveData.moveMath->IsBlocked2(moveData, lowerX + x, lowerZ + z, true) & mask) {
+			if (moveData.moveMath->IsBlocked2(moveData, lowerX + x, lowerZ + z) & mask) {
 				cost += 1000000.0f;
 			}
 			if (cost < best) {
@@ -436,14 +444,23 @@ void CPathEstimator::Update() {
 /**
  * Stores data and does some top-administration
  */
-IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 start, const CPathFinderDef& peDef, Path& path, unsigned int maxSearchedBlocks) {
+IPath::SearchResult CPathEstimator::GetPath(
+	const MoveData& moveData,
+	float3 start,
+	const CPathFinderDef& peDef,
+	Path& path,
+	unsigned int maxSearchedBlocks,
+	bool synced
+) {
 	start.CheckInBounds();
+
 	// clear the path
 	path.path.clear();
 	path.pathCost = PATHCOST_INFINITY;
 
 	// initial calculations
-	maxBlocksToBeSearched = std::min(maxSearchedBlocks, (unsigned int) MAX_SEARCHED_BLOCKS);
+	maxBlocksToBeSearched = std::min(maxSearchedBlocks, MAX_SEARCHED_BLOCKS - 8U);
+
 	startBlock.x = (int)(start.x / BLOCK_PIXEL_SIZE);
 	startBlock.y = (int)(start.z / BLOCK_PIXEL_SIZE);
 	startBlocknr = startBlock.y * nbrOfBlocksX + startBlock.x;
@@ -451,11 +468,13 @@ IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 sta
 	goalBlock.x = peDef.goalSquareX / BLOCK_SIZE;
 	goalBlock.y = peDef.goalSquareZ / BLOCK_SIZE;
 
-	CPathCache::CacheItem* ci = pathCache->GetCachedPath(startBlock, goalBlock, peDef.sqGoalRadius, moveData.pathType);
-	if (ci) {
-		// use a cached path if we have one
-		path = ci->path;
-		return ci->result;
+	if (synced) {
+		CPathCache::CacheItem* ci = pathCache->GetCachedPath(startBlock, goalBlock, peDef.sqGoalRadius, moveData.pathType);
+		if (ci) {
+			// use a cached path if we have one (NOTE: only when in synced context)
+			path = ci->path;
+			return ci->result;
+		}
 	}
 
 	// oterhwise search
@@ -464,13 +483,16 @@ IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 sta
 	// if search successful, generate new path
 	if (result == Ok || result == GoalOutOfRange) {
 		FinishSearch(moveData, path);
-		// only add succesful paths to the cache
-		pathCache->AddPath(&path, result, startBlock, goalBlock, peDef.sqGoalRadius, moveData.pathType);
+
+		if (synced) {
+			// add succesful paths to the cache (NOTE: only when in synced context)
+			pathCache->AddPath(&path, result, startBlock, goalBlock, peDef.sqGoalRadius, moveData.pathType);
+		}
 
 		if (PATHDEBUG) {
 			LogObject() << "PE: Search completed.\n";
 			LogObject() << "Tested blocks: " << testedBlocks << "\n";
-			LogObject() << "Open blocks: " << (float)(openBlockBufferPointer - openBlockBuffer) << "\n";
+			LogObject() << "Open blocks: " << openBlockBufferIndex << "\n";
 			LogObject() << "Path length: " << (int)(path.path.size()) << "\n";
 			LogObject() << "Path cost: " << path.pathCost << "\n";
 		}
@@ -478,7 +500,7 @@ IPath::SearchResult CPathEstimator::GetPath(const MoveData& moveData, float3 sta
 		if (PATHDEBUG) {
 			LogObject() << "PE: Search failed!\n";
 			LogObject() << "Tested blocks: " << testedBlocks << "\n";
-			LogObject() << "Open blocks: " << (float)(openBlockBufferPointer - openBlockBuffer) << "\n";
+			LogObject() << "Open blocks: " << openBlockBufferIndex << "\n";
 		}
 	}
 
@@ -504,12 +526,13 @@ IPath::SearchResult CPathEstimator::InitSearch(const MoveData& moveData, const C
 	blockState[startBlocknr].cost = 0;
 	dirtyBlocks.push_back(startBlocknr);
 
+	openBlockBufferIndex = 0;
 	// add the starting block to the open-blocks-queue
-	OpenBlock* ob = openBlockBufferPointer = openBlockBuffer;
-	ob->cost = 0;
-	ob->currentCost = 0;
-	ob->block = startBlock;
-	ob->blocknr = startBlocknr;
+	OpenBlock* ob = &openBlockBuffer[openBlockBufferIndex];
+		ob->cost = 0;
+		ob->currentCost = 0;
+		ob->block = startBlock;
+		ob->blocknr = startBlocknr;
 	openBlocks.push(ob);
 
 	// mark starting point as best found position
@@ -535,7 +558,8 @@ IPath::SearchResult CPathEstimator::InitSearch(const MoveData& moveData, const C
  */
 IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPathFinderDef& peDef) {
 	bool foundGoal = false;
-	while (!openBlocks.empty() && (openBlockBufferPointer - openBlockBuffer) < (maxBlocksToBeSearched - 8)) {
+
+	while (!openBlocks.empty() && (openBlockBufferIndex < maxBlocksToBeSearched)) {
 		// get the open block with lowest cost
 		OpenBlock* ob = openBlocks.top();
 		openBlocks.pop();
@@ -558,6 +582,8 @@ IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPa
 		}
 
 		// no, test the 8 surrounding blocks
+		// NOTE: each of these calls increments openBlockBufferIndex by 1, so
+		// maxBlocksToBeSearched is always less than <MAX_SEARCHED_BLOCKS - 8>
 		TestBlock(moveData, peDef, *ob, PATHDIR_LEFT);
 		TestBlock(moveData, peDef, *ob, PATHDIR_LEFT_UP);
 		TestBlock(moveData, peDef, *ob, PATHDIR_UP);
@@ -576,7 +602,7 @@ IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPa
 		return Ok;
 
 	// we could not reach the goal
-	if (openBlockBufferPointer - openBlockBuffer >= (maxBlocksToBeSearched - 8))
+	if (openBlockBufferIndex >= maxBlocksToBeSearched)
 		return GoalOutOfRange;
 
 	// search could not reach the goal due to the unit being locked in
@@ -650,11 +676,14 @@ void CPathEstimator::TestBlock(const MoveData& moveData, const CPathFinderDef &p
 	}
 
 	// store this block as open.
-	OpenBlock* ob = ++openBlockBufferPointer;
-	ob->block = block;
-	ob->blocknr = blocknr;
-	ob->cost = cost;
-	ob->currentCost = currentCost;
+	++openBlockBufferIndex;
+	assert(openBlockBufferIndex < MAX_SEARCHED_BLOCKS);
+
+	OpenBlock* ob = &openBlockBuffer[openBlockBufferIndex];
+		ob->block = block;
+		ob->blocknr = blocknr;
+		ob->cost = cost;
+		ob->currentCost = currentCost;
 	openBlocks.push(ob);
 
 	// Mark the block as open, and its parent.
@@ -842,162 +871,7 @@ unsigned int CPathEstimator::Hash() const
 	return (readmap->mapChecksum + moveinfo->moveInfoChecksum + BLOCK_SIZE + moveMathOptions + PATHESTIMATOR_VERSION);
 }
 
-boost::uint32_t CPathEstimator::GetPathChecksum()
-{
-	return pathChecksum;
-}
 
-void CPathEstimator::Draw(void)
-{
-	GML_RECMUTEX_LOCK(sel); // Draw
-
-	MoveData* md = NULL;
-
-	if (!moveinfo->moveData.empty()) {
-		md = moveinfo->moveData[0];
-	} else {
-		return;
-	}
-
-	if (!selectedUnits.selectedUnits.empty() && (*selectedUnits.selectedUnits.begin())->unitDef->movedata) {
-		md = (*selectedUnits.selectedUnits.begin())->unitDef->movedata;
-	}
-
-	glDisable(GL_TEXTURE_2D);
-	glColor3f(1, 1, 0);
-
-/*
-	float blue = BLOCK_SIZE == 32? 1: 0;
-	glBegin(GL_LINES);
-	for (int z = 0; z < nbrOfBlocksZ; z++) {
-		for (int x = 0; x < nbrOfBlocksX; x++) {
-			int blocknr = z * nbrOfBlocksX + x;
-			float3 p1;
-			p1.x = (blockState[blocknr].sqrCenter[md->pathType].x) * 8;
-			p1.z = (blockState[blocknr].sqrCenter[md->pathType].y) * 8;
-			p1.y = ground->GetHeight(p1.x, p1.z) + 10;
-
-			glColor3f(1, 1, blue);
-			glVertexf3(p1);
-			glVertexf3(p1 - UpVector * 10);
-			for (int dir = 0; dir < PATH_DIRECTION_VERTICES; dir++) {
-				int obx = x + directionVector[dir].x;
-				int obz = z + directionVector[dir].y;
-
-				if (obx >= 0 && obz >= 0 && obx < nbrOfBlocksX && obz < nbrOfBlocksZ) {
-					float3 p2;
-					int obblocknr = obz * nbrOfBlocksX + obx;
-
-					p2.x = (blockState[obblocknr].sqrCenter[md->pathType].x) * 8;
-					p2.z = (blockState[obblocknr].sqrCenter[md->pathType].y) * 8;
-					p2.y = ground->GetHeight(p2.x, p2.z) + 10;
-
-					int vertexNbr = md->pathType * nbrOfBlocks * PATH_DIRECTION_VERTICES + blocknr * PATH_DIRECTION_VERTICES + directionVertex[dir];
-					float cost = vertex[vertexNbr];
-
-					glColor3f(1 / (sqrt(cost/BLOCK_SIZE)), 1 / (cost/BLOCK_SIZE), blue);
-					glVertexf3(p1);
-					glVertexf3(p2);
-				}
-			}
-		}
-
-	}
-	glEnd();
-
-
-	glEnable(GL_TEXTURE_2D);
-	for (int z = 0; z < nbrOfBlocksZ; z++) {
-		for (int x = 0; x < nbrOfBlocksX; x++) {
-			int blocknr = z * nbrOfBlocksX + x;
-			float3 p1;
-			p1.x = (blockState[blocknr].sqrCenter[md->pathType].x) * SQUARE_SIZE;
-			p1.z = (blockState[blocknr].sqrCenter[md->pathType].y) * SQUARE_SIZE;
-			p1.y = ground->GetHeight(p1.x, p1.z) + 10;
-
-			glColor3f(1, 1, blue);
-			for (int dir = 0; dir < PATH_DIRECTION_VERTICES; dir++) {
-				int obx = x + directionVector[dir].x;
-				int obz = z + directionVector[dir].y;
-
-				if (obx >= 0 && obz >= 0 && obx < nbrOfBlocksX && obz < nbrOfBlocksZ) {
-					float3 p2;
-					int obblocknr = obz * nbrOfBlocksX + obx;
-
-					p2.x = (blockState[obblocknr].sqrCenter[md->pathType].x) * SQUARE_SIZE;
-					p2.z = (blockState[obblocknr].sqrCenter[md->pathType].y) * SQUARE_SIZE;
-					p2.y = ground->GetHeight(p2.x, p2.z) + 10;
-
-					int vertexNbr = md->pathType * nbrOfBlocks * PATH_DIRECTION_VERTICES + blocknr * PATH_DIRECTION_VERTICES + directionVertex[dir];
-					float cost = vertex[vertexNbr];
-
-					glColor3f(1, 1 / (cost/BLOCK_SIZE), blue);
-
-					p2 = (p1 + p2) / 2;
-					if (camera->pos.SqDistance(p2) < 250000) {
-						font->glWorldPrint(p2,5,"%.0f", cost);
-					}
-				}
-			}
-		}
-	}
-*/
-
-
-	if (BLOCK_SIZE == 8)
-		glColor3f(0.2f, 0.7f, 0.2f);
-	else
-		glColor3f(0.2f, 0.2f, 0.7f);
-
-	glDisable(GL_TEXTURE_2D);
-	glBegin(GL_LINES);
-
-	for (OpenBlock* ob = openBlockBuffer; ob != openBlockBufferPointer; ++ob) {
-		int blocknr = ob->blocknr;
-		float3 p1;
-		p1.x = (blockState[blocknr].sqrCenter[md->pathType].x) * SQUARE_SIZE;
-		p1.z = (blockState[blocknr].sqrCenter[md->pathType].y) * SQUARE_SIZE;
-		p1.y = ground->GetHeight(p1.x, p1.z) + 15;
-
-		float3 p2;
-		int obx = blockState[ob->blocknr].parentBlock.x;
-		int obz = blockState[ob->blocknr].parentBlock.y;
-		int obblocknr = obz * nbrOfBlocksX + obx;
-
-		if (obblocknr >= 0) {
-			p2.x = (blockState[obblocknr].sqrCenter[md->pathType].x) * SQUARE_SIZE;
-			p2.z = (blockState[obblocknr].sqrCenter[md->pathType].y) * SQUARE_SIZE;
-			p2.y = ground->GetHeight(p2.x, p2.z) + 15;
-
-			glVertexf3(p1);
-			glVertexf3(p2);
-		}
-	}
-
-	glEnd();
-
-
-/*
-	glEnable(GL_TEXTURE_2D);
-	glEnable(GL_BLEND);
-	glColor4f(1,0,blue,0.7f);
-	glAlphaFunc(GL_GREATER,0.05f);
-	int a=0;
-	for(OpenBlock*  ob=openBlockBuffer;ob!=openBlockBufferPointer;++ob){
-		int blocknr = ob->blocknr;
-		float3 p1;
-		p1.x=(ob->block.x * BLOCK_SIZE + blockState[blocknr].sqrCenter[md->pathType].x)*SQUARE_SIZE;
-		p1.z=(ob->block.y * BLOCK_SIZE + blockState[blocknr].sqrCenter[md->pathType].y)*SQUARE_SIZE;
-		p1.y=ground->GetHeight(p1.x,p1.z)+15;
-
-		if(camera->pos.SqDistance(p1)<250000){
-			font->glWorldPrint(p1,5,"%.0f %.0f",ob->cost,ob->currentCost);
-		}
-		++a;
-	}
-	glDisable(GL_BLEND);
-*/
-}
 
 float3 CPathEstimator::FindBestBlockCenter(const MoveData* moveData, float3 pos)
 {

@@ -15,7 +15,7 @@ struct UnitInfo;
 struct EnemyInfo;
 class cRAI;
 
-#include "ExternalAI/IGlobalAI.h"
+#include "LegacyCpp/IGlobalAI.h"
 using std::map;
 #include "BasicArray.h"
 #include "UnitDefHandler.h"
@@ -165,6 +165,7 @@ public:
 	typedef pair<int,EnemyInfo*> iepPair;
 
 private:
+	std::string GetLogFileSubPath(int teamId) const;
 	void RemoveLogFile(string relFileName) const;
 	void UpdateEventRemove(UpdateEvent* e);
 	void UpdateEventReorderFirst();

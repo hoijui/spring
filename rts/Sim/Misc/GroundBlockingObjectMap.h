@@ -21,12 +21,12 @@ public:
 	CGroundBlockingObjectMap(int numSquares) { groundBlockingMap.resize(numSquares); }
 
 	void AddGroundBlockingObject(CSolidObject* object);
-	void AddGroundBlockingObject(CSolidObject* object, unsigned char* yardMap, unsigned char mask);
+	void AddGroundBlockingObject(CSolidObject* object, const unsigned char* yardMap, unsigned char mask);
 	void RemoveGroundBlockingObject(CSolidObject* object);
 	// void MoveGroundBlockingObject(CSolidObject* object, float3 oldPos);
 
-	void OpenBlockingYard(CSolidObject* yard, unsigned char* yardMap);
-	void CloseBlockingYard(CSolidObject* yard, unsigned char* yardMap);
+	void OpenBlockingYard(CSolidObject* yard, const unsigned char* yardMap);
+	void CloseBlockingYard(CSolidObject* yard, const unsigned char* yardMap);
 	bool CanCloseYard(CSolidObject* object);
 
 	// these retrieve either the top-most or the bottom-most
@@ -36,7 +36,7 @@ public:
 	// same as GroundBlocked(), but does not bounds-check mapSquare
 	CSolidObject* GroundBlockedUnsafe(int mapSquare, bool topMost = true);
 
-	const BlockingMapCell& GetCell(int mapSquare) { return groundBlockingMap[mapSquare]; }
+	const BlockingMapCell& GetCell(int mapSquare) const { return groundBlockingMap[mapSquare]; }
 
 private:
 	BlockingMap groundBlockingMap;

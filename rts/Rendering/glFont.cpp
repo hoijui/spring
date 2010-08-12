@@ -3,25 +3,30 @@
 #include "StdAfx.h"
 
 #include "glFont.h"
+#include <string>
+#include <cstring> // for memset, memcpy
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdexcept>
+#ifndef   HEADLESS
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#endif // HEADLESS
 
-#include "LogOutput.h"
 #include "Game/Camera.h"
-#include "myMath.h"
+#include "Rendering/GlobalRendering.h"
+#include "Rendering/GL/VertexArray.h"
+#include "Rendering/Textures/Bitmap.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/GlobalUnsynced.h"
+#include "System/Util.h"
+#include "System/Exceptions.h"
+#include "System/mmgr.h"
+#include "System/float4.h"
 #include "bitops.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "GL/VertexArray.h"
-#include "Textures/Bitmap.h"
-#include "GlobalUnsynced.h"
-#include "Util.h"
-#include "Exceptions.h"
-#include "mmgr.h"
-#include "float4.h"
 
 #undef GetCharWidth // winapi.h
 
@@ -107,6 +112,7 @@ class texture_size_exception : public std::exception
 };
 
 
+#ifndef   HEADLESS
 #undef __FTERRORS_H__
 #define FT_ERRORDEF( e, v, s )  { e, s },
 #define FT_ERROR_START_LIST     {
@@ -127,6 +133,7 @@ static const char* GetFTError(FT_Error e)
 	}
 	return "Unknown error";
 }
+#endif // HEADLESS
 
 /*******************************************************************************/
 /*******************************************************************************/
@@ -138,23 +145,23 @@ static const char* GetFTError(FT_Error e)
 class CFontTextureRenderer
 {
 public:
-	CFontTextureRenderer(int _outlinewidth, int _outlineweight) :
-		texWidth(0), texHeight(0),
+	CFontTextureRenderer(int _outlinewidth, int _outlineweight)
+		: texWidth(0), texHeight(0),
 		outlinewidth(_outlinewidth), outlineweight(_outlineweight),
-		curX(0), curY(0), curHeight(0),
+		atlas(NULL),
+		cur(NULL),
+		curX(0), curY(0),
+		curHeight(0),
 		numGlyphs(0),
-		maxGlyphWidth(0), maxGlyphHeight(0), numPixels(0)
+		maxGlyphWidth(0), maxGlyphHeight(0),
+		numPixels(0)
 	{
-		numGlyphs = 0;
-		texWidth = texHeight = 0;
-		curX = curY = curHeight = 0;
-		numPixels = maxGlyphWidth = maxGlyphHeight = 0;
 	};
 
 	GLuint CreateTexture();
 
 	void AddGlyph(unsigned int& index, int& xsize, int& ysize, unsigned char* pixels, int& pitch);
-	void GetGlyph(unsigned int& index, CglFont::GlyphInfo* g);
+	void GetGlyph(unsigned int& index, CglFont::GlyphInfo* g) const;
 
 	int texWidth, texHeight;
 private:
@@ -257,9 +264,9 @@ void CFontTextureRenderer::CopyGlyphsIntoBitmapAtlas(bool outline)
 
 
 
-void CFontTextureRenderer::GetGlyph(unsigned int& index, CglFont::GlyphInfo* g)
+void CFontTextureRenderer::GetGlyph(unsigned int& index, CglFont::GlyphInfo* g) const
 {
-	GlyphInfo& gi = glyphs[index];
+	const GlyphInfo& gi = glyphs[index];
 	g->u0 = gi.u / (float)texWidth;
 	g->v0 = gi.v / (float)texHeight;
 	g->u1 = (gi.u+gi.xsize) / (float)texWidth;
@@ -366,7 +373,7 @@ GLuint CFontTextureRenderer::CreateTexture()
 
 	//! generate the ogl texture
 	texHeight = curY + curHeight;
-	if (!gu->supportNPOTs)
+	if (!globalRendering->supportNPOTs)
 		texHeight = next_power_of_2(texHeight);
 	GLuint tex;
 	glGenTextures(1, &tex);
@@ -399,7 +406,9 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 	fontPath(fontfile),
 	outlineWidth(_outlinewidth),
 	outlineWeight(_outlineweight),
-	inBeginEnd(false)
+	inBeginEnd(false),
+	autoOutlineColor(true),
+	setColor(false)
 {
 	if (size<=0)
 		size = 14;
@@ -407,6 +416,12 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 	const float invSize = 1.0f / size;
 	const float normScale = invSize / 64.0f;
 
+	//! setup character range
+	charstart = 32;
+	charend   = 254; //! char 255 = colorcode
+	chars     = (charend - charstart) + 1;
+
+#ifndef   HEADLESS
 	FT_Library library;
 	FT_Face face;
 
@@ -459,11 +474,6 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 		msg += GetFTError(error);
 		throw content_error(msg);
 	}
-
-	//! setup character range
-	charstart = 32;
-	charend   = 254; //! char 255 = colorcode
-	chars     = (charend - charstart) + 1;
 
 	//! get font information
 	fontFamily = face->family_name;
@@ -547,6 +557,15 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 	FT_Done_Face(face);
 	FT_Done_FreeType(library);
 	delete[] buf;
+#else  // HEADLESS
+	fontFamily = "NONE";
+	fontStyle  = "NONE";
+	fontDescender = 0.0f;
+	lineHeight = 0.0f;
+	fontTexture = 0;
+	texWidth  = 0;
+	texHeight = 0;
+#endif // HEADLESS
 
 	textColor    = white;
 	outlineColor = darkOutline;
@@ -581,75 +600,28 @@ CglFont::~CglFont()
 /*******************************************************************************/
 
 template <typename T>
-static inline int SkipColorCodesOld(const std::string& text, T c)
+static inline int SkipColorCodesOld(const std::string& text, T pos)
 {
-	while (text[c] == CglFont::ColorCodeIndicator) { //FIXME use a non-printable char? (<32)
-		c += 4;
-		if (c >= text.size()) { return -1; }
+	while (text[pos] == CglFont::ColorCodeIndicator) {
+		pos += 4;
+		if (pos >= text.size()) { return -1; }
 	}
-	return c;
+	return pos;
 }
 
 
 template <typename T>
-static inline bool SkipNewLineOld(const std::string& text, T* c)
-{
-	if (text[*c] == '\x0d') {
-		(*c)++;
-		if (*c < text.length() && text[*c] == '\x0a') {
-			(*c)++;
-		}
-		return true;
-	} else if (text[*c] == '\x0a') {
-		(*c)++;
-		return true;
-	}
-	return false;
-}
-
-
-/**
- * @brief SkipNewLine
- * @param text
- * @param c index in the string
- * @return <0 := end of string; returned value is: -(skippedLines + 1)
- *         else: number of skipped lines (can be zero)
- */
-template <typename T>
-static inline int SkipNewLine(const std::string& text, T* c)
-{
-	const size_t length = text.length();
-	int skippedLines = 0;
-	while (*c < length) {
-		if (text[*c] == '\x0d') {
-			skippedLines++;
-			(*c)++;
-			if (*c < length && text[*c] == '\x0a') {
-				(*c)++;
-			}
-		} else if (text[*c] == '\x0a') {
-			skippedLines++;
-			(*c)++;
-		} else {
-			return skippedLines;
-		}
-	}
-	return -(1 + skippedLines);
-}
-
-
-template <typename T>
-static inline int SkipColorCodes(const std::string& text, T* c, float4* color)
+static inline int SkipColorCodes(const std::string& text, T* pos, float4* color)
 {
 	int colorFound = 0;
-	while (text[(*c)] == CglFont::ColorCodeIndicator) {
-		(*c) += 4;
-		if ((*c) >= text.size()) {
+	while (text[(*pos)] == CglFont::ColorCodeIndicator) {
+		(*pos) += 4;
+		if ((*pos) >= text.size()) {
 			return -(1 + colorFound);
 		} else {
-			(*color)[0] = ((unsigned char) text[(*c)-3]) / 255.0f;
-			(*color)[1] = ((unsigned char) text[(*c)-2]) / 255.0f;
-			(*color)[2] = ((unsigned char) text[(*c)-1]) / 255.0f;
+			(*color)[0] = ((unsigned char) text[(*pos)-3]) / 255.0f;
+			(*color)[1] = ((unsigned char) text[(*pos)-2]) / 255.0f;
+			(*color)[2] = ((unsigned char) text[(*pos)-1]) / 255.0f;
 			colorFound = 1;
 		}
 	}
@@ -657,33 +629,82 @@ static inline int SkipColorCodes(const std::string& text, T* c, float4* color)
 }
 
 
+/**
+ * @brief SkipNewLine
+ * @param text
+ * @param pos index in the string
+ * @return <0 := end of string; returned value is: -(skippedLines + 1)
+ *         else: number of skipped lines (can be zero)
+ */
+template <typename T>
+static inline int SkipNewLine(const std::string& text, T* pos)
+{
+	const size_t length = text.length();
+	int skippedLines = 0;
+	while (*pos < length) {
+		const char& chr = text[*pos];
+		switch(chr) {
+			case '\x0d': //! CR
+				skippedLines++;
+				(*pos)++;
+				if (*pos < length && text[*pos] == '\x0a') { //! CR+LF
+					(*pos)++;
+				}
+				break;
+
+			case '\x0a': //! LF
+				skippedLines++;
+				(*pos)++;
+				break;
+
+			default:
+				return skippedLines;
+		}
+	}
+	return -(1 + skippedLines);
+}
+
 
 template <typename T>
-static inline bool SkipColorCodesAndNewLines(const std::string& text, T* c, float4* color, bool* colorChanged, int* skippedLines)
+static inline bool SkipColorCodesAndNewLines(const std::string& text, T* pos, float4* color, bool* colorChanged, int* skippedLines, float4* colorReset)
 {
 	const size_t length = text.length();
 	(*colorChanged) = false;
 	(*skippedLines) = 0;
-	while (*c < length) {
-		if (text[*c] == '\x0d') {
-			(*skippedLines)++;
-			(*c)++;
-			if (*c < length && text[*c] == '\x0a') {
-				(*c)++;
-			}
-		} else if (text[*c] == '\x0a') {
-			(*skippedLines)++;
-			(*c)++;
-		} else if (text[*c] == CglFont::ColorCodeIndicator) {
-			*c += 4;
-			if ((*c) < length) {
-				(*color)[0] = ((unsigned char) text[(*c) - 3]) / 255.0f;
-				(*color)[1] = ((unsigned char) text[(*c) - 2]) / 255.0f;
-				(*color)[2] = ((unsigned char) text[(*c) - 1]) / 255.0f;
+	while (*pos < length) {
+		const char& chr = text[*pos];
+		switch(chr) {
+			case CglFont::ColorCodeIndicator:
+				*pos += 4;
+				if ((*pos) < length) {
+					(*color)[0] = ((unsigned char) text[(*pos) - 3]) / 255.0f;
+					(*color)[1] = ((unsigned char) text[(*pos) - 2]) / 255.0f;
+					(*color)[2] = ((unsigned char) text[(*pos) - 1]) / 255.0f;
+					*colorChanged = true;
+				}
+				break;
+
+			case CglFont::ColorResetIndicator:
+				(*pos)++;
+				(*color) = *colorReset;
 				*colorChanged = true;
-			}
-		} else {
-			return false;
+				break;
+
+			case '\x0d': //! CR
+				(*skippedLines)++;
+				(*pos)++;
+				if (*pos < length && text[*pos] == '\x0a') { //! CR+LF
+					(*pos)++;
+				}
+				break;
+
+			case '\x0a': //! LF
+				(*skippedLines)++;
+				(*pos)++;
+				break;
+
+			default:
+				return false;
 		}
 	}
 	return true;
@@ -707,7 +728,7 @@ std::string CglFont::StripColorCodes(const std::string& text)
 	std::string nocolor;
 	nocolor.reserve(len);
 	for (unsigned int i = 0; i < len; i++) {
-		if (text[i] == '\xff') {
+		if (text[i] == ColorCodeIndicator) {
 			i += 3;
 		} else {
 			nocolor += text[i];
@@ -742,25 +763,33 @@ float CglFont::GetTextWidth(const std::string& text) const
 	for (int pos = 0; pos < text.length(); pos++) {
 		const char& c = text[pos];
 		switch(c) {
+			//! inlined colorcode
 			case ColorCodeIndicator:
-				{
-					pos = SkipColorCodesOld(text, pos);
-					if (pos<0) {
-						pos = text.length();
-					} else {
-						pos--;
-					}
-				} break;
-			case '\x0d':
+				pos = SkipColorCodesOld(text, pos);
+				if (pos<0) {
+					pos = text.length();
+				} else {
+					pos--;
+				}
+				break;
+
+			//! reset color
+			case ColorResetIndicator:
+				break;
+
+			//! newline
+			case '\x0d': //! CR+LF
 				if (pos+1 < text.length() && text[pos+1] == '\x0a')
 					pos++;
-			case '\x0a':
+			case '\x0a': //! LF
 				w += glyphs[*prv_char].kerning[0];
 				if (w > maxw)
 					maxw = w;
 				w = 0.0f;
 				prv_char = &nullChar;
 				break;
+
+			//! printable char
 			default:
 				cur_char = reinterpret_cast<const unsigned char*>(&c);
 				w += glyphs[*prv_char].kerning[*cur_char];
@@ -778,33 +807,42 @@ float CglFont::GetTextWidth(const std::string& text) const
 
 float CglFont::GetTextHeight(const std::string& text, float* descender, int* numLines) const
 {
+	if (text.empty()) {
+		if (descender) *descender = 0.0f;
+		if (numLines) *numLines = 0;
+		return 0.0f;
+	}
+
 	float h = 0.0f, d = lineHeight + fontDescender;
 	unsigned int multiLine = 1;
 
 	for (int pos = 0 ; pos < text.length(); pos++) {
 		const char& c = text[pos];
 		switch(c) {
-			//! inline colorcodes
+			//! inlined colorcode
 			case ColorCodeIndicator:
-				{
-					pos = SkipColorCodesOld(text, pos);
-					if (pos<0) {
-						pos = text.length();
-					} else {
-						pos--;
-					}
-				} break;
+				pos = SkipColorCodesOld(text, pos);
+				if (pos<0) {
+					pos = text.length();
+				} else {
+					pos--;
+				}
+				break;
+
+			//! reset color
+			case ColorResetIndicator:
+				break;
 
 			//! newline
-			case '\x0d':
+			case '\x0d': //! CR+LF
 				if (pos+1 < text.length() && text[pos+1] == '\x0a')
 					pos++;
-			case '\x0a':
+			case '\x0a': //! LF
 				multiLine++;
 				d = lineHeight + fontDescender;
 				break;
 
-			//! normal char
+			//! printable char
 			default:
 				const unsigned char* uc = reinterpret_cast<const unsigned char*>(&c);
 				const GlyphInfo* g = &glyphs[ *uc ];
@@ -823,21 +861,27 @@ float CglFont::GetTextHeight(const std::string& text, float* descender, int* num
 
 int CglFont::GetTextNumLines(const std::string& text) const
 {
+	if (text.empty())
+		return 0;
+
 	int lines = 1;
 
 	for (int pos = 0 ; pos < text.length(); pos++) {
 		const char& c = text[pos];
 		switch(c) {
-			//! inline colorcodes
+			//! inlined colorcode
 			case ColorCodeIndicator:
-				{
-					pos = SkipColorCodesOld(text, pos);
-					if (pos<0) {
-						pos = text.length();
-					} else {
-						pos--;
-					}
-				} break;
+				pos = SkipColorCodesOld(text, pos);
+				if (pos<0) {
+					pos = text.length();
+				} else {
+					pos--;
+				}
+				break;
+
+			//! reset color
+			case ColorResetIndicator:
+				break;
 
 			//! newline
 			case '\x0d':
@@ -846,6 +890,7 @@ int CglFont::GetTextNumLines(const std::string& text) const
 			case '\x0a':
 				lines++;
 				break;
+
 			//default:
 		}
 	}
@@ -857,8 +902,8 @@ int CglFont::GetTextNumLines(const std::string& text) const
 /*******************************************************************************/
 
 /**
- * IsUpperCase
- * return true if the given uchar is an uppercase character (WinLatin charmap)
+ * @brief IsUpperCase
+ * @return true if the given uchar is an uppercase character (WinLatin charmap)
  */
 static inline bool IsUpperCase(const unsigned char& c)
 {
@@ -872,6 +917,13 @@ static inline bool IsUpperCase(const unsigned char& c)
 }
 
 
+/**
+ * @brief GetPenalty
+ * @param c character at %strpos% in the word
+ * @param strpos position of c in the word
+ * @param strlen total length of the word
+ * @return penalty (smaller is better) to split a word at that position
+ */
 static inline float GetPenalty(const unsigned char& c, unsigned int strpos, unsigned int strlen)
 {
 	const float dist = strlen - strpos;
@@ -1230,6 +1282,7 @@ void CglFont::SplitTextInWords(const std::string& text, std::list<word>* words, 
 	for (int pos = 0; pos < length; pos++) {
 		const char& c = text[pos];
 		switch(c) {
+			//! space
 			case '\x20':
 				if (!w->isSpace) {
 					if (w->isSpace) {
@@ -1244,6 +1297,8 @@ void CglFont::SplitTextInWords(const std::string& text, std::list<word>* words, 
 				}
 				w->numSpaces++;
 				break;
+
+			//! inlined colorcodes
 			case ColorCodeIndicator:
 				{
 					colorcodes->push_back(colorcode());
@@ -1258,10 +1313,22 @@ void CglFont::SplitTextInWords(const std::string& text, std::list<word>* words, 
 						pos--;
 					}
 				} break;
-			case '\x0d':
+			case ColorResetIndicator:
+				{
+					colorcode* cc = &colorcodes->back();
+					if (cc->pos != numChar) {
+						colorcodes->push_back(colorcode());
+						cc = &colorcodes->back();
+						cc->pos = numChar;
+					}
+					cc->resetColor = true;
+				} break;
+
+			//! newlines
+			case '\x0d': //! CR+LF
 				if (pos+1 < length && text[pos+1] == '\x0a')
 					pos++;
-			case '\x0a':
+			case '\x0a': //! LF
 				if (w->isSpace) {
 					w->width = spaceAdvance * w->numSpaces;
 				} else if (!w->isLineBreak) {
@@ -1271,8 +1338,9 @@ void CglFont::SplitTextInWords(const std::string& text, std::list<word>* words, 
 				w = &(words->back());
 				w->isLineBreak = true;
 				w->pos = numChar;
-
 				break;
+
+			//! printable chars
 			default:
 				if (w->isSpace || w->isLineBreak) {
 					if (w->isSpace) {
@@ -1308,12 +1376,18 @@ void CglFont::RemergeColorCodes(std::list<word>* words, std::list<colorcode>& co
 		}
 
 		word wc;
-		wc.text = '\xff';
-		wc.text += (unsigned char)(255 * ci->color[0]);
-		wc.text += (unsigned char)(255 * ci->color[1]);
-		wc.text += (unsigned char)(255 * ci->color[2]);
-		wc.isColorCode = true;
 		wc.pos = ci->pos;
+		wc.isColorCode = true;
+
+		if (ci->resetColor) {
+			wc.text = ColorResetIndicator;
+		} else {
+			wc.text = ColorCodeIndicator;
+			wc.text += (unsigned char)(255 * ci->color[0]);
+			wc.text += (unsigned char)(255 * ci->color[1]);
+			wc.text += (unsigned char)(255 * ci->color[2]);
+		}
+
 
 		if (wi2->isSpace || wi2->isLineBreak) {
 			while(wi2 != words->end() && (wi2->isSpace || wi2->isLineBreak))
@@ -1449,8 +1523,13 @@ void CglFont::SetTextColor(const float4* color)
 	if (color == NULL) color = &white;
 
 	if (inBeginEnd && !(*color==textColor)) {
-		stripTextColors.push_back(*color);
-		va.EndStrip();
+		if ((va.stripArrayPos - va.stripArray) != (va.drawArrayPos - va.drawArray)) {
+			stripTextColors.push_back(*color);
+			va.EndStrip();
+		} else {
+			float4& back = stripTextColors.back();
+			back = *color;
+		}
 	}
 
 	textColor = *color;
@@ -1462,8 +1541,13 @@ void CglFont::SetOutlineColor(const float4* color)
 	if (color == NULL) color = ChooseOutlineColor(textColor);
 
 	if (inBeginEnd && !(*color==outlineColor)) {
-		stripOutlineColors.push_back(*color);
-		va2.EndStrip();
+		if ((va2.stripArrayPos - va2.stripArray) != (va2.drawArrayPos - va2.drawArray)) {
+			stripOutlineColors.push_back(*color);
+			va2.EndStrip();
+		} else {
+			float4& back = stripOutlineColors.back();
+			back = *color;
+		}
 	}
 
 	outlineColor = *color;
@@ -1477,12 +1561,22 @@ void CglFont::SetColors(const float4* _textColor, const float4* _outlineColor)
 
 	if (inBeginEnd) {
 		if (!(*_textColor==textColor)) {
-			stripTextColors.push_back(*_textColor);
-			va.EndStrip();
+			if ((va.stripArrayPos - va.stripArray) != (va.drawArrayPos - va.drawArray)) {
+				stripTextColors.push_back(*_textColor);
+				va.EndStrip();
+			} else {
+				float4& back = stripTextColors.back();
+				back = *_textColor;
+			}
 		}
 		if (!(*_outlineColor==outlineColor)) {
-			stripOutlineColors.push_back(*_outlineColor);
-			va2.EndStrip();
+			if ((va2.stripArrayPos - va2.stripArray) != (va2.drawArrayPos - va2.drawArray)) {
+				stripOutlineColors.push_back(*_outlineColor);
+				va2.EndStrip();
+			} else {
+				float4& back = stripOutlineColors.back();
+				back = *_outlineColor;
+			}
 		}
 	}
 
@@ -1602,7 +1696,7 @@ void CglFont::RenderString(float x, float y, const float& scaleX, const float& s
 	unsigned int i = 0;
 
 	do {
-		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines);
+		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines, &baseTextColor);
 
 		if (endOfString)
 			return;
@@ -1655,7 +1749,7 @@ void CglFont::RenderStringShadow(float x, float y, const float& scaleX, const fl
 	unsigned int i = 0;
 
 	do {
-		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines);
+		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines, &baseTextColor);
 
 		if (endOfString)
 			return;
@@ -1717,7 +1811,7 @@ void CglFont::RenderStringOutlined(float x, float y, const float& scaleX, const 
 	unsigned int i = 0;
 
 	do {
-		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines);
+		endOfString = SkipColorCodesAndNewLines(str, &i, &newColor, &colorChanged, &skippedLines, &baseTextColor);
 
 		if (endOfString)
 			return;
@@ -1784,8 +1878,8 @@ void CglFont::glPrint(GLfloat x, GLfloat y, float s, const int& options, const s
 
 	//! render in normalized coords (0..1) instead of screencoords (0..~1024)
 	if (options & FONT_NORM) {
-		sizeX *= gu->pixelX;
-		sizeY *= gu->pixelY;
+		sizeX *= globalRendering->pixelX;
+		sizeY *= globalRendering->pixelY;
 	}
 
 	//! horizontal alignment (FONT_LEFT is default)
@@ -1822,14 +1916,9 @@ void CglFont::glPrint(GLfloat x, GLfloat y, float s, const int& options, const s
 		y = (int)y;
 	}
 
-	float4 oldTextColor, oldOultineColor;
-	size_t sts,sos;
-
-	//! backup text & outline colors
-	oldTextColor = textColor;
-	oldOultineColor = outlineColor;
-	sts = stripTextColors.size();
-	sos = stripOutlineColors.size();
+	//! backup text & outline colors (also ::ColorResetIndicator will reset to those)
+	baseTextColor = textColor;
+	baseOutlineColor = outlineColor;
 
 	//! immediate mode?
 	const bool immediate = !inBeginEnd;
@@ -1854,10 +1943,7 @@ void CglFont::glPrint(GLfloat x, GLfloat y, float s, const int& options, const s
 	}
 
 	//! reset text & outline colors (if changed via in text colorcodes)
-	if (stripTextColors.size() > sts)
-		SetTextColor(&oldTextColor);
-	if (stripOutlineColors.size() > sos)
-		SetOutlineColor(&oldOultineColor);
+	SetColors(&baseTextColor,&baseOutlineColor);
 }
 
 void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, const std::string& text) {
@@ -1865,10 +1951,11 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 	int row = 0;
 	std::vector<std::string> coltext;
 	std::vector<int> coldata;
+	coltext.reserve(text.length());
 	coltext.push_back("");
 	unsigned char curcolor[4];
 	unsigned char defaultcolor[4];
-	defaultcolor[0] = '\xff';
+	defaultcolor[0] = ColorCodeIndicator;
 	for(int i = 0; i < 3; ++i)
 		defaultcolor[i+1] = (unsigned char)(textColor[i]*255.0f);
 	coldata.push_back(*(int *)&defaultcolor);
@@ -1878,6 +1965,7 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 	for (int pos = 0; pos < text.length(); pos++) {
 		const char& c = text[pos];
 		switch(c) {
+			//! inline colorcodes
 			case ColorCodeIndicator:
 				for(int i = 0; i < 4 && pos < text.length(); ++i, ++pos) {
 					coltext[col] += text[pos];
@@ -1886,6 +1974,8 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 				coldata[col] = *(int *)curcolor;
 				--pos;
 				break;
+
+			//! column separator is `\t`==`horizontal tab`
 			case '\x09':
 				++col;
 				if(col >= coltext.size()) {
@@ -1900,10 +1990,12 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 					coldata[col] = *(int *)curcolor;
 				}
 				break;
-			case '\x0d':
+
+			//! newline
+			case '\x0d': //! CR+LF
 				if (pos+1 < text.length() && text[pos + 1] == '\x0a')
 					pos++;
-			case '\x0a':
+			case '\x0a': //! LF
 				for(int i = 0; i < coltext.size(); ++i)
 					coltext[i] += '\x0a';
 				if(coldata[0] != *(int *)curcolor) {
@@ -1914,6 +2006,8 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 				col = 0;
 				++row;
 				break;
+
+			//! printable char
 			default:
 				coltext[col] += c;
 		}
@@ -1944,8 +2038,8 @@ void CglFont::glPrintTable(GLfloat x, GLfloat y, float s, const int& options, co
 
 	//! render in normalized coords (0..1) instead of screencoords (0..~1024)
 	if (options & FONT_NORM) {
-		sizeX *= gu->pixelX;
-		sizeY *= gu->pixelY;
+		sizeX *= globalRendering->pixelX;
+		sizeY *= globalRendering->pixelY;
 	}
 
 	//! horizontal alignment (FONT_LEFT is default)

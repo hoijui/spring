@@ -25,13 +25,11 @@ public:
 	float frontLength;
 	float addSpace;
 
-	void Update();
-
 private:
 	void CalculateGroupData(int player, bool queueing);
 	void MakeFrontMove(Command* c,int player);
 	void CreateUnitOrder(std::multimap<float,int>& out,int player);
-	float3 MoveToPos(int unit, float3 nextCornerPos, float3 dir, Command* command);
+	float3 MoveToPos(int unit, float3 nextCornerPos, float3 dir, Command* command, std::vector<std::pair<int,Command> > *frontcmds, bool *newline);
 	void AddUnitSetMaxSpeedCommand(CUnit* unit, unsigned char options);
 	void AddGroupSetMaxSpeedCommand(CUnit* unit, unsigned char options);
 	void SelectAttack(const Command& cmd, int player);

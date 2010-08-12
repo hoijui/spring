@@ -8,6 +8,7 @@
 
 #include "TerrainTextureGLSL.h"
 #include "Rendering/GL/FBO.h"
+#include "Rendering/GlobalRendering.h"
 #include "FileSystem/FileHandler.h"
 #include "FileSystem/FileSystem.h"
 #include "bitops.h"
@@ -128,8 +129,8 @@ public:
 	// nVidia: Use RECT,  ati: use POT
 		assert(framebuffer.IsValid());
 
-		width = gu->viewSizeX;
-		height = gu->viewSizeY;
+		width = globalRendering->viewSizeX;
+		height = globalRendering->viewSizeY;
 		if (GLEW_ARB_texture_rectangle)
 			target = GL_TEXTURE_RECTANGLE_ARB;
 		else {
@@ -390,7 +391,7 @@ NodeGLSLShader* ShaderBuilder::EndPass(ShaderDef* sd, const std::string &operati
 	if (passIndex == 1) {
 		// set up uniform to read bumpmap
 		GLint invScreenDim = glGetUniformLocationARB(nodeShader->program, "invScreenDim");
-		glUniform2fARB(invScreenDim, 1.0f / gu->viewSizeX, 1.0f / gu->viewSizeY);
+		glUniform2fARB(invScreenDim, 1.0f / globalRendering->viewSizeX, 1.0f / globalRendering->viewSizeY);
 	}
 
 	glUseProgramObjectARB(0);
@@ -427,7 +428,7 @@ void ShaderBuilder::AddPPDefines(ShaderDef* sd, Shader& shader, uint passIndex)
 	if (ShadowMapping())
 		shader.texts.push_back("#define UseShadowMapping\n");
 
-	shader.AddFile("shaders/terrainCommon.glsl");
+	shader.AddFile("shaders/GLSL/terrainCommon.glsl");
 	char specularExponentStr[20];
 	SNPRINTF(specularExponentStr, 20, "%5.3f", sd->specularExponent);
 	shader.texts.push_back(string("const float specularExponent = ") + specularExponentStr + ";\n");
@@ -452,7 +453,7 @@ void ShaderBuilder::BuildFragmentShader(NodeGLSLShader* ns, uint passIndex, cons
 	AddPPDefines(sd, fragmentShader, passIndex);
 	fragmentShader.texts.push_back(textureSamplers);
 
-	fragmentShader.AddFile("shaders/terrainFragmentShader.glsl");
+	fragmentShader.AddFile("shaders/GLSL/terrainFragmentShader.glsl");
 
 	string gentxt = "vec4 CalculateColor()  { vec4 color; float curalpha; \n" + operations;
 
@@ -501,7 +502,7 @@ void ShaderBuilder::BuildVertexShader(NodeGLSLShader* ns, uint passIndex, Shader
 	tcgen += "}\n";
 	vertexShader.texts.push_back(tcgen);
 
-	vertexShader.AddFile("shaders/terrainVertexShader.glsl");
+	vertexShader.AddFile("shaders/GLSL/terrainVertexShader.glsl");
 	vertexShader.Build(GL_VERTEX_SHADER_ARB);
 	d_trace("Vertex shader built successfully.");
 
@@ -780,7 +781,7 @@ void GLSLShaderHandler::BeginTexturing() {
 void GLSLShaderHandler::BeginPass(const std::vector<Blendmap*>& blendmaps, const std::vector<TiledTexture*>& textures, int pass)
 {
 	if (buffer) {
-		if ((buffer->width != gu->viewSizeX) || (buffer->height != gu->viewSizeY)) {
+		if ((buffer->width != globalRendering->viewSizeX) || (buffer->height != globalRendering->viewSizeY)) {
 			delete buffer;
 			buffer = new BufferTexture;
 		}
@@ -793,7 +794,7 @@ void GLSLShaderHandler::BeginPass(const std::vector<Blendmap*>& blendmaps, const
 		}
 		else if (pass == 1) {
 			buffer->framebuffer.Unbind();
-			glViewport(gu->viewPosX, gu->viewPosY, gu->viewSizeX, gu->viewSizeY);
+			glViewport(globalRendering->viewPosX, globalRendering->viewPosY, globalRendering->viewSizeX, globalRendering->viewSizeY);
 		}
 	}
 }
@@ -892,10 +893,10 @@ SimpleCopyShader::SimpleCopyShader(BufferTexture *buf)
 
 	if(buf->IsRect())
 		fs.texts.push_back("#define UseTextureRECT");
-	fs.AddFile("shaders/terrainSimpleCopyFS.glsl");
+	fs.AddFile("shaders/GLSL/terrainSimpleCopyFS.glsl");
 	fs.Build(GL_FRAGMENT_SHADER_ARB);
 
-	vs.AddFile("shaders/terrainSimpleCopyVS.glsl");
+	vs.AddFile("shaders/GLSL/terrainSimpleCopyVS.glsl");
 	vs.Build(GL_VERTEX_SHADER_ARB);
 
 	vertexShader = vs.handle;
@@ -920,7 +921,7 @@ SimpleCopyShader::SimpleCopyShader(BufferTexture *buf)
 	glUniform1iARB(srcTex, 0);
 	if (!buf->IsRect()) {
 		GLint invScreenDim = glGetUniformLocationARB(program, "invScreenDim");
-		glUniform2fARB(invScreenDim, 1.0f/gu->viewSizeX, 1.0f/gu->viewSizeY);
+		glUniform2fARB(invScreenDim, 1.0f/globalRendering->viewSizeX, 1.0f/globalRendering->viewSizeY);
 	}
 	glUseProgramObjectARB(0);
 

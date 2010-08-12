@@ -8,7 +8,7 @@
 #include <map>
 
 #include "Lua/LuaHandle.h"
-#include "Sim/Units/CommandAI/Command.h"
+//#include "Sim/Units/CommandAI/Command.h"
 
 
 class CUnit;
@@ -16,9 +16,13 @@ class CFeature;
 struct Command;
 struct lua_State;
 struct CommandDescription;
+class LuaLobby;
 
 
-class CLuaUI : public CLuaHandle {
+class CLuaUI : public CLuaHandle
+{
+	friend class LuaLobby;
+
 	public:
 		static void LoadHandler();
 		static void FreeHandler();

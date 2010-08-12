@@ -25,7 +25,7 @@ class CMiniMap : public CInputReceiver {
 		bool IsAbove(int x, int y);
 		std::string GetTooltip(int x, int y);
 		void Draw();
-		void DrawForReal();
+		void DrawForReal(bool use_geo = true);
 		
 		void ConfigCommand(const std::string& command);
 
@@ -62,20 +62,20 @@ class CMiniMap : public CInputReceiver {
 		void SelectUnits(int x, int y) const;
 		void ProxyMousePress(int x, int y, int button);
 		void ProxyMouseRelease(int x, int y, int button);
-		
-		void DrawNotes(void);
+
+		void DrawFrame();
+		void DrawNotes();
 		void DrawButtons();
 		void DrawMinimizedButton();
-		void DrawUnit(CUnit* unit);
-		void DrawUnitHighlight(CUnit* unit);
+		void DrawUnit(const CUnit* unit);
+		void DrawUnitHighlight(const CUnit* unit);
 		void DrawCircle(const float3& pos, float radius);
 		void DrawSquare(const float3& pos, float xsize, float zsize);
-		const CIconData* GetUnitIcon(CUnit* unit, float& scale) const;
+		const CIconData* GetUnitIcon(const CUnit* unit, float& scale) const;
 		void GetFrustumSide(float3& side);
 		
 	protected:
-		static void DrawSurfaceCircle(const float3& pos, float radius,
-		                              unsigned int resolution);
+		static void DrawSurfaceCircle(const float3& pos, float radius, unsigned int resolution);
 		static void DrawSurfaceSquare(const float3& pos, float xsize, float zsize);
 	protected:
 		int xpos, ypos;

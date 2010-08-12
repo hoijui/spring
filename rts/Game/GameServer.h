@@ -48,7 +48,7 @@ class GameTeam : public TeamBase
 public:
 	GameTeam() : active(false) {};
 	bool active;
-	void operator=(const TeamBase& base) { TeamBase::operator=(base); };
+	GameTeam& operator=(const TeamBase& base) { TeamBase::operator=(base); return *this; };
 };
 
 /**
@@ -59,7 +59,7 @@ public:
  */
 class CGameServer
 {
-	friend class CLoadSaveHandler;     //For initialize server state after load
+	friend class CCregLoadSaveHandler;     //For initialize server state after load
 public:
 	CGameServer(int hostport, bool onlyLocal, const GameData* const gameData, const CGameSetup* const setup);
 	~CGameServer();
@@ -85,6 +85,8 @@ public:
 	/// Is the server still running?
 	bool HasFinished() const;
 
+	void UpdateSpeedControl(int speedCtrl);
+
 private:
 	/**
 	 * @brief relay chat messages to players / autohost
@@ -99,7 +101,7 @@ private:
 	 */
 	void KickPlayer(const int playerNum);
 
-	unsigned BindConnection(std::string name, const std::string& passwd, const std::string& version, bool isLocal, boost::shared_ptr<netcode::CConnection> link);
+	unsigned BindConnection(std::string name, const std::string& passwd, const std::string& version, bool isLocal, boost::shared_ptr<netcode::CConnection> link, bool reconnect = false);
 
 	void CheckForGameStart(bool forced=false);
 	void StartGame();
@@ -129,6 +131,8 @@ private:
 
 	void Message(const std::string& message, bool broadcast=true);
 	void PrivateMessage(int playernum, const std::string& message);
+
+	void AddToPacketCache(boost::shared_ptr<const netcode::RawPacket> &pckt);
 
 	/////////////////// game status variables ///////////////////
 
@@ -162,7 +166,8 @@ private:
 
 	float medianCpu;
 	int medianPing;
-	int enforceSpeed;
+	int curSpeedCtrl;
+	int speedControl;
 	/////////////////// game settings ///////////////////
 	boost::scoped_ptr<const CGameSetup> setup;
 	boost::scoped_ptr<const GameData> gameData;
@@ -178,7 +183,8 @@ private:
 	bool noHelperAIs;
 	bool allowSpecDraw;
 	bool allowAdditionalPlayers;
-	std::list< boost::shared_ptr<const netcode::RawPacket> > packetCache; //waaa, the overhead
+	bool whiteListAdditionalPlayers;
+	std::list< std::vector<boost::shared_ptr<const netcode::RawPacket> > > packetCache;
 
 	/////////////////// sync stuff ///////////////////
 #ifdef SYNCCHECK
@@ -190,6 +196,8 @@ private:
 	///////////////// internal stuff //////////////////
 	void InternalSpeedChange(float newSpeed);
 	void UserSpeedChange(float newSpeed, int player);
+
+	void AddAdditionalUser( const std::string& name, const std::string& passwd );
 
 	bool hasLocalClient;
 	unsigned localClientNumber;
@@ -209,6 +217,8 @@ private:
 	typedef std::set<unsigned char> PlayersToForwardMsgvec;
 	typedef std::map<unsigned char, PlayersToForwardMsgvec> MsgToForwardMap;
 	MsgToForwardMap relayingMessagesMap;
+
+	bool canReconnect;
 };
 
 extern CGameServer* gameServer;

@@ -10,7 +10,7 @@
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
 #include "myMath.h"
-#include "Rendering/UnitModels/3DModel.h"
+#include "Rendering/Models/3DModel.h"
 #include "Sim/Misc/GeometricObjects.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/LosHandler.h"
@@ -151,10 +151,12 @@ CAirMoveType::~CAirMoveType(void)
 
 void CAirMoveType::Update(void)
 {
-	if (owner->beingBuilt)
-		return;
-
 	float3& pos = owner->pos;
+
+	if (owner->stunned || owner->beingBuilt) {
+		UpdateAirPhysics(0, lastAileronPos, lastElevatorPos, 0, ZeroVector);
+		goto EndNormalControl;
+	}
 
 	// note: this is only set to false after
 	// the plane has finished constructing
@@ -162,12 +164,6 @@ void CAirMoveType::Update(void)
 		useHeading = false;
 		SetState(AIRCRAFT_TAKEOFF);
 	}
-
-	if (owner->stunned) {
-		UpdateAirPhysics(0, lastAileronPos, lastElevatorPos, 0, ZeroVector);
-		goto EndNormalControl;
-	}
-
 
 	if (owner->directControl && !(aircraftState == AIRCRAFT_CRASHING)) {
 		SetState(AIRCRAFT_FLYING);
@@ -425,8 +421,7 @@ void CAirMoveType::SlowUpdate(void)
 			float h = owner->pos.y - ground->GetApproximateHeight(owner->pos.x, owner->pos.z);
 			owner->losHeight = h + 5;
 			loshandler->MoveUnit(owner, false);
-			if (owner->hasRadarCapacity)
-				radarhandler->MoveUnit(owner);
+			radarhandler->MoveUnit(owner);
 
 			owner->losHeight = oldlh;
 		}

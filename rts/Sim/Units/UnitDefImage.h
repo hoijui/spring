@@ -9,12 +9,22 @@
 struct UnitDefImage
 {
 	CR_DECLARE_STRUCT(UnitDefImage);
-	UnitDefImage() { imageSizeX = -1; imageSizeY = -1; }
+
+	UnitDefImage(): imageSizeX(-1), imageSizeY(-1), textureID(0) {
+	}
+
+	bool Free() {
+		if (textureID != 0) {
+			glDeleteTextures(1, &textureID);
+			textureID = 0;
+			return true;
+		}
+		return false;
+	}
 
 	int imageSizeX;
 	int imageSizeY;
 	GLuint textureID;
-	bool textureOwner;
 };
 
 #endif // UNIT_DEF_IMAGE

@@ -95,16 +95,29 @@ const UnitDef* CAICheats::GetUnitDef(int unitid)
 
 }
 
+
+
 float3 CAICheats::GetUnitPos(int unitid)
 {
 	if (!CHECK_UNITID(unitid)) return ZeroVector;
-	CUnit* unit = uh->units[unitid];
-	if (unit) {
+	const CUnit* unit = uh->units[unitid];
+	if (unit != NULL) {
 		return unit->pos;
 	}
 	return ZeroVector;
-
 }
+
+float3 CAICheats::GetUnitVelocity(int unitid)
+{
+	if (!CHECK_UNITID(unitid)) return ZeroVector;
+	const CUnit* unit = uh->units[unitid];
+	if (unit != NULL) {
+		return unit->speed;
+	}
+	return ZeroVector;
+}
+
+
 
 int CAICheats::GetEnemyUnits(int* unitIds, int unitIds_max)
 {
@@ -189,12 +202,12 @@ int CAICheats::GetNeutralUnits(int* unitIds, const float3& pos, float radius, in
 	return a;
 }
 
-int CAICheats::GetFeatures(int *features, int max) {
+int CAICheats::GetFeatures(int* features, int max) const {
 	// this method is never called anyway, see SSkirmishAICallbackImpl.cpp
 	return 0;
 }
-int CAICheats::GetFeatures(int *features, int max, const float3& pos,
-			float radius) {
+int CAICheats::GetFeatures(int* features, int max, const float3& pos,
+			float radius) const {
 	// this method is never called anyway, see SSkirmishAICallbackImpl.cpp
 	return 0;
 }
@@ -367,7 +380,7 @@ bool CAICheats::GetProperty(int id, int property, void *data)
 	return false; // never reached
 }
 
-bool CAICheats::GetValue(int id, void* data)
+bool CAICheats::GetValue(int id, void* data) const
 {
 	return false;
 }

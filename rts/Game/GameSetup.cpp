@@ -25,10 +25,22 @@ using namespace std;
 
 const CGameSetup* gameSetup = NULL;
 
-CGameSetup::CGameSetup():
-	startPosType(StartPos_Fixed),
-	hostDemo(false),
-	numDemoPlayers(0)
+CGameSetup::CGameSetup()
+	: fixedAllies(true)
+	, mapHash(0)
+	, modHash(0)
+	, useLuaGaia(true)
+	, startPosType(StartPos_Fixed)
+	, maxUnits(1500)
+	, ghostedBuildings(true)
+	, limitDgun(false)
+	, disableMapDamage(false)
+	, maxSpeed(0.0f)
+	, minSpeed(0.0f)
+	, hostDemo(false)
+	, numDemoPlayers(0)
+	, gameMode(0)
+	, noHelperAIs(0)
 {}
 
 CGameSetup::~CGameSetup()
@@ -380,16 +392,11 @@ bool CGameSetup::Init(const std::string& buf)
 
 	modName     = file.SGetValueDef("",  "GAME\\Gametype");
 	mapName     = file.SGetValueDef("",  "GAME\\MapName");
-	luaGaiaStr  = file.SGetValueDef("1", "GAME\\ModOptions\\LuaGaia");
-	if (luaGaiaStr == "0")
-		useLuaGaia = false;
-	else
-		useLuaGaia = true;
-	luaRulesStr = file.SGetValueDef("1", "GAME\\ModOptions\\LuaRules");
 	saveName    = file.SGetValueDef("",  "GAME\\Savefile");
 	demoName    = file.SGetValueDef("",  "GAME\\Demofile");
 	hostDemo    = !demoName.empty();
 
+	file.GetDef(useLuaGaia,       "1", "GAME\\ModOptions\\LuaGaia");
 	file.GetDef(gameMode,         "0", "GAME\\ModOptions\\GameMode");
 	file.GetDef(noHelperAIs,      "0", "GAME\\ModOptions\\NoHelperAIs");
 	file.GetDef(maxUnits,       "1500", "GAME\\ModOptions\\MaxUnits");

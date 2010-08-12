@@ -5,7 +5,7 @@
 #include "LightningCannon.h"
 #include "Map/Ground.h"
 #include "PlasmaRepulser.h"
-#include "Rendering/UnitModels/3DModel.h"
+#include "Rendering/Models/3DModel.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/InterceptHandler.h"
 #include "Sim/Projectiles/WeaponProjectiles/LightningProjectile.h"
@@ -88,12 +88,12 @@ void CLightningCannon::Init(void)
 
 void CLightningCannon::FireImpl()
 {
-	float3 dir = targetPos - weaponMuzzlePos;
-	dir.ANormalize();
+	float3 dir(targetPos - weaponMuzzlePos);
+	dir.Normalize();
 	dir +=
 		(gs->randVector() * sprayAngle + salvoError) *
 		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight);
-	dir.ANormalize();
+	dir.Normalize();
 
 	const CUnit* cu = 0;
 	const CFeature* cf = 0;

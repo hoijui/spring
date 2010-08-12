@@ -14,14 +14,13 @@
 #include "lib/gml/gml.h"
 
 class CBaseWater;
-class CAVIGenerator;
 class CConsoleHistory;
 class CWordCompletion;
 class CKeySet;
 class CInfoConsole;
 class LuaParser;
 class LuaInputReceiver;
-class CLoadSaveHandler;
+class ILoadSaveHandler;
 class Action;
 class ChatMessage;
 class SkirmishAIData;
@@ -32,10 +31,17 @@ class CGame : public CGameController
 {
 private:
 	CR_DECLARE(CGame);	// Do not use CGame pointer in CR_MEMBER()!!!
+
+	void LoadDefs();
+	void LoadSimulation(const std::string&);
+	void LoadRendering();
+	void LoadInterface();
+	void LoadLua();
+	void LoadFinalize();
 	void PostLoad();
 
 public:
-	CGame(std::string mapname, std::string modName, CLoadSaveHandler *saveFile);
+	CGame(std::string mapname, std::string modName, ILoadSaveHandler *saveFile);
 
 	bool Draw();
 	bool DrawMT();
@@ -68,7 +74,6 @@ public:
 
 	LuaParser* defsParser;
 
-	unsigned int oldframenum;
 	unsigned int fps;
 	unsigned int thisFps;
 
@@ -99,11 +104,9 @@ public:
 	bool showFPS;
 	bool showClock;
 	bool showSpeed;
+	bool showMTInfo;
 	/// Prevents spectator msgs from being seen by players
 	bool noSpectatorChat;
-
-	/// locked mouse indicator size
-	float crossSize;
 
 	unsigned char gameID[16];
 
@@ -114,12 +117,13 @@ public:
 	CConsoleHistory* consoleHistory;
 	CWordCompletion* wordCompletion;
 
-	bool creatingVideo;
-	CAVIGenerator* aviGenerator;
-
 	void SetHotBinding(const std::string& action) { hotBinding = action; }
 
 private:
+	/// Save the game state to file.
+	void SaveGame(const std::string& filename, bool overwrite);
+	/// Re-load the game.
+	void ReloadGame();
 	/// show GameEnd-window, calculate mouse movement etc.
 	void GameEnd();
 	/// Send a message to other players (allows prefixed messages with e.g. "a:...")
@@ -183,8 +187,6 @@ private:
 	float consumeSpeed; ///< How fast we should eat NETMSG_NEWFRAMEs.
 	unsigned lastframe; ///< SDL_GetTicks() in previous ClientReadNet() call.
 
-	void SwapTransparentObjects();
-
 	int skipStartFrame;
 	int skipEndFrame;
 	int skipTotalFrames;
@@ -193,6 +195,13 @@ private:
 	float skipOldSpeed;
 	float skipOldUserSpeed;
 	unsigned skipLastDraw;
+
+	int speedControl;
+	int luaDrawTime;
+
+
+	/// for reloading the savefile
+	ILoadSaveHandler* saveFile;
 };
 
 

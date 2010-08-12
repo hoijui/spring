@@ -4,8 +4,8 @@
 #define __BASE_GROUND_DRAWER_H__
 
 #include <vector>
-#include "Rendering/Env/BaseTreeDrawer.h"
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GL/PBO.h"
 #include "float3.h"
 
 class CHeightLinePalette;
@@ -38,7 +38,8 @@ public:
 		drawLos,
 		drawMetal,
 		drawHeight,
-		drawPath
+		drawPath,
+		drawHeat
 	};
 
 protected:
@@ -54,33 +55,31 @@ public:
 	void SetPathMapTexture();
 	void ToggleLosTexture();
 	void ToggleRadarAndJammer();
+	void ToggleHeatMapTexture();
 	bool UpdateExtraTexture();
 	bool DrawExtraTex() const { return drawMode!=drawNormal; };
 
-	void SetTexGen(float scalex,float scaley, float offsetx, float offsety) const;
-
-	bool updateFov;
-	bool drawRadarAndJammer;
-	bool drawLineOfSight;
 	bool wireframe;
 
 	float LODScaleReflection;
 	float LODScaleRefraction;
 	float LODScaleUnitReflection;
 
-	GLuint infoTex;
+	BaseGroundDrawMode drawMode;
 
-	unsigned char* infoTexMem;
+	bool drawRadarAndJammer;
+	bool drawLineOfSight;
+
+	int updateTextureState;
+
+	GLuint infoTex;
+	PBO extraTexPBO;
 	bool highResInfoTex;
 	bool highResInfoTexWanted;
 
 	const unsigned char* extraTex;
 	const unsigned char* extraTexPal;
 	float* extractDepthMap;
-
-	int updateTextureState;
-
-	BaseGroundDrawMode drawMode;
 
 	float infoTexAlpha;
 
@@ -91,7 +90,7 @@ public:
 	static const int losColorScale = 10000;
 
 	bool highResLosTex;
-// 	bool smoothLosTex;
+	int extraTextureUpdateRate;
 
 	CHeightLinePalette* heightLinePal;
 };

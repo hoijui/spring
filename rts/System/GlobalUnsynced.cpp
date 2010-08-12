@@ -7,57 +7,47 @@
 
 #include "StdAfx.h"
 
-#include <string>
-#include <assert.h>
-#include <SDL/SDL_timer.h>
-
 #include "GlobalUnsynced.h"
 #include "Game/GameSetup.h"
-#include "Rendering/GL/myGL.h"
-#include "Sim/Misc/GlobalConstants.h"
+#include "Game/PlayerHandler.h"
+#include "Sim/Units/Unit.h"
 #include "System/mmgr.h"
-#include "System/Util.h"
 #include "System/ConfigHandler.h"
+#include "System/Util.h"
+#include "System/creg/creg_cond.h"
+
+#include <string>
+#include <cassert>
+#include <SDL_timer.h>
 
 
 /**
  * @brief global unsynced
  *
- * Global instance of CGlobalUnsyncedStuff
+ * Global instance of CGlobalUnsynced
  */
-CGlobalUnsyncedStuff* gu;
+CGlobalUnsynced* gu;
 
 
-CR_BIND(CGlobalUnsyncedStuff,);
+CR_BIND(CGlobalUnsynced, );
 
-CR_REG_METADATA(CGlobalUnsyncedStuff, (
-				CR_MEMBER(teamNanospray), // ??
+CR_REG_METADATA(CGlobalUnsynced, (
 				CR_MEMBER(modGameTime),
 				CR_MEMBER(gameTime),
-				CR_MEMBER(lastFrameTime),
-				CR_MEMBER(lastFrameStart),
-				CR_MEMBER(weightedSpeedFactor), // ??
-				CR_MEMBER(drawFrame), // ??
 				CR_MEMBER(myPlayerNum),
 				CR_MEMBER(myTeam),
 				CR_MEMBER(myAllyTeam),
 				CR_MEMBER(spectating),
 				CR_MEMBER(spectatingFullView),
 				CR_MEMBER(spectatingFullSelect),
-				CR_MEMBER(drawdebug), // ??
-				CR_MEMBER(active),
-				CR_MEMBER(viewRange),
-				CR_MEMBER(timeOffset),
-//				CR_MEMBER(compressTextures),
-				CR_MEMBER(drawFog),
+				CR_MEMBER(moveWarnings),
+				CR_MEMBER(buildWarnings),
+				CR_MEMBER(directControl),
 				CR_MEMBER(usRandSeed),
 				CR_RESERVED(64)
 				));
 
-/**
- * Initializes variables in CGlobalUnsyncedStuff
- */
-CGlobalUnsyncedStuff::CGlobalUnsyncedStuff()
+CGlobalUnsynced::CGlobalUnsynced()
 {
 	boost::uint64_t randnum;
 	randnum = SDL_GetTicks();
@@ -65,14 +55,6 @@ CGlobalUnsyncedStuff::CGlobalUnsyncedStuff()
 
 	modGameTime = 0;
 	gameTime = 0;
-	lastFrameTime = 0;
-	drawFrame = 1;
-
-	viewSizeX = 100;
-	viewSizeY = 100;
-	pixelX = 0.01f;
-	pixelY = 0.01f;
-	aspectRatio = 1.0f;
 
 	myPlayerNum = 0;
 	myTeam = 1;
@@ -82,46 +64,23 @@ CGlobalUnsyncedStuff::CGlobalUnsyncedStuff()
 	spectatingFullView   = false;
 	spectatingFullSelect = false;
 
-	drawSky      = true;
-	drawWater    = true;
-	drawGround   = true;
-	drawFog      = true;
-	drawMapMarks = true;
-	drawdebug    = false;
-
-	active = true;
-	viewRange = MAX_VIEW_RANGE;
-	timeOffset = 0;
-
-	teamNanospray = false;
 	moveWarnings  = !!configHandler->Get("MoveWarnings", 0);
 	buildWarnings = !!configHandler->Get("BuildWarnings", 0);
 
 	directControl = NULL;
-
-	compressTextures = false;
-	atiHacks = false;
-	supportNPOTs = GLEW_ARB_texture_non_power_of_two;
-
-	{
-		std::string vendor = std::string((char*) glGetString(GL_VENDOR));
-		StringToLowerInPlace(vendor);
-		haveATI = (vendor.find("ati ") != std::string::npos);
-
-		if (haveATI) {
-			std::string renderer = std::string((char*) glGetString(GL_RENDERER));
-			StringToLowerInPlace(renderer);
-			//! x-series doesn't support NPOTs (but hd-series does)
-			supportNPOTs = (renderer.find(" x") == std::string::npos && renderer.find(" 9") == std::string::npos);
-		}
-	}
+	playerHandler = new CPlayerHandler();
 }
 
-/**
- * Destroys variables in CGlobalUnsyncedStuff
- */
-CGlobalUnsyncedStuff::~CGlobalUnsyncedStuff()
+CGlobalUnsynced::~CGlobalUnsynced()
 {
+	SafeDelete(playerHandler);
+}
+
+
+
+void CGlobalUnsynced::LoadFromSetup(const CGameSetup* setup)
+{
+	playerHandler->LoadFromSetup(setup);
 }
 
 
@@ -131,10 +90,10 @@ CGlobalUnsyncedStuff::~CGlobalUnsyncedStuff()
  *
  * Returns an unsynced random integer
  */
-int CGlobalUnsyncedStuff::usRandInt()
+int CGlobalUnsynced::usRandInt()
 {
 	usRandSeed = (usRandSeed * 214013L + 2531011L);
-	return usRandSeed & RANDINT_MAX;
+	return (usRandSeed >> 16) & RANDINT_MAX;
 }
 
 /**
@@ -142,10 +101,10 @@ int CGlobalUnsyncedStuff::usRandInt()
  *
  * returns an unsynced random float
  */
-float CGlobalUnsyncedStuff::usRandFloat()
+float CGlobalUnsynced::usRandFloat()
 {
 	usRandSeed = (usRandSeed * 214013L + 2531011L);
-	return float(usRandSeed & RANDINT_MAX) / RANDINT_MAX;
+	return float((usRandSeed >> 16) & RANDINT_MAX) / RANDINT_MAX;
 }
 
 /**
@@ -153,7 +112,7 @@ float CGlobalUnsyncedStuff::usRandFloat()
  *
  * returns an unsynced random vector
  */
-float3 CGlobalUnsyncedStuff::usRandVector()
+float3 CGlobalUnsynced::usRandVector()
 {
 	float3 ret;
 	do {
@@ -165,7 +124,7 @@ float3 CGlobalUnsyncedStuff::usRandVector()
 	return ret;
 }
 
-void CGlobalUnsyncedStuff::SetMyPlayer(const int mynumber)
+void CGlobalUnsynced::SetMyPlayer(const int mynumber)
 {
 	myPlayerNum = mynumber;
 	if (gameSetup && gameSetup->playerStartingData.size() > mynumber)

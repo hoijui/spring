@@ -62,7 +62,7 @@ public:
 	 * @brief IsValid
 	 * @return whether a valid framebuffer exists
 	 */
-	bool IsValid();
+	bool IsValid() const;
 
 	/**
 	 * @brief AttachTexture
@@ -125,6 +125,8 @@ public:
 
 
 private:
+	bool valid;
+
 	/**
 	 * @brief rbos
 	 *
