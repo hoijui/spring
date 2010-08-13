@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "lib/cutils/Util.h"
+#include "lib/cutils/cutilsdefines.h"
 
 #include "JvmLocater.h"
 

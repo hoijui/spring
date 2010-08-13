@@ -18,6 +18,9 @@
 
 #include "JvmLocater_common.h"
 
+#include "lib/cutils/Util.h"
+#include "lib/cutils/cutilsdefines.h"
+
 #include <windows.h>
 #include <wtypes.h>
 #include <commctrl.h>
