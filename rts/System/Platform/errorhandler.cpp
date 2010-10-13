@@ -6,41 +6,95 @@
  */
 
 #include <StdAfx.h>
+#include <sstream>
 #include "errorhandler.h"
 
-#include "LogOutput.h"
 #include "Game/GameServer.h"
+#include "System/LogOutput.h"
+#include "System/Util.h"
 
 #ifndef DEDICATED
-	#include "Sound/ISound.h"
-	#include <SDL.h>
+	#include "SpringApp.h"
+	#include "System/Platform/Threading.h"
 
-  #ifndef HEADLESS
-    #ifdef WIN32
-	#include <windows.h>
-    #else
-	// from X_MessageBox.cpp:
-	void X_MessageBox(const char *msg, const char *caption, unsigned int flags);
-    #endif
-  #endif // ifndef HEADLESS
+    #ifndef HEADLESS
+		#ifdef WIN32
+		#include <windows.h>
+		#else
+		// from X_MessageBox.cpp:
+		void X_MessageBox(const char *msg, const char *caption, unsigned int flags);
+		#endif
+    #endif // ifndef HEADLESS
 #endif // ifndef DEDICATED
 
 
-void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigned int flags)
+#ifndef DEDICATED
+	#include "Game/GameController.h"
+
+class CShowErrorInMainThread : public CGameController
 {
+public:
+	CShowErrorInMainThread(const std::string& msg, const std::string& caption, unsigned int flags, CGameController* origGameController) :
+		msg(msg),
+		caption(caption),
+		flags(flags),
+		origGameController(origGameController)
+	{
+	}
+
+
+	bool Update() {
+		ErrorMessageBox(msg, caption, flags);
+		return true;
+	}
+
+private:
+	std::string msg;
+	std::string caption;
+	unsigned int flags;
+	CGameController* origGameController;
+};
+
+#endif // ifndef DEDICATED
+
+
+void ErrorMessageBox(const std::string msg, const std::string caption, unsigned int flags)
+{
+#ifndef DEDICATED
+	if (!Threading::IsMainThread()) {
+		CGameController* origGameController = activeController;
+		activeController = new CShowErrorInMainThread(msg, caption, flags, origGameController);
+
+		//! terminate thread
+		throw boost::thread_interrupted();
+	}
+	else {
+		std::string fullmsg = caption + " " + msg;
+		LogObject() << fullmsg; // to give a clue, in case other error handling fails
+		Threading::SetThreadError(fullmsg);
+		Threading::GetMainThread()->interrupt();
+
+		throw boost::thread_interrupted();
+	}
+#endif
+
+	//! exiting any possibly threads
+	//! (else they would still run while the error messagebox is shown)
+#ifdef DEDICATED
+	SafeDelete(gameServer);
+#else
+	globalQuit = true;
+
+	SpringApp::Shutdown();
+	SafeDelete(activeController);
+#endif
+
 	logOutput.SetSubscribersEnabled(false);
 	LogObject() << caption << " " << msg;
 
-	// not exiting threads causes another exception
-	delete gameServer; gameServer = NULL;
-#ifndef DEDICATED
-	SDL_Quit();
-	ISound::Shutdown();
-#endif
-
 #if !defined(DEDICATED) && !defined(HEADLESS)
   #ifdef WIN32
-	// Windows implementation, using MessageBox.
+	//! Windows implementation, using MessageBox.
 
 	// Translate spring flags to corresponding win32 dialog flags
 	unsigned int winFlags = 0;		// MB_OK is default (0)
@@ -53,7 +107,7 @@ void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigne
 	MessageBox(GetActiveWindow(), msg.c_str(), caption.c_str(), winFlags);
 
   #else  // ifdef WIN32
-	// X implementation
+	//! X implementation
 	// TODO: write Mac OS X specific message box
 	X_MessageBox(msg.c_str(), caption.c_str(), flags);
 
@@ -62,4 +116,3 @@ void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigne
 
 	exit(-1); // continuing execution when SDL_Quit has already been run will result in a crash
 }
-

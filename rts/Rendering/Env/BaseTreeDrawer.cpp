@@ -11,16 +11,19 @@
 #include "Sim/Features/Feature.h"
 #include "Sim/Misc/GlobalConstants.h"
 #include "System/ConfigHandler.h"
+#include "System/Exceptions.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
 
 CBaseTreeDrawer* treeDrawer = 0;
 
-CBaseTreeDrawer::CBaseTreeDrawer(void)
+CBaseTreeDrawer::CBaseTreeDrawer()
+	: drawTrees(true)
 {
-	drawTrees = true;
 	baseTreeDistance = configHandler->Get("TreeRadius", (unsigned int) (5.5f * 256)) / 256.0f;
 }
 
-CBaseTreeDrawer::~CBaseTreeDrawer(void) {
+CBaseTreeDrawer::~CBaseTreeDrawer() {
 	configHandler->Set("TreeRadius", (unsigned int) (baseTreeDistance * 256));
 }
 
@@ -41,20 +44,24 @@ static void AddTrees(CBaseTreeDrawer* td)
 	}
 }
 
-CBaseTreeDrawer* CBaseTreeDrawer::GetTreeDrawer(void)
+CBaseTreeDrawer* CBaseTreeDrawer::GetTreeDrawer()
 {
 	CBaseTreeDrawer* td = NULL;
 
-	if (GLEW_ARB_vertex_program && configHandler->Get("3DTrees", 1)) {
-		GLint maxTexel;
-		glGetIntegerv(GL_MAX_TEXTURE_UNITS_ARB, &maxTexel);
-
-		if (maxTexel >= 4) {
+	try {
+		if (configHandler->Get("3DTrees", 1)) {
 			td = new CAdvTreeDrawer();
 		}
+	} catch (content_error& e) {
+		if (e.what()[0] != '\0') {
+			logOutput.Print("Error: %s", e.what());
+		}
+		logOutput.Print("TreeDrawer: Fallback to BasicTreeDrawer.");
+		// td can not be != NULL here
+		//delete td;
 	}
 
-	if (td == NULL) {
+	if (!td) {
 		td = new CBasicTreeDrawer();
 	}
 
@@ -69,25 +76,24 @@ int CBaseTreeDrawer::AddFallingTree(float3 pos, float3 dir, int type)
 	return 0;
 }
 
-void CBaseTreeDrawer::DrawShadowPass(void)
+void CBaseTreeDrawer::DrawShadowPass()
 {
 }
 
-void CBaseTreeDrawer::Draw (bool drawReflection)
+void CBaseTreeDrawer::Draw(bool drawReflection)
 {
-	float zoom = 45.0f / camera->GetFov();
-	float treeDistance=baseTreeDistance*fastmath::apxsqrt(zoom);
-	treeDistance = std::max(1.0f, std::min(treeDistance, (float)MAX_VIEW_RANGE / (SQUARE_SIZE * TREE_SQUARE_SIZE)));
-
-	Draw (treeDistance, drawReflection);
+	const float treeDistance = Clamp(baseTreeDistance, 1.0f, (float)MAX_VIEW_RANGE / (SQUARE_SIZE * TREE_SQUARE_SIZE));
+	Draw(treeDistance, drawReflection);
 }
 
 void CBaseTreeDrawer::Update() {
 
 	GML_STDMUTEX_LOCK(tree); // Update
 
-	for(std::vector<GLuint>::iterator i=delDispLists.begin(); i!=delDispLists.end(); ++i)
+	std::vector<GLuint>::iterator i;
+	for (i = delDispLists.begin(); i != delDispLists.end(); ++i) {
 		glDeleteLists(*i, 1);
+	}
 	delDispLists.clear();
 }
 

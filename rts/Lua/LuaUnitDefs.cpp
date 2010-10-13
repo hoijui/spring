@@ -377,7 +377,7 @@ static inline int BuildCategorySet(lua_State* L, const vector<string>& cats)
 static int CategorySetFromBits(lua_State* L, const void* data)
 {
 	const int bits = *((const int*)data);
-	const vector<string> cats =
+	const vector<string> &cats =
 		CCategoryHandler::Instance()->GetCategoryNames(bits);
 	return BuildCategorySet(L, cats);
 }
@@ -387,22 +387,22 @@ static int CategorySetFromString(lua_State* L, const void* data)
 {
 	const string& str = *((const string*)data);
 	const string lower = StringToLower(str);
-	const vector<string> cats = CSimpleParser::Tokenize(lower, 0);
+	const vector<string> &cats = CSimpleParser::Tokenize(lower, 0);
 	return BuildCategorySet(L, cats);
 }
 
 
 static int WeaponsTable(lua_State* L, const void* data)
 {
-	const vector<UnitDef::UnitDefWeapon>& weapons =
-		*((const vector<UnitDef::UnitDefWeapon>*)data);
+	const vector<UnitDefWeapon>& weapons =
+		*((const vector<UnitDefWeapon>*)data);
 
 	const int weaponCount = (int)weapons.size();
 
 	lua_newtable(L);
 
 	for (int i = 0; i < weaponCount; i++) {
-		const UnitDef::UnitDefWeapon& udw = weapons[i];
+		const UnitDefWeapon& udw = weapons[i];
 		const WeaponDef* weapon = udw.def;
 		lua_pushnumber(L, i + 1);
 		lua_newtable(L); {
@@ -680,6 +680,7 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 
 	ADD_INT("techLevel",   ud.techLevel);
 	ADD_INT("maxThisUnit", ud.maxThisUnit);
+	ADD_BOOL("transportableBuilding", ud.transportableBuilding);
 
 	ADD_FLOAT("metalUpkeep",    ud.metalUpkeep);
 	ADD_FLOAT("energyUpkeep",   ud.energyUpkeep);
@@ -721,7 +722,6 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_FLOAT("losHeight",     ud.losHeight);
 	ADD_FLOAT("losRadius",     ud.losRadius);
 	ADD_FLOAT("airLosRadius",  ud.airLosRadius);
-	ADD_FLOAT("controlRadius", ud.controlRadius);
 
 	ADD_INT("radarRadius",    ud.radarRadius);
 	ADD_INT("sonarRadius",    ud.sonarRadius);

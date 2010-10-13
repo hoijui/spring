@@ -81,7 +81,9 @@ InstallDirRegKey HKLM "${PRODUCT_DIR_REGKEY}" ""
 !include "include\echo.nsh"
 !include "include\fileassoc.nsh"
 !include "include\fileExistChecks.nsh"
+!include "include\fileMisc.nsh"
 !include "include\checkrunning.nsh"
+!include "include\aiHelpers.nsh"
 
 !include "sections\ensureDotNet.nsh"
 
@@ -222,9 +224,10 @@ SectionGroupEnd
 
 Section "Desktop shortcuts" SEC_DESKTOP
 	${If} ${SectionIsSelected} ${SEC_SPRINGLOBBY}
-		${!echonow} "Processing: springlobby shortcut"
-		SetOutPath "$INSTDIR"
-		CreateShortCut "$DESKTOP\SpringLobby.lnk" "$INSTDIR\springlobby.exe"
+		!define INSTALL
+			${!echonow} "Processing: shortcuts - Desktop"
+			!include "sections\shortcuts_desktop.nsh"
+		!undef INSTALL
 	${EndIf}
 SectionEnd
 
@@ -235,32 +238,24 @@ SectionGroup "Tools"
 			!include "sections\archivemover.nsh"
 		!undef INSTALL
 	SectionEnd
-
-	Section "Selection Editor" SEC_SELECTIONEDITOR
-		!define INSTALL
-			${!echonow} "Processing: selectionEditor"
-			!include "sections\selectionEditor.nsh"
-		!undef INSTALL
-	SectionEnd
 SectionGroupEnd
 
 
 Section "Start menu shortcuts" SEC_START
 	!define INSTALL
-		${!echonow} "Processing: shortcuts"
-		!include "sections\shortcuts.nsh"
+		${!echonow} "Processing: shortcuts - Start menu"
+		!include "sections\shortcuts_startMenu.nsh"
 	!undef INSTALL
 SectionEnd
 
 
-!macro SkirmishAIInstSection skirAiName
-	Section "${skirAiName}" SEC_${skirAiName}
-		!define INSTALL
-			${!echonow} "Processing: Skirmish AI install: ${skirAiName}"
-			!insertmacro InstallSkirmishAI ${skirAiName}
-		!undef INSTALL
-	SectionEnd
-!macroend
+Section /o "Portable" SEC_PORTABLE
+	!define INSTALL
+		${!echonow} "Processing: Portable"
+		!include "sections\portable.nsh"
+	!undef INSTALL
+SectionEnd
+
 
 SectionGroup "Skirmish AI plugins (Bots)"
 	!insertmacro SkirmishAIInstSection "AAI"
@@ -313,8 +308,10 @@ Section Uninstall
 	Delete "$INSTDIR\spring-multithreaded.exe"
 
 	!include "sections\docs.nsh"
-	!include "sections\shortcuts.nsh"
+	!include "sections\shortcuts_startMenu.nsh"
+	!include "sections\shortcuts_desktop.nsh"
 	!include "sections\archivemover.nsh"
+	!include "sections\portable.nsh"
 	!include "sections\springDownloader.nsh"
 	!include "sections\tasServer.nsh"
 	!insertmacro DeleteSkirmishAI "AAI"
@@ -323,8 +320,6 @@ Section Uninstall
 	!insertmacro DeleteSkirmishAI "E323AI"
 	!include "sections\springlobby.nsh"
 	!include "sections\luaui.nsh"
-
-	Delete "$DESKTOP\SpringLobby.lnk"
 
 	; All done
 	RMDir "$INSTDIR"

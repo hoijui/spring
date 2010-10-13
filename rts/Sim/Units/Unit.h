@@ -13,8 +13,6 @@
 #include "Matrix44f.h"
 #include "Vec2.h"
 
-using std::string;
-
 class CCommandAI;
 class CGroup;
 class CLoadSaveInterface;
@@ -127,9 +125,9 @@ public:
 
 	bool AllowedReclaim(CUnit* builder) const;
 	bool UseMetal(float metal);
-	void AddMetal(float metal, bool handicap = true);
+	void AddMetal(float metal, bool useIncomeMultiplier = true);
 	bool UseEnergy(float energy);
-	void AddEnergy(float energy, bool handicap = true);
+	void AddEnergy(float energy, bool useIncomeMultiplier = true);
 	/// push the new wind to the script
 	void UpdateWind(float x, float z, float strength);
 	void SetMetalStorage(float newStorage);
@@ -176,17 +174,6 @@ public:
 	LuaRulesParams::Params  modParams;
 	LuaRulesParams::HashMap modParamsMap; /// name map for mod parameters
 
-	/**
-	 * The unit's origin lies in this team.
-	 *
-	 * example:
-	 * It was created by a factory that was created by a builder
-	 * from a factory built by a commander of this team.
-	 * It does not matter at all, to which team
-	 * the commander/builder/factories were shared.
-	 * Only capturing can break the chain.
-	 */
-	int lineage;
 	/// tells the units main function to the ai, eg "builder"
 	int aihint;
 
@@ -294,7 +281,6 @@ public:
 
 	int mapSquare;
 
-	int controlRadius;
 	int losRadius;
 	int airLosRadius;
 	float losHeight;

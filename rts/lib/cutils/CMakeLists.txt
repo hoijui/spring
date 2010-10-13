@@ -8,8 +8,10 @@ set(myTargetStreflop  "${myName}-streflop")
 set(mySources
 	"SharedLibrary.c"
 	"SimpleLog.c"
+	"SimpleProfiler.cpp"
 	"SSkirmishAISpecifier.cpp"
 	"Util.c"
+	"TimeUtil.cpp"
 	)
 
 SET(myLibs "")

@@ -18,26 +18,22 @@
 #undef KeyPress
 #undef KeyRelease
 
-#include "Sim/Misc/GlobalSynced.h"
+#include "aGui/Gui.h"
+#include "ExternalAI/IAILibraryManager.h"
 #include "Game/GameVersion.h"
 #include "Game/GameSetup.h"
 #include "Game/ClientSetup.h"
 #include "Game/GameController.h"
-#include "Menu/SelectMenu.h"
 #include "Game/PreGame.h"
 #include "Game/Game.h"
-#include "Sim/Misc/Team.h"
+#include "Game/LoadScreen.h"
 #include "Game/UI/KeyBindings.h"
 #include "Game/UI/MouseHandler.h"
+#include "Input/MouseInput.h"
+#include "Input/InputHandler.h"
+#include "Input/Joystick.h"
 #include "Lua/LuaOpenGL.h"
-#include "Platform/BaseCmd.h"
-#include "Platform/Misc.h"
-#include "ConfigHandler.h"
-#include "Platform/errorhandler.h"
-#include "Platform/CrashHandler.h"
-#include "FileSystem/FileSystemHandler.h"
-#include "FileSystem/FileHandler.h"
-#include "ExternalAI/IAILibraryManager.h"
+#include "Menu/SelectMenu.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/glFont.h"
 #include "Rendering/GLContext.h"
@@ -45,20 +41,25 @@
 #include "Rendering/Textures/TAPalette.h"
 #include "Rendering/Textures/NamedTextures.h"
 #include "Rendering/Textures/TextureAtlas.h"
-#include "aGui/Gui.h"
-#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Misc/GlobalConstants.h"
-#include "Input/MouseInput.h"
-#include "Input/InputHandler.h"
-#include "Input/Joystick.h"
-#include "LogOutput.h"
-#include "bitops.h"
-#include "GlobalUnsynced.h"
-#include "Util.h"
-#include "myMath.h"
-#include "FPUCheck.h"
-#include "Exceptions.h"
+#include "Sim/Misc/GlobalSynced.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
+#include "System/bitops.h"
+#include "System/ConfigHandler.h"
+#include "System/Exceptions.h"
+#include "System/FPUCheck.h"
+#include "System/GlobalUnsynced.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
 #include "System/TimeProfiler.h"
+#include "System/Util.h"
+#include "System/FileSystem/FileSystemHandler.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/Platform/BaseCmd.h"
+#include "System/Platform/Misc.h"
+#include "System/Platform/errorhandler.h"
+#include "System/Platform/CrashHandler.h"
+#include "System/Platform/Threading.h"
 #include "System/Sound/ISound.h"
 
 #include "mmgr.h"
@@ -80,11 +81,13 @@
 
 using std::string;
 
-CGameController* activeController = 0;
-bool globalQuit = false;
-boost::uint8_t *keys = 0;
-boost::uint16_t currentUnicode = 0;
+volatile bool globalQuit = false;
+
+CGameController* activeController = NULL;
 ClientSetup* startsetup = NULL;
+
+boost::uint8_t* keys = 0;
+boost::uint16_t currentUnicode = 0;
 
 /**
  * @brief xres default
@@ -106,7 +109,7 @@ const int YRES_DEFAULT = 768;
  */
 SpringApp::SpringApp()
 {
-	cmdline = 0;
+	cmdline = NULL;
 	screenWidth = screenHeight = 0;
 	FSAA = false;
 	lastRequiredDraw = 0;
@@ -374,8 +377,8 @@ bool SpringApp::SetSDLVideoMode()
 {
 	int sdlflags = SDL_OPENGL | SDL_RESIZABLE;
 
-	//conditionally_set_flag(sdlflags, SDL_FULLSCREEN, globalRendering->fullScreen);
-	sdlflags |= globalRendering->fullScreen ? SDL_FULLSCREEN : 0;
+	//! w/o SDL_NOFRAME, kde's windowmanager still creates a border and force a `window`-resize causing a lot of trouble
+	sdlflags |= globalRendering->fullScreen ? SDL_FULLSCREEN | SDL_NOFRAME : 0;
 
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
@@ -471,12 +474,27 @@ bool SpringApp::GetDisplayGeometry()
 	return false;
 
 #else  // defined(HEADLESS)
+	//! not really needed, but makes it safer against unknown windowmanager behaviours
+	if (globalRendering->fullScreen) {
+		windowPosX = 0;
+		windowPosY = 0;
+		globalRendering->screenSizeX = screenWidth;
+		globalRendering->screenSizeY = screenHeight;
+		globalRendering->winSizeX = globalRendering->screenSizeX;
+		globalRendering->winSizeY = globalRendering->screenSizeY;
+		globalRendering->winPosX = windowPosX;
+		globalRendering->winPosY = globalRendering->screenSizeY - globalRendering->winSizeY - windowPosY; //! origin BOTTOMLEFT
+		return true;
+	}
+
 	SDL_SysWMinfo info;
 	SDL_VERSION(&info.version);
 
 	if (!SDL_GetWMInfo(&info)) {
 		return false;
 	}
+
+
   #if       defined(__APPLE__)
 	// TODO: implement this function & RestoreWindowPosition() on Mac
 	windowPosX = 30;
@@ -747,8 +765,8 @@ void SpringApp::LoadFonts()
 	smallFont = CglFont::LoadFont(smallFontFile, smallFontSize, smallOutlineWidth, smallOutlineWeight);
 
 	if (!font || !smallFont) {
-		std::vector<std::string> fonts = CFileHandler::DirList("fonts/", "*.*tf", SPRING_VFS_RAW_FIRST);
-		std::vector<std::string>::iterator fi = fonts.begin();
+		const std::vector<std::string> &fonts = CFileHandler::DirList("fonts/", "*.*tf", SPRING_VFS_RAW_FIRST);
+		std::vector<std::string>::const_iterator fi = fonts.begin();
 		while (fi != fonts.end()) {
 			SafeDelete(font);
 			SafeDelete(smallFont);
@@ -963,40 +981,49 @@ void SpringApp::Startup()
 	}
 }
 
-
-
-
 #if defined(USE_GML) && GML_ENABLE_SIM
 volatile int gmlMultiThreadSim;
 volatile int gmlStartSim;
 
 int SpringApp::Sim()
 {
-	while(gmlKeepRunning && !gmlStartSim)
-		SDL_Delay(100);
+	try {
+		if(GML_SHARE_LISTS)
+			ogc->WorkerThreadPost();
 
-	while(gmlKeepRunning) {
-		if(!gmlMultiThreadSim) {
-			CrashHandler::ClearSimWDT(true);
-			while(!gmlMultiThreadSim && gmlKeepRunning)
-				SDL_Delay(200);
-		}
-		else if (activeController) {
-			CrashHandler::ClearSimWDT();
-			gmlProcessor->ExpandAuxQueue();
+		while(gmlKeepRunning && !gmlStartSim)
+			SDL_Delay(100);
 
-			{
-				GML_RECMUTEX_LOCK(sim); // Sim
-
-				if (!activeController->Update()) {
-					return 0;
-				}
+		while(gmlKeepRunning) {
+			if(!gmlMultiThreadSim) {
+				CrashHandler::ClearSimWDT(true);
+				while(!gmlMultiThreadSim && gmlKeepRunning)
+					SDL_Delay(200);
 			}
+			else if (activeController) {
+				CrashHandler::ClearSimWDT();
+				gmlProcessor->ExpandAuxQueue();
 
-			gmlProcessor->GetQueue();
+				{
+					GML_MSTMUTEX_LOCK(sim); // Sim
+
+					if(!activeController->Update())
+						return 0;
+				}
+
+				gmlProcessor->GetQueue();
+			}
+			boost::thread::yield();
 		}
-		boost::thread::yield();
+
+		if(GML_SHARE_LISTS)
+			ogc->WorkerThreadFree();
+	} catch(opengl_error &e) {
+		Threading::SetThreadError(e.what());
+		Threading::GetMainThread()->interrupt();
+		return 0;
 	}
+
 	return 1;
 }
 #endif
@@ -1021,7 +1048,7 @@ int SpringApp::Update()
 #if defined(USE_GML) && GML_ENABLE_SIM
 			if (gmlMultiThreadSim) {
 				if (!gs->frameNum) {
-					GML_RECMUTEX_LOCK(sim); // Update
+					GML_MSTMUTEX_LOCK(sim); // Update
 
 					activeController->Update();
 					if (gs->frameNum) {
@@ -1029,7 +1056,7 @@ int SpringApp::Update()
 					}
 				}
 			} else {
-				GML_RECMUTEX_LOCK(sim); // Update
+				GML_MSTMUTEX_LOCK(sim); // Update
 
 				activeController->Update();
 			}
@@ -1146,6 +1173,8 @@ int SpringApp::Run(int argc, char *argv[])
 #	if GML_ENABLE_SIM
 	gmlKeepRunning=1;
 	gmlStartSim=0;
+	if(GML_SHARE_LISTS)
+		ogc = new COffscreenGLContext();
 	gmlProcessor->AuxWork(&SpringApp::Simcb,this); // start sim thread
 #	endif
 #endif
@@ -1178,9 +1207,13 @@ int SpringApp::Run(int argc, char *argv[])
 	gmlKeepRunning=0; // wait for sim to finish
 	while(!gmlProcessor->PumpAux())
 		boost::thread::yield();
+	if(GML_SHARE_LISTS)
+		delete ogc;
 	#endif
 	delete gmlProcessor;
 #endif
+
+	SaveWindowPosition();
 
 	CrashHandler::UninstallHangHandler();
 
@@ -1195,9 +1228,8 @@ int SpringApp::Run(int argc, char *argv[])
  */
 void SpringApp::Shutdown()
 {
-	SaveWindowPosition();
-
 	delete pregame;	//in case we exit during init
+	CLoadScreen::DeleteInstance(); // FIXME? (see ~CGame)
 	delete game;
 	delete gameSetup;
 	delete font;
@@ -1222,7 +1254,7 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 	switch (event.type) {
 		case SDL_VIDEORESIZE: {
 
-			GML_RECMUTEX_LOCK(sim); // Run
+			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
 			CrashHandler::ClearDrawWDT(true);
 			screenWidth = event.resize.w;
@@ -1234,11 +1266,12 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 #endif
 			InitOpenGL();
 			activeController->ResizeEvent();
+
 			break;
 		}
 		case SDL_VIDEOEXPOSE: {
 
-			GML_RECMUTEX_LOCK(sim); // Run
+			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
 			CrashHandler::ClearDrawWDT(true);
 			// re-initialize the stencil
@@ -1246,6 +1279,7 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			glClear(GL_STENCIL_BUFFER_BIT); SDL_GL_SwapBuffers();
 			glClear(GL_STENCIL_BUFFER_BIT); SDL_GL_SwapBuffers();
 			SetupViewportGeometry();
+
 			break;
 		}
 		case SDL_QUIT: {

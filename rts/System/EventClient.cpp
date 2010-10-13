@@ -29,10 +29,12 @@ CEventClient::~CEventClient()
 void CEventClient::Load(CArchiveBase* archive) {}
 void CEventClient::GamePreload() {}
 void CEventClient::GameStart() {}
-void CEventClient::GameOver() {}
+void CEventClient::GameOver(std::vector<unsigned char> winningAllyTeams) {}
+void CEventClient::GamePaused(int playerID, bool paused) {}
 void CEventClient::TeamDied(int teamID) {}
 void CEventClient::TeamChanged(int teamID) {}
 void CEventClient::PlayerChanged(int playerID) {}
+void CEventClient::PlayerAdded(int playerID) {}
 void CEventClient::PlayerRemoved(int playerID, int reason) {}
 
 void CEventClient::UnitCreated(const CUnit* unit, const CUnit* builder) {}

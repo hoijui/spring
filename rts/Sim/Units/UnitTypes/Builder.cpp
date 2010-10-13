@@ -18,6 +18,7 @@
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Projectiles/Unsynced/GfxProjectile.h"
 #include "Sim/Units/COB/CobInstance.h"
@@ -320,7 +321,6 @@ void CBuilder::Update()
 							u->AddDeathDependence(this);
 						}
 						u->health*=0.05f;
-						u->lineage = this->lineage;
 
 						CBuilderCAI *cai = (CBuilderCAI *)commandAI;
 						for (CUnitSet::iterator it = cai->resurrecters.begin(); it != cai->resurrecters.end(); ++it) {
@@ -367,11 +367,6 @@ void CBuilder::Update()
 								logOutput.Print("%s: Capture failed, unit type limit reached", unitDef->humanName.c_str());
 								logOutput.SetLastMsgPos(pos);
 							}
-						} else {
-							// capture succesful
-							int oldLineage = curCapture->lineage;
-							curCapture->lineage = this->lineage;
-							teamHandler->Team(oldLineage)->LeftLineage(curCapture);
 						}
 						curCapture->captureProgress=0.0f;
 						StopBuild(true);
@@ -609,7 +604,6 @@ bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature)
 		b->soloBuilder = this;
 		b->AddDeathDependence(this);
 	}
-	b->lineage = this->lineage;
 	AddDeathDependence(b);
 	curBuild=b;
 

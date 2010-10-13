@@ -33,7 +33,7 @@ macro    (ConfigureNativeSkirmishAI mySourceDirRel_var additionalSources_var add
 	# Compile and install
 	if    (BUILD_THIS_SKIRMISHAI)
 		# Assemble meta data
-		GetVersionFromFile(myVersion "${myDir}/VERSION")
+		GetVersionPlusDepFile(myVersion myVersionDepFile)
 		set(myTarget      "${myName}")
 		set(myInstLibsDir "${SKIRMISH_AI_LIBS}/${myName}/${myVersion}")
 		set(myInstDataDir "${SKIRMISH_AI_DATA}/${myName}/${myVersion}")
@@ -45,7 +45,7 @@ macro    (ConfigureNativeSkirmishAI mySourceDirRel_var additionalSources_var add
 		GetNativeSourcesRecursive(mySources "${mySourceDir}" "${myDir}")
 
 		# Compile the library
-		add_library(${myTarget} MODULE ${mySources} ${additionalSources})
+		add_library(${myTarget} MODULE ${mySources} ${additionalSources} ${myVersionDepFile})
 		FixLibName(${myTarget})
 
 		target_link_libraries(${myTarget} ${additionalLibraries})
@@ -92,7 +92,7 @@ endif (AI_TYPES_NATIVE)
 
 # Build
 if    (BUILD_${myName}_AIINTERFACE)
-	GetVersionFromFile(myVersion ${myDir}/VERSION)
+	GetVersionPlusDepFile(myVersion myVersionDepFile)
 	set(myTarget      "${myName}-AIInterface")
 	set(myInstLibsDir ${AI_INTERFACES_LIBS}/${myName}/${myVersion})
 	set(myInstDataDir ${AI_INTERFACES_DATA}/${myName}/${myVersion})
@@ -105,13 +105,13 @@ if    (BUILD_${myName}_AIINTERFACE)
 
 	aux_source_directory(${mySourceDir} mySources)
 
-	list(APPEND mySources ${rts}/System/Platform/SharedLib)
-	if    (UNIX)
-		list (APPEND mySources ${rts}/System/Platform/Linux/SoLib)
-	else  (UNIX)
-		list (APPEND mySources ${rts}/System/Platform/Win/DllLib)
-	endif (UNIX)
-	add_library(${myTarget} MODULE ${mySources} ${ai_common_SRC})
+#	list(APPEND mySources ${rts}/System/Platform/SharedLib)
+#	if    (UNIX)
+#		list (APPEND mySources ${rts}/System/Platform/Linux/SoLib)
+#	else  (UNIX)
+#		list (APPEND mySources ${rts}/System/Platform/Win/DllLib)
+#	endif (UNIX)
+	add_library(${myTarget} MODULE ${mySources} ${ai_common_SRC} ${myVersionDepFile})
 	FixLibName(${myTarget})
 	target_link_libraries(${myTarget} cutils)
 	set_target_properties(${myTarget} PROPERTIES OUTPUT_NAME "AIInterface")

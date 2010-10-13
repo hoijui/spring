@@ -346,7 +346,7 @@ void CInMapDraw::Draw(void)
 	glEnable(GL_TEXTURE_2D);
 	va->DrawArrayTC(GL_QUADS); //! draw point markers 
 
-	if (visibleLabels.size() > 0) {
+	if (!visibleLabels.empty()) {
 		font->SetColors(); //! default
 
 		//! draw point labels
@@ -456,14 +456,10 @@ int CInMapDraw::GotNetMsg(boost::shared_ptr<const netcode::RawPacket> &packet)
 
 		unsigned char uPlayerID;
 		pckt >> uPlayerID;
-		if (uPlayerID >= playerHandler->ActivePlayers()) {
+		if (!playerHandler->IsValidPlayer(uPlayerID)) {
 			throw netcode::UnpackPacketException("Invalid player number");
 		}
 		playerID = uPlayerID;
-
-		const CPlayer* sender = playerHandler->Player(playerID);
-		if (sender == NULL)
-			throw netcode::UnpackPacketException("Invalid player number");
 
 		unsigned char drawType;
 		pckt >> drawType;
@@ -518,7 +514,7 @@ int CInMapDraw::GotNetMsg(boost::shared_ptr<const netcode::RawPacket> &packet)
 void CInMapDraw::LocalPoint(const float3& constPos, const std::string& label,
                             int playerID)
 {
-	if ((playerID < 0) || (playerID >= playerHandler->ActivePlayers()))
+	if (!playerHandler->IsValidPlayer(playerID))
 		return;
 
 	GML_STDMUTEX_LOCK(inmap); // LocalPoint
@@ -567,6 +563,9 @@ void CInMapDraw::LocalPoint(const float3& constPos, const std::string& label,
 void CInMapDraw::LocalLine(const float3& constPos1, const float3& constPos2,
                            int playerID)
 {
+	if (!playerHandler->IsValidPlayer(playerID))
+		return;
+
 	GML_STDMUTEX_LOCK(inmap); // LocalLine
 
 	const CPlayer* sender = playerHandler->Player(playerID);
@@ -597,6 +596,9 @@ void CInMapDraw::LocalLine(const float3& constPos1, const float3& constPos2,
 
 void CInMapDraw::LocalErase(const float3& constPos, int playerID)
 {
+	if (!playerHandler->IsValidPlayer(playerID))
+		return;
+
 	GML_STDMUTEX_LOCK(inmap); // LocalErase
 
 	const CPlayer* sender = playerHandler->Player(playerID);

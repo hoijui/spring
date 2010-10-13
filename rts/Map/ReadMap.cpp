@@ -12,13 +12,15 @@
 #include "MetalMap.h"
 #include "SM3/Sm3Map.h"
 #include "SMF/SmfReadMap.h"
+#include "Game/LoadScreen.h"
 #include "System/bitops.h"
 #include "System/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/LogOutput.h"
 #include "System/LoadSave/LoadSaveInterface.h"
-#include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/ArchiveScanner.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/FileSystem.h"
 
 using namespace std;
 
@@ -40,7 +42,7 @@ CReadMap* CReadMap::LoadMap(const std::string& mapname)
 	if (mapname.length() < 3)
 		throw content_error("CReadMap::LoadMap(): mapname '" + mapname + "' too short");
 
-	string extension = mapname.substr(mapname.length() - 3);
+	const string extension = filesystem.GetExtension(mapname);
 
 	CReadMap* rm = 0;
 
@@ -110,7 +112,8 @@ CReadMap::CReadMap():
 	facenormals(NULL),
 	centernormals(NULL),
 	typemap(NULL),
-	metalMap(NULL)
+	metalMap(NULL),
+	mapChecksum(0)
 {
 	memset(mipHeightmap, 0, sizeof(mipHeightmap));
 }
@@ -139,7 +142,7 @@ CReadMap::~CReadMap()
 
 void CReadMap::Initialize()
 {
-	PrintLoadMsg("Loading Map");
+	loadscreen->SetLoadMessage("Loading Map");
 
 	// set global map info
 	gs->mapx = width;

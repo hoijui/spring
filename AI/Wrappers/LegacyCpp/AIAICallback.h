@@ -28,7 +28,7 @@ struct SSkirmishAICallback;
 class CAIAICallback : public IAICallback {
 public:
 	CAIAICallback();
-	CAIAICallback(int teamId, const SSkirmishAICallback* sAICallback);
+	CAIAICallback(int skirmishAIId, const SSkirmishAICallback* sAICallback);
 
 	void SendTextMsg(const char* text, int zone);
 	void SetLastMsgPos(float3 pos);
@@ -42,11 +42,24 @@ public:
 
 	int GetCurrentFrame();
 
+	int GetMySkirmishAIId();
 	int GetMyTeam();
 	int GetMyAllyTeam();
 	int GetPlayerTeam(int player);
-	const char* GetTeamSide(int team);
+	int GetTeams();
+	const char* GetTeamSide(int teamId);
 	int GetTeamAllyTeam(int teamId);
+
+	float GetTeamMetalCurrent(int teamId);
+	float GetTeamMetalIncome(int teamId);
+	float GetTeamMetalUsage(int teamId);
+	float GetTeamMetalStorage(int teamId);
+
+	float GetTeamEnergyCurrent(int teamId);
+	float GetTeamEnergyIncome(int teamId);
+	float GetTeamEnergyUsage(int teamId);
+	float GetTeamEnergyStorage(int teamId);
+
 	bool IsAllied(int firstAllyTeamId, int secondAllyTeamId);
 
 	void* CreateSharedMemArea(char* name, int size);
@@ -236,7 +249,7 @@ public:
 	std::map<std::string, std::string> GetMyOptionValues();
 
 private:
-	int teamId;
+	int skirmishAIId;
 	const SSkirmishAICallback* sAICallback;
 
 	void init();
@@ -254,6 +267,7 @@ private:
 	CCommandQueue** unitCurrentCommandQueues;
 	FeatureDef** featureDefs;
 	int* featureDefFrames;
+	float3 startPos;
 };
 
 #endif // _AIAICALLBACK_H

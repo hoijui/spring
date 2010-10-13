@@ -3,6 +3,7 @@
 #include "StdAfx.h"
 #include "EventHandler.h"
 #include "Lua/LuaOpenGL.h"  // FIXME -- should be moved
+#include "System/ConfigHandler.h"
 
 using std::string;
 using std::vector;
@@ -36,9 +37,11 @@ CEventHandler::CEventHandler()
 	SETUP_EVENT(GamePreload,   MANAGED_BIT);
 	SETUP_EVENT(GameStart,     MANAGED_BIT);
 	SETUP_EVENT(GameOver,      MANAGED_BIT);
+	SETUP_EVENT(GamePaused,    MANAGED_BIT);
 	SETUP_EVENT(TeamDied,      MANAGED_BIT);
 	SETUP_EVENT(TeamChanged,   MANAGED_BIT);
 	SETUP_EVENT(PlayerChanged, MANAGED_BIT);
+	SETUP_EVENT(PlayerAdded,   MANAGED_BIT);
 	SETUP_EVENT(PlayerRemoved, MANAGED_BIT);
 
 	SETUP_EVENT(UnitCreated,     MANAGED_BIT);
@@ -153,6 +156,8 @@ CEventHandler::CEventHandler()
 	SetupEvent("MoveCtrlNotify",         NULL, CONTROL_BIT);
 	SetupEvent("UnitPreDamaged",         NULL, CONTROL_BIT);
 	SetupEvent("ShieldPreDamaged",       NULL, CONTROL_BIT);
+	SetupEvent("AllowWeaponTargetCheck", NULL, CONTROL_BIT);
+	SetupEvent("AllowWeaponTarget",      NULL, CONTROL_BIT);
 }
 
 
@@ -332,12 +337,22 @@ void CEventHandler::GameStart()
 }
 
 
-void CEventHandler::GameOver()
+void CEventHandler::GameOver( std::vector<unsigned char> winningAllyTeams )
 {
 	const int count = listGameOver.size();
 	for (int i = 0; i < count; i++) {
 		CEventClient* ec = listGameOver[i];
-		ec->GameOver();
+		ec->GameOver(winningAllyTeams);
+	}
+}
+
+
+void CEventHandler::GamePaused(int playerID, bool paused)
+{
+	const int count = listGamePaused.size();
+	for (int i = 0; i < count; i++) {
+		CEventClient* ec = listGamePaused[i];
+		ec->GamePaused(playerID, paused);
 	}
 }
 
@@ -372,6 +387,16 @@ void CEventHandler::PlayerChanged(int playerID)
 }
 
 
+void CEventHandler::PlayerAdded(int playerID)
+{
+	const int count = listPlayerAdded.size();
+	for (int i = 0; i < count; i++) {
+		CEventClient* ec = listPlayerAdded[i];
+		ec->PlayerAdded(playerID);
+	}
+}
+
+
 void CEventHandler::PlayerRemoved(int playerID, int reason)
 {
 	const int count = listPlayerRemoved.size();
@@ -398,9 +423,15 @@ void CEventHandler::Load(CArchiveBase* archive)
 	}
 }
 
+#ifdef USE_GML
+#define GML_DRAW_CALLIN_SELECTOR() if(!gc->enableDrawCallIns) return;
+#else
+#define GML_DRAW_CALLIN_SELECTOR()
+#endif
 
 void CEventHandler::Update()
 {
+	GML_DRAW_CALLIN_SELECTOR()
 	const int count = listUpdate.size();
 
 	if (count <= 0)
@@ -430,6 +461,7 @@ void CEventHandler::ViewResize()
 #define DRAW_CALLIN(name)                         \
   void CEventHandler:: Draw ## name ()        \
   {                                               \
+    GML_DRAW_CALLIN_SELECTOR()                    \
     const int count = listDraw ## name.size();    \
     if (count <= 0) {                             \
       return;                                     \

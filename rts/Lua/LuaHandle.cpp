@@ -347,7 +347,7 @@ void CLuaHandle::GameStart()
 	return;
 }
 
-void CLuaHandle::GameOver()
+void CLuaHandle::GameOver(const std::vector<unsigned char>& winningAllyTeams)
 {
 	LUA_CALL_IN_CHECK(L);
 	lua_checkstack(L, 2);
@@ -361,8 +361,39 @@ void CLuaHandle::GameOver()
 		return; // the call is not defined
 	}
 
+	lua_createtable(L, winningAllyTeams.size(), 0);
+	for (unsigned int i = 0; i < winningAllyTeams.size(); i++) {
+		lua_pushnumber(L, i + 1);
+		lua_pushnumber(L, winningAllyTeams[i]);
+		lua_rawset(L, -3);
+	}
+
 	// call the routine
-	RunCallInTraceback(cmdStr, 0, 0, errfunc);
+	RunCallInTraceback(cmdStr, 1, 0, errfunc);
+	return;
+}
+
+
+void CLuaHandle::GamePaused(int playerID, bool paused)
+{
+	LUA_CALL_IN_CHECK(L);
+	lua_checkstack(L, 5);
+
+	int errfunc = SetupTraceback();
+
+	static const LuaHashString cmdStr("GamePaused");
+	if (!cmdStr.GetGlobalFunc(L)) {
+		// remove error handler
+		if (errfunc) lua_pop(L, 1);
+		return; // the call is not defined
+	}
+
+	lua_pushnumber(L, playerID);
+	lua_pushboolean(L, paused);
+
+	// call the routine
+	RunCallInTraceback(cmdStr, 2, 0, errfunc);
+
 	return;
 }
 
@@ -419,6 +450,28 @@ void CLuaHandle::PlayerChanged(int playerID)
 	int errfunc = SetupTraceback();
 
 	static const LuaHashString cmdStr("PlayerChanged");
+	if (!cmdStr.GetGlobalFunc(L)) {
+		// remove error handler
+		if (errfunc) lua_pop(L, 1);
+		return; // the call is not defined
+	}
+
+	lua_pushnumber(L, playerID);
+
+	// call the routine
+	RunCallInTraceback(cmdStr, 1, 0, errfunc);
+	return;
+}
+
+
+void CLuaHandle::PlayerAdded(int playerID)
+{
+	LUA_CALL_IN_CHECK(L);
+	lua_checkstack(L, 4);
+
+	int errfunc = SetupTraceback();
+
+	static const LuaHashString cmdStr("PlayerAdded");
 	if (!cmdStr.GetGlobalFunc(L)) {
 		// remove error handler
 		if (errfunc) lua_pop(L, 1);
@@ -653,7 +706,7 @@ void CLuaHandle::UnitCommand(const CUnit* unit, const Command& command)
 	lua_pushnumber(L, command.id);
 	lua_pushnumber(L, command.options);
 
-	const vector<float> params = command.params;
+	const vector<float> &params = command.params;
 	lua_createtable(L, params.size(), 0);
 	for (unsigned int i = 0; i < params.size(); i++) {
 		lua_pushnumber(L, i + 1);

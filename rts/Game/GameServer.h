@@ -77,7 +77,6 @@ public:
 	void CreateNewFrame(bool fromServerThread, bool fixedFrameTime);
 
 	bool WaitsOnCon() const;
-	bool GameHasStarted() const;
 
 	void SetGamePausable(const bool arg);
 
@@ -134,8 +133,14 @@ private:
 
 	void AddToPacketCache(boost::shared_ptr<const netcode::RawPacket> &pckt);
 
+	void AdjustPlayerNumber(const unsigned char msg, unsigned char &player);
+	void UpdatePlayerNumberMap();
+
+	float GetDemoTime();
+
 	/////////////////// game status variables ///////////////////
 
+	unsigned char playerNumberMap[256];
 	volatile bool quitServer;
 	int serverframenum;
 
@@ -143,26 +148,28 @@ private:
 	spring_time readyTime;
 	spring_time gameStartTime;
 	spring_time gameEndTime;	///< Tick when game end was detected
-	bool sentGameOverMsg;
 	spring_time lastTick;
 	float timeLeft;
 	spring_time lastPlayerInfo;
 	spring_time lastUpdate;
 	float modGameTime;
+	float gameTime;
+	float startTime;
 
 	bool isPaused;
 	float userSpeedFactor;
 	float internalSpeed;
 	bool cheating;
 
-	std::vector<GameParticipant> players;
 	size_t ReserveNextAvailableSkirmishAIId();
 	
 	std::map<size_t, GameSkirmishAI> ais;
 	std::list<size_t> usedSkirmishAIIds;
 	void FreeSkirmishAIId(const size_t skirmishAIId);
-	
+
+	std::vector<GameParticipant> players;	
 	std::vector<GameTeam> teams;
+	std::vector<unsigned char> winningAllyTeams;
 
 	float medianCpu;
 	int medianPing;
@@ -197,7 +204,7 @@ private:
 	void InternalSpeedChange(float newSpeed);
 	void UserSpeedChange(float newSpeed, int player);
 
-	void AddAdditionalUser( const std::string& name, const std::string& passwd );
+	void AddAdditionalUser( const std::string& name, const std::string& passwd, bool fromDemo = false );
 
 	bool hasLocalClient;
 	unsigned localClientNumber;
@@ -219,6 +226,7 @@ private:
 	MsgToForwardMap relayingMessagesMap;
 
 	bool canReconnect;
+	bool gameHasStarted;
 };
 
 extern CGameServer* gameServer;

@@ -10,9 +10,12 @@
 #include "GlobalUnsynced.h"
 #include "Game/GameSetup.h"
 #include "Game/PlayerHandler.h"
-#include "Sim/Units/Unit.h"
+#include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/GlobalConstants.h" // for RANDINT_MAX
+#include "Sim/Units/Unit.h" // required by CREG
 #include "System/mmgr.h"
 #include "System/ConfigHandler.h"
+#include "System/Exceptions.h"
 #include "System/Util.h"
 #include "System/creg/creg_cond.h"
 
@@ -34,14 +37,13 @@ CR_BIND(CGlobalUnsynced, );
 CR_REG_METADATA(CGlobalUnsynced, (
 				CR_MEMBER(modGameTime),
 				CR_MEMBER(gameTime),
+				CR_MEMBER(startTime),
 				CR_MEMBER(myPlayerNum),
 				CR_MEMBER(myTeam),
 				CR_MEMBER(myAllyTeam),
 				CR_MEMBER(spectating),
 				CR_MEMBER(spectatingFullView),
 				CR_MEMBER(spectatingFullSelect),
-				CR_MEMBER(moveWarnings),
-				CR_MEMBER(buildWarnings),
 				CR_MEMBER(directControl),
 				CR_MEMBER(usRandSeed),
 				CR_RESERVED(64)
@@ -55,17 +57,17 @@ CGlobalUnsynced::CGlobalUnsynced()
 
 	modGameTime = 0;
 	gameTime = 0;
+	startTime = 0;
 
 	myPlayerNum = 0;
 	myTeam = 1;
 	myAllyTeam = 1;
+	myPlayingTeam = -1;
+	myPlayingAllyTeam = -1;
 
 	spectating           = false;
 	spectatingFullView   = false;
 	spectatingFullSelect = false;
-
-	moveWarnings  = !!configHandler->Get("MoveWarnings", 0);
-	buildWarnings = !!configHandler->Get("BuildWarnings", 0);
 
 	directControl = NULL;
 	playerHandler = new CPlayerHandler();
@@ -124,21 +126,28 @@ float3 CGlobalUnsynced::usRandVector()
 	return ret;
 }
 
-void CGlobalUnsynced::SetMyPlayer(const int mynumber)
+void CGlobalUnsynced::SetMyPlayer(const int myNumber)
 {
-	myPlayerNum = mynumber;
-	if (gameSetup && gameSetup->playerStartingData.size() > mynumber)
-	{
-		myTeam = gameSetup->playerStartingData[myPlayerNum].team;
-		myAllyTeam = gameSetup->teamStartingData[myTeam].teamAllyteam;
+	myPlayerNum = myNumber;
 
-		spectating = gameSetup->playerStartingData[myPlayerNum].spectator;
-		spectatingFullView   = gameSetup->playerStartingData[myPlayerNum].spectator;
-		spectatingFullSelect = gameSetup->playerStartingData[myPlayerNum].spectator;
+	const CPlayer* myPlayer = playerHandler->Player(myPlayerNum);
 
-		assert(myPlayerNum >= 0
-				&& gameSetup->playerStartingData.size() >= static_cast<size_t>(myPlayerNum)
-				&& myTeam >= 0
-				&& gameSetup->teamStartingData.size() >= myTeam);
+	myTeam = myPlayer->team;
+	if (!teamHandler->IsValidTeam(myTeam)) {
+		throw content_error("Invalid MyTeam in player setup");
+	}
+
+	myAllyTeam = teamHandler->AllyTeam(myTeam);
+	if (!teamHandler->IsValidAllyTeam(myAllyTeam)) {
+		throw content_error("Invalid MyAllyTeam in player setup");
+	}
+
+	spectating           = myPlayer->spectator;
+	spectatingFullView   = myPlayer->spectator;
+	spectatingFullSelect = myPlayer->spectator;
+
+	if (!spectating) {
+		myPlayingTeam = myTeam;
+		myPlayingAllyTeam = myAllyTeam;
 	}
 }

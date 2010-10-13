@@ -13,6 +13,13 @@ class CHeightLinePalette;
 class CBaseGroundDrawer
 {
 public:
+	enum {
+		COLOR_R = 2,
+		COLOR_G = 1,
+		COLOR_B = 0,
+		COLOR_A = 3,
+	};
+
 	CBaseGroundDrawer(void);
 	virtual ~CBaseGroundDrawer(void);
 
@@ -38,8 +45,9 @@ public:
 		drawLos,
 		drawMetal,
 		drawHeight,
-		drawPath,
-		drawHeat
+		drawPathSquares,
+		drawPathHeat,
+		drawPathCost,
 	};
 
 protected:
@@ -52,10 +60,11 @@ public:
 	void DisableExtraTexture();
 	void SetHeightTexture();
 	void SetMetalTexture(unsigned char* tex,float* extractMap,unsigned char* pal,bool highRes);
-	void SetPathMapTexture();
+	void TogglePathSquaresTexture();
+	void TogglePathHeatTexture();
+	void TogglePathCostTexture();
 	void ToggleLosTexture();
 	void ToggleRadarAndJammer();
-	void ToggleHeatMapTexture();
 	bool UpdateExtraTexture();
 	bool DrawExtraTex() const { return drawMode!=drawNormal; };
 

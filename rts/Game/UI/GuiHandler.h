@@ -72,12 +72,12 @@ public:
 	bool SetActiveCommand(const Action& action, const CKeySet& ks, int actionIndex);
 
 	void SetDrawSelectionInfo(bool dsi) { drawSelectionInfo = dsi; }
-	bool GetDrawSelectionInfo() { return drawSelectionInfo; }
+	bool GetDrawSelectionInfo() const { return drawSelectionInfo; }
 
 	void SetBuildFacing(int facing);
 	void SetBuildSpacing(int spacing);
 
-	void PushLayoutCommand(const std::string&);
+	void PushLayoutCommand(const std::string&, bool luacmd = true);
 	void RunLayoutCommands();
 
 public:
@@ -222,7 +222,7 @@ private:
 	int failedSound;
 
 	std::vector<std::string> layoutCommands;
-
+	bool hasLuaUILayoutCommands;
 };
 
 

@@ -9,7 +9,7 @@
 #include "GlobalSynced.h"
 #include "GlobalConstants.h"
 #include "Sim/Objects/SolidObject.h"
-#include "Sim/Path/PathManager.h"
+#include "Sim/Path/IPathManager.h"
 #include "creg/STL_Map.h"
 
 CGroundBlockingObjectMap* groundBlockingObjectMap;
@@ -166,7 +166,7 @@ CSolidObject* CGroundBlockingObjectMap::GroundBlockedUnsafe(int mapSquare, bool 
 	CSolidObject* q = it->second;
 	it++;
 
-	for (; it != cell.end(); it++) {
+	for (; it != cell.end(); ++it) {
 		CSolidObject* obj = it->second;
 		if (obj->pos.y > p->pos.y) { p = obj; }
 		if (obj->pos.y < q->pos.y) { q = obj; }

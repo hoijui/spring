@@ -4,6 +4,7 @@
 #define __BUILDING_H__
 
 #include "Sim/Units/Unit.h"
+#include "System/float3.h"
 
 struct BuildingGroundDecal;
 
@@ -18,6 +19,7 @@ public:
 
 	void Init(const CUnit* builder);
 	void UnitInit(const UnitDef* def, int team, const float3& position);
+	void ForcedMove(const float3& newPos, int facing);
 
 	BuildingGroundDecal* buildingDecal;
 };

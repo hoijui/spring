@@ -12,7 +12,6 @@
 class CUnit;
 class CWeaponProjectile;
 struct WeaponDef;
-class UnitDefWeapon;
 
 enum TargetType {
 	Target_None,
@@ -51,7 +50,7 @@ public:
 
 	void AimReady(int value);
 
-	bool ShouldCheckForNewTarget() const;
+	bool AllowWeaponTargetCheck() const;
 
 	void Fire();
 

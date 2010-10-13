@@ -12,18 +12,13 @@
 #include "HeightLinePalette.h"
 #include "ReadMap.h"
 #include "MapInfo.h"
+#include "Rendering/IPathDrawer.h"
+#include "Rendering/Env/BaseTreeDrawer.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/RadarHandler.h"
-#include "Sim/MoveTypes/MoveInfo.h"
-#include "Sim/MoveTypes/MoveMath/MoveMath.h"
-#include "Sim/Path/PathManager.h"
-#include "Sim/Units/UnitDef.h"
-#include "Sim/Units/UnitDefHandler.h"
-#include "Sim/Units/UnitHandler.h"
-#include "ConfigHandler.h"
-#include "FastMath.h"
-#include "myMath.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
+#include "System/ConfigHandler.h"
+#include "System/FastMath.h"
+#include "System/myMath.h"
 
 CBaseGroundDrawer::CBaseGroundDrawer(void)
 {
@@ -38,10 +33,12 @@ CBaseGroundDrawer::CBaseGroundDrawer(void)
 	drawLineOfSight = false;
 	drawRadarAndJammer = true;
 	wireframe = false;
+	highResInfoTex = false;
+	updateTextureState = 0;
 
-	extraTex = 0;
-	extraTexPal = 0;
-	extractDepthMap = 0;
+	extraTex = NULL;
+	extraTexPal = NULL;
+	extractDepthMap = NULL;
 
 	extraTexPBO.Bind();
 	extraTexPBO.Resize(gs->pwr2mapx * gs->pwr2mapy * 4);
@@ -49,7 +46,7 @@ CBaseGroundDrawer::CBaseGroundDrawer(void)
 
 	highResInfoTexWanted = false;
 
-	highResLosTex = !!configHandler->Get("HighResLos", 0);
+	highResLosTex = configHandler->Get("HighResLos", false);
 	extraTextureUpdateRate = std::max(4, configHandler->Get("ExtraTextureUpdateRate", 45) - 1);
 
 	jamColor[0] = (int)(losColorScale * 0.25f);
@@ -151,83 +148,98 @@ void CBaseGroundDrawer::SetHeightTexture()
 		DisableExtraTexture();
 	else {
 		SetDrawMode (drawHeight);
-		highResInfoTexWanted=true;
-		extraTex=0;
-		updateTextureState=0;
-		while(!UpdateExtraTexture());
+
+		highResInfoTexWanted = true;
+		extraTex = 0;
+		updateTextureState = 0;
+		while (!UpdateExtraTexture());
 	}
 }
 
 
-void CBaseGroundDrawer::SetMetalTexture(unsigned char* tex,float* extractMap,unsigned char* pal,bool highRes)
+void CBaseGroundDrawer::SetMetalTexture(unsigned char* tex, float* extractMap, unsigned char* pal, bool highRes)
 {
 	if (drawMode == drawMetal)
 		DisableExtraTexture();
 	else {
 		SetDrawMode (drawMetal);
 
-		highResInfoTexWanted=false;
-		extraTex=tex;
-		extraTexPal=pal;
-		extractDepthMap=extractMap;
-		updateTextureState=0;
-		while(!UpdateExtraTexture());
+		highResInfoTexWanted = false;
+		extraTex = tex;
+		extraTexPal = pal;
+		extractDepthMap = extractMap;
+		updateTextureState = 0;
+		while (!UpdateExtraTexture());
 	}
 }
 
 
-void CBaseGroundDrawer::SetPathMapTexture()
+void CBaseGroundDrawer::TogglePathSquaresTexture()
 {
-	if (drawMode == drawPath) {
+	if (drawMode == drawPathSquares) {
 		DisableExtraTexture();
 	} else {
-		SetDrawMode(drawPath);
+		SetDrawMode(drawPathSquares);
 		extraTex = 0;
 		highResInfoTexWanted = false;
 		updateTextureState = 0;
-		while(!UpdateExtraTexture());
+		while (!UpdateExtraTexture());
 	}
 }
+
+void CBaseGroundDrawer::TogglePathHeatTexture()
+{
+	if (drawMode == drawPathHeat) {
+		DisableExtraTexture();
+	} else {
+		SetDrawMode(drawPathHeat);
+		extraTex = 0;
+		highResInfoTexWanted = false;
+		updateTextureState = 0;
+		while (!UpdateExtraTexture());
+	}
+}
+
+void CBaseGroundDrawer::TogglePathCostTexture()
+{
+	if (drawMode == drawPathCost) {
+		DisableExtraTexture();
+	} else {
+		SetDrawMode(drawPathCost);
+		extraTex = 0;
+		highResInfoTexWanted = false;
+		updateTextureState = 0;
+		while (!UpdateExtraTexture());
+	}
+}
+
 
 
 void CBaseGroundDrawer::ToggleLosTexture()
 {
-	if (drawMode==drawLos) {
-		drawLineOfSight=false;
+	if (drawMode == drawLos) {
+		drawLineOfSight = false;
 		DisableExtraTexture();
 	} else {
-		drawLineOfSight=true;
+		drawLineOfSight = true;
 		SetDrawMode(drawLos);
-		extraTex=0;
-		highResInfoTexWanted=highResLosTex;
-		updateTextureState=0;
-		while(!UpdateExtraTexture());
+		extraTex = 0;
+		highResInfoTexWanted = highResLosTex;
+		updateTextureState = 0;
+		while (!UpdateExtraTexture());
 	}
 }
 
 
 void CBaseGroundDrawer::ToggleRadarAndJammer()
 {
-	drawRadarAndJammer=!drawRadarAndJammer;
-	if (drawMode==drawLos){
-		updateTextureState=0;
-		while(!UpdateExtraTexture());
-	}
-}
-
-
-void CBaseGroundDrawer::ToggleHeatMapTexture()
-{
-	if (drawMode == drawHeat) {
-		DisableExtraTexture();
-	} else {
-		SetDrawMode(drawHeat);
-		extraTex = 0;
-		highResInfoTexWanted = false;
+	drawRadarAndJammer = !drawRadarAndJammer;
+	if (drawMode == drawLos) {
 		updateTextureState = 0;
-		while(!UpdateExtraTexture());
+		while (!UpdateExtraTexture());
 	}
 }
+
 
 
 static inline int InterpolateLos(const unsigned short* p, int xsize, int ysize,
@@ -278,7 +290,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 #endif
 
 	if (updateTextureState < extraTextureUpdateRate) {
-		const int pwr2mapx_half = gs->pwr2mapx / 2;
+		const int pwr2mapx_half = gs->pwr2mapx >> 1;
 
 		int starty;
 		int endy;
@@ -286,6 +298,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 		GLbyte* infoTexMem;
 
 		extraTexPBO.Bind();
+
 		if (highResInfoTexWanted) {
 			starty = updateTextureState * gs->mapy / extraTextureUpdateRate;
 			endy = (updateTextureState + 1) * gs->mapy / extraTextureUpdateRate;
@@ -300,100 +313,19 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 			infoTexMem = (GLbyte*)extraTexPBO.MapBuffer(offset, (endy - starty) * pwr2mapx_half * 4);
 		}
 
-#define COLOR_R 2
-#define COLOR_G 1
-#define COLOR_B 0
-#define COLOR_A 3
+		switch (drawMode) {
+			case drawPathSquares:
+			case drawPathHeat:
+			case drawPathCost: {
+				pathDrawer->UpdateExtraTexture(drawMode, starty, endy, offset, reinterpret_cast<unsigned char*>(infoTexMem));
+			} break;
 
-		switch(drawMode) {
-			case drawPath: {
-				if (guihandler->inCommand > 0 &&
-				    static_cast<size_t>(guihandler->inCommand) < guihandler->commands.size() &&
-				    guihandler->commands[guihandler->inCommand].type == CMDTYPE_ICON_BUILDING)
-				{
-					// use the current build order
-					for (int y = starty; y < endy; ++y) {
-						const int y_pwr2mapx_half = y*pwr2mapx_half;
-						const int y_16            = y*16;
-						for (int x = 0; x < gs->hmapx; ++x) {
-							float m;
-							if (!loshandler->InLos(float3(x*16+8, 0, y_16+8), gu->myAllyTeam)) {
-								m = 0.25f;
-							} else {
-								const UnitDef* unitdef = unitDefHandler->GetUnitDefByID(-guihandler->commands[guihandler->inCommand].id);
-								CFeature* f;
-
-								GML_RECMUTEX_LOCK(quad); // UpdateExtraTexture - testunitbuildsquare accesses features in the quadfield
-
-								if (uh->TestUnitBuildSquare(BuildInfo(unitdef, float3(x*16+8, 0, y_16+8), guihandler->buildFacing), f, gu->myAllyTeam)) {
-									if (f) {
-										m = 0.5f;
-									} else {
-										m = 1.0f;
-									}
-								} else {
-									m = 0.0f;
-								}
-							}
-							m = (int) (m*255.0f);
-							const int a = (y_pwr2mapx_half + x) * 4 - offset;
-							infoTexMem[a + COLOR_R] = 255 - m;
-							infoTexMem[a + COLOR_G] = m;
-							infoTexMem[a + COLOR_B] = 0;
-							infoTexMem[a + COLOR_A] = 255;
-						}
-					}
-				} else {
-					const MoveData* md = NULL;
-					{
-						GML_RECMUTEX_LOCK(sel); // UpdateExtraTexture
-						if (!selectedUnits.selectedUnits.empty()) {
-							md = (*selectedUnits.selectedUnits.begin())->unitDef->movedata;
-						}
-					}
-
-					if (md != NULL) {
-						// use the first selected unit, if it has the ability to move
-						const bool showBlockedMap = (gs->cheatEnabled || gu->spectating);
-						for (int y = starty; y < endy; ++y) {
-							const int y_pwr2mapx_half = y*pwr2mapx_half;
-							const int y_2             = y*2;
-							for (int x = 0; x < gs->hmapx; ++x) {
-								float m = md->moveMath->SpeedMod(*md, x*2, y_2);
-								if (showBlockedMap && (md->moveMath->IsBlocked2(*md, x*2+1, y_2+1) & (CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN))) {
-									m = 0.0f;
-								}
-								m = std::min(1.0f, fastmath::apxsqrt(m));
-								m = (int) (m*255.0f);
-								const int a = (y_pwr2mapx_half + x) * 4 - offset;
-								infoTexMem[a + COLOR_R] = 255 - m;
-								infoTexMem[a + COLOR_G] = m;
-								infoTexMem[a + COLOR_B] = 0;
-								infoTexMem[a + COLOR_A] = 255;
-							}
-						}
-					} else {
-						// we have nothing to show
-						// -> draw a dark red overlay
-						for (int y = starty; y < endy; ++y) {
-							const int y_pwr2mapx_half = y*pwr2mapx_half;
-							for (int x = 0; x < gs->hmapx; ++x) {
-								const int a = (y_pwr2mapx_half + x) * 4 - offset;
-								infoTexMem[a + COLOR_R] = 100;
-								infoTexMem[a + COLOR_G] = 0;
-								infoTexMem[a + COLOR_B] = 0;
-								infoTexMem[a + COLOR_A] = 255;
-							}
-						}
-					}
-				}
-				break;
-			}
 			case drawMetal: {
 				for (int y = starty; y < endy; ++y) {
 					const int y_pwr2mapx_half = y*pwr2mapx_half;
 					const int y_2 = y*2;
 					const int y_hmapx = y * gs->hmapx;
+
 					for (int x = 0; x < gs->hmapx; ++x) {
 						const int a   = (y_pwr2mapx_half + x) * 4 - offset;
 						const int alx = ((x*2) >> loshandler->airMipLevel);
@@ -411,19 +343,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 				}
 				break;
 			}
-			case drawHeat: {
-				for (int y = starty; y < endy; ++y) {
-					const int y_pwr2hmapx = y * pwr2mapx_half;
-					for (int x = 0; x  < gs->hmapx; ++x) {
-						const int i = (y_pwr2hmapx + x) * 4 - offset;
-						infoTexMem[i + COLOR_R] = (unsigned char)Clamp(8*pathManager->GetHeatOnSquare(x<<1, y<<1), 32, 255);
-						infoTexMem[i + COLOR_G] = 32;
-						infoTexMem[i + COLOR_B] = 32;
-						infoTexMem[i + COLOR_A] = 255;
-					}
-				}
-				break;
-			}
+
 			case drawHeight: {
 				extraTexPal = heightLinePal->GetData();
 				for (int y = starty; y < endy; ++y) {
@@ -502,14 +422,10 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 				}
 				break;
 			}
+
 			case drawNormal:
 				break;
 		} // switch (drawMode)
-
-#undef COLOR_R
-#undef COLOR_G
-#undef COLOR_B
-#undef COLOR_A
 
 		extraTexPBO.UnmapBuffer();
 		/*

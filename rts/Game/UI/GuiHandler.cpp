@@ -80,12 +80,14 @@ CGuiHandler::CGuiHandler():
 	curIconCommand(-1),
 	actionOffset(0),
 	drawSelectionInfo(true),
-	gatherMode(false)
+	gatherMode(false),
+	hasLuaUILayoutCommands(false)
 {
 	icons = new IconInfo[16];
 	iconsSize = 16;
 	iconsCount = 0;
 
+	LoadDefaults();
 	LoadConfig("ctrlpanel.txt");
 
 	miniMapMarker = !!configHandler->Get("MiniMapMarker", 1);
@@ -176,8 +178,6 @@ static bool SafeAtoF(float& var, const std::string& value)
 
 bool CGuiHandler::LoadConfig(const std::string& filename)
 {
-	LoadDefaults();
-
 	CFileHandler ifs(filename);
 	CSimpleParser parser(ifs);
 
@@ -192,7 +192,7 @@ bool CGuiHandler::LoadConfig(const std::string& filename)
 			break;
 		}
 
-		std::vector<std::string> words = parser.Tokenize(line, 1);
+		const std::vector<std::string> &words = parser.Tokenize(line, 1);
 
 		const std::string command = StringToLower(words[0]);
 
@@ -364,7 +364,7 @@ void CGuiHandler::ParseFillOrder(const std::string& text)
 	}
 
 	// split the std::string into slot names
-	std::vector<std::string> slotNames = CSimpleParser::Tokenize(text, 0);
+	const std::vector<std::string> &slotNames = CSimpleParser::Tokenize(text, 0);
 	if ((int)slotNames.size() != iconsPerPage) {
 		return;
 	}
@@ -522,7 +522,7 @@ void CGuiHandler::LayoutIcons(bool useSelectionPage)
 	commands.clear();
 	forceLayoutUpdate = false;
 
-	if ((luaUI != NULL) && luaUI->HasLayoutButtons()) {
+	if (luaUI && luaUI->HasLayoutButtons()) {
 		if (LayoutCustomIcons(useSelectionPage)) {
 			if (validInCommand) {
 				RevertToCmdDesc(cmdDesc, defCmd, samePage);
@@ -656,7 +656,7 @@ bool CGuiHandler::LayoutCustomIcons(bool useSelectionPage)
 	CSelectedUnits::AvailableCommandsStruct ac;
 	ac = selectedUnits.GetAvailableCommands();
 	std::vector<CommandDescription> cmds = ac.commands;
-	if (cmds.size() > 0) {
+	if (!cmds.empty()) {
 		ConvertCommands(cmds);
 		AppendPrevAndNext(cmds);
 	}
@@ -1571,7 +1571,8 @@ bool CGuiHandler::ProcessLocalActions(const Action& action)
 	// only process the build options while building
 	// (conserve the keybinding space where we can)
 	if ((inCommand >= 0) && ((size_t)inCommand < commands.size()) &&
-			(commands[inCommand].type == CMDTYPE_ICON_BUILDING)) {
+			((commands[inCommand].type == CMDTYPE_ICON_BUILDING) ||
+			(commands[inCommand].id == CMD_UNLOAD_UNITS))) {
 		if (ProcessBuildActions(action)) {
 			return true;
 		}
@@ -1647,7 +1648,7 @@ bool CGuiHandler::ProcessLocalActions(const Action& action)
 
 void CGuiHandler::RunLayoutCommand(const std::string& command)
 {
-	if (command.find("reload") == 0) {
+	if (command == "reload") {
 		if (CLuaHandle::GetActiveHandle() != NULL) {
 			// NOTE: causes a SEGV through RunCallIn()
 			logOutput.Print("Can not reload from within LuaUI, yet");
@@ -1669,6 +1670,7 @@ void CGuiHandler::RunLayoutCommand(const std::string& command)
 				logOutput.Print("Reloading failed\n");
 			}
 		}
+		LayoutIcons(false);
 	}
 	else if (command == "disable") {
 		if (CLuaHandle::GetActiveHandle() != NULL) {
@@ -1681,6 +1683,7 @@ void CGuiHandler::RunLayoutCommand(const std::string& command)
 			LoadConfig("ctrlpanel.txt");
 			logOutput.Print("Disabled LuaUI\n");
 		}
+		LayoutIcons(false);
 	}
 	else {
 		if (luaUI != NULL) {
@@ -1689,8 +1692,6 @@ void CGuiHandler::RunLayoutCommand(const std::string& command)
 			logOutput.Print("LuaUI is not loaded\n");
 		}
 	}
-
-	LayoutIcons(false);
 
 	return;
 }
@@ -2292,6 +2293,8 @@ Command CGuiHandler::GetCommand(int mousex, int mousey, int buttonHint, bool pre
 					c.params.push_back(pos.y);
 					c.params.push_back(pos.z);
 					c.params.push_back(0);//zero radius
+					if(c.id == CMD_UNLOAD_UNITS)
+						c.params.push_back((float)buildFacing);
 				}
 			} else {	//created area
 				float dist=ground->LineGroundCol(mouse->buttons[button].camPos,mouse->buttons[button].camPos+mouse->buttons[button].dir*globalRendering->viewRange*1.4f);
@@ -2308,6 +2311,8 @@ Command CGuiHandler::GetCommand(int mousex, int mousey, int buttonHint, bool pre
 				}
 				float3 pos2=camerapos+mousedir*dist;
 				c.params.push_back(std::min(maxRadius,pos.distance2D(pos2)));
+				if(c.id == CMD_UNLOAD_UNITS)
+					c.params.push_back((float)buildFacing);
 			}
 			CreateOptions(c,(button==SDL_BUTTON_LEFT?0:1));
 			return c;}
@@ -3706,7 +3711,7 @@ void CGuiHandler::DrawMapStuff(int onMinimap)
 						for (; ui != selectedUnits.selectedUnits.end(); ++ui) {
 							temp = (*ui)->commandAI->GetOverlapQueued(c);
 							std::vector<Command>::iterator ti = temp.begin();
-							for (; ti != temp.end(); ti++) {
+							for (; ti != temp.end(); ++ti) {
 								cv.insert(cv.end(),*ti);
 							}
 						}
@@ -4270,22 +4275,33 @@ void CGuiHandler::SetBuildSpacing(int spacing)
 /******************************************************************************/
 
 
-void CGuiHandler::PushLayoutCommand(const std::string& cmd) {
+void CGuiHandler::PushLayoutCommand(const std::string& cmd, bool luacmd) {
 	GML_RECMUTEX_LOCK(laycmd); // PushLayoutCommand
 
 	layoutCommands.push_back(cmd);
+	if(luacmd)
+		hasLuaUILayoutCommands = true;
 }
 
 void CGuiHandler::RunLayoutCommands() {
+	bool luacmd = false;
+	std::vector<std::string> layoutCmds;
+
 	if (!layoutCommands.empty()) {
-		GML_RECMUTEX_LOCK(sim); // Draw
-		GML_RECMUTEX_LOCK(laycmd); // Draw
+		GML_RECMUTEX_LOCK(laycmd); // RunLayoutCommands
 
-		//! RunLayoutCommand can add new commands
-		//! and because it is never good to change the vector you are iterating over, we swap it with a new one
-		std::vector<std::string> layoutCmds;
 		layoutCmds.swap(layoutCommands);
+		luacmd = hasLuaUILayoutCommands;
+		hasLuaUILayoutCommands = false;
+	}
 
+	if(luacmd) {
+		GML_MSTMUTEX_LOCK(sim); // RunLayoutCommands
+
+		for (std::vector<std::string>::const_iterator cit = layoutCmds.begin(); cit != layoutCmds.end(); ++cit) {
+			RunLayoutCommand(*cit);
+		}
+	} else {
 		for (std::vector<std::string>::const_iterator cit = layoutCmds.begin(); cit != layoutCmds.end(); ++cit) {
 			RunLayoutCommand(*cit);
 		}

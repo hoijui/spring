@@ -125,8 +125,10 @@ void CTAAirMoveType::SetState(AircraftState newState)
 
 	if (newState == AIRCRAFT_LANDED) {
 		owner->dontUseWeapons = true;
+		owner->useAirLos = false;
 	} else {
 		owner->dontUseWeapons = false;
+		owner->useAirLos = true;
 	}
 
 	aircraftState = newState;
@@ -235,10 +237,12 @@ void CTAAirMoveType::ExecuteStop()
 
 	switch (aircraftState) {
 		case AIRCRAFT_TAKEOFF:
-			SetState(AIRCRAFT_LANDING);
-			// trick to land directly
-			waitCounter = 30;
-			break;
+			if(!dontLand && autoLand) {
+				SetState(AIRCRAFT_LANDING);
+				// trick to land directly
+				waitCounter = 30;
+				break;
+			} // let it fall through
 		case AIRCRAFT_FLYING:
 			if (owner->unitDef->DontLand()) {
 				goalPos = owner->pos;
@@ -883,10 +887,9 @@ void CTAAirMoveType::Update()
 		oldpos = pos;
 
 		if (!dontCheckCol && collide) {
-			vector<CUnit*> nearUnits = qf->GetUnitsExact(pos, owner->radius + 6);
-			vector<CUnit*>::iterator ui;
+			const vector<CUnit*> &nearUnits = qf->GetUnitsExact(pos, owner->radius + 6);
 
-			for (ui = nearUnits.begin(); ui != nearUnits.end(); ++ui) {
+			for (vector<CUnit*>::const_iterator ui = nearUnits.begin(); ui != nearUnits.end(); ++ui) {
 				if ((*ui)->transporter)
 					continue;
 
@@ -1033,7 +1036,7 @@ void CTAAirMoveType::CheckForCollision(void)
 	forward.Normalize();
 	float3 midTestPos = pos + forward * 121;
 
-	std::vector<CUnit*> others = qf->GetUnitsExact(midTestPos, 115);
+	const std::vector<CUnit*> &others = qf->GetUnitsExact(midTestPos, 115);
 	float dist = 200;
 
 	if (lastColWarning) {
@@ -1042,7 +1045,7 @@ void CTAAirMoveType::CheckForCollision(void)
 		lastColWarningType = 0;
 	}
 
-	for (std::vector<CUnit*>::iterator ui = others.begin(); ui != others.end(); ++ui) {
+	for (std::vector<CUnit*>::const_iterator ui = others.begin(); ui != others.end(); ++ui) {
 		if (*ui == owner || !(*ui)->unitDef->canfly)
 			continue;
 
@@ -1068,7 +1071,7 @@ void CTAAirMoveType::CheckForCollision(void)
 		AddDeathDependence(lastColWarning);
 		return;
 	}
-	for (std::vector<CUnit*>::iterator ui = others.begin(); ui != others.end(); ++ui) {
+	for (std::vector<CUnit*>::const_iterator ui = others.begin(); ui != others.end(); ++ui) {
 		if (*ui == owner)
 			continue;
 		if (((*ui)->midPos - pos).SqLength() < dist * dist) {

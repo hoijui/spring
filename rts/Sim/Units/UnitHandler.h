@@ -17,6 +17,7 @@ class CUnit;
 class CBuilderCAI;
 class CFeature;
 class CLoadSaveInterface;
+struct BuildInfo;
 
 class CUnitHandler
 {
@@ -90,12 +91,6 @@ public:
 	float waterDamage;
 
 	float maxUnitRadius; ///< largest radius seen so far
-
-	int lastDamageWarning;
-	int lastCmdDamageWarning;
-
-	bool limitDgun;
-	float dgunRadius;
 
 	bool morphUnitToFeature;
 

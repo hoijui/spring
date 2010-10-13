@@ -41,8 +41,6 @@ static int CompareTatex2( const void *arg1, const void *arg2 ){
 
 C3DOTextureHandler::C3DOTextureHandler()
 {
-	PrintLoadMsg("Creating unit textures");
-
 	CFileHandler file("unittextures/tatex/teamtex.txt");
 	CSimpleParser parser(file);
 
@@ -56,7 +54,7 @@ C3DOTextureHandler::C3DOTextureHandler()
 	int numfiles = 0;
 	int totalSize = 0;
 
-	std::vector<std::string> filesBMP = CFileHandler::FindFiles("unittextures/tatex/", "*.bmp");
+	const std::vector<std::string> &filesBMP = CFileHandler::FindFiles("unittextures/tatex/", "*.bmp");
 	std::vector<std::string> files    = CFileHandler::FindFiles("unittextures/tatex/", "*.tga");
 	files.insert(files.end(),filesBMP.begin(),filesBMP.end());
 

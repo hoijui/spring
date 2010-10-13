@@ -3,8 +3,8 @@
 #ifndef _GLOBAL_UNSYNCED_H
 #define _GLOBAL_UNSYNCED_H
 
-#include "float3.h"
-#include "creg/creg_cond.h"
+#include "System/creg/creg_cond.h"
+#include "System/float3.h"
 
 class CGameSetup;
 class CUnit;
@@ -27,8 +27,8 @@ public:
 	float  usRandFloat();  //!< Unsynced random float
 	float3 usRandVector(); //!< Unsynced random vector
 
-	void LoadFromSetup(const CGameSetup*);
-	void SetMyPlayer(const int mynumber);
+	void LoadFromSetup(const CGameSetup* setup);
+	void SetMyPlayer(const int myNumber);
 
 	/**
 	 * @brief mod game time
@@ -47,6 +47,13 @@ public:
 	float gameTime;
 
 	/**
+	 * @brief start time
+	 *
+	 * The value of gameTime when the game was started
+	 */
+	float startTime;
+
+	/**
 	 * @brief my player num
 	 *
 	 * Local player's number
@@ -55,6 +62,7 @@ public:
 
 	/**
 	 * @brief my team
+	 * @note changes when changing spectated team
 	 *
 	 * Local player's team
 	 */
@@ -62,10 +70,29 @@ public:
 
 	/**
 	 * @brief my ally team
+	 * @note changes when changing spectated team
 	 *
 	 * Local player's ally team
 	 */
 	int myAllyTeam;
+
+	/**
+	 * @brief my team used when playing
+	 * @note changes only from TEAMMSG_JOIN_TEAM and SetMyPlayer
+	 * @note if we never joined any team, it's set to -1
+	 *
+	 * Local player's team
+	 */
+	int myPlayingTeam;
+
+	/**
+	 * @brief my ally team
+	 * @note changes only from TEAMMSG_JOIN_TEAM and SetMyPlayer
+	 * @note if we never joined any team, it's set to -1
+	 *
+	 * Local player's ally team
+	 */
+	int myPlayingAllyTeam;
 
 
 	/**
@@ -90,9 +117,6 @@ public:
 	 * Can all units be selected when spectating?
 	 */
 	bool spectatingFullSelect;
-
-	bool moveWarnings;
-	bool buildWarnings;
 
 	/**
 	 * @brief direct control

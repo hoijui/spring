@@ -8,6 +8,7 @@
 #include "mapfile.h"
 #include "Map/MapInfo.h"
 #include "Game/Camera.h"
+#include "Game/LoadScreen.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/Textures/Bitmap.h"
@@ -30,7 +31,7 @@ CR_BIND_DERIVED(CSmfReadMap, CReadMap, (""))
 
 CSmfReadMap::CSmfReadMap(std::string mapname): file(mapname)
 {
-	PrintLoadMsg("Loading SMF");
+	loadscreen->SetLoadMessage("Loading SMF");
 
 	ConfigureAnisotropy();
 

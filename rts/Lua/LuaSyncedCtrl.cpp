@@ -40,7 +40,7 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/MoveTypes/AirMoveType.h"
 #include "Sim/MoveTypes/TAAirMoveType.h"
-#include "Sim/Path/PathManager.h"
+#include "Sim/Path/IPathManager.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Projectiles/PieceProjectile.h"
@@ -117,6 +117,9 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	lua_pushcfunction(L, x);    \
 	lua_rawset(L, -3)
 
+	REGISTER_LUA_CFUNC(KillTeam);
+	REGISTER_LUA_CFUNC(GameOver);
+
 	REGISTER_LUA_CFUNC(AddTeamResource);
 	REGISTER_LUA_CFUNC(UseTeamResource);
 	REGISTER_LUA_CFUNC(SetTeamResource);
@@ -158,7 +161,6 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(SetUnitTravel);
 	REGISTER_LUA_CFUNC(SetUnitFuel);
 	REGISTER_LUA_CFUNC(SetUnitMoveGoal);
-	REGISTER_LUA_CFUNC(SetUnitLineage);
 	REGISTER_LUA_CFUNC(SetUnitNeutral);
 	REGISTER_LUA_CFUNC(SetUnitTarget);
 	REGISTER_LUA_CFUNC(SetUnitCollisionVolumeData);
@@ -243,6 +245,7 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(SetNoPause);
 	REGISTER_LUA_CFUNC(SetUnitToFeature);
 	REGISTER_LUA_CFUNC(SetExperienceGrade);
+
 
 	if (!LuaSyncedMoveCtrl::PushMoveCtrl(L)) {
 		return false;
@@ -425,7 +428,7 @@ static CTeam* ParseTeam(lua_State* L, const char* caller, int index)
 		return NULL;
 	}
 	const int teamID = lua_toint(L, index);
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		luaL_error(L, "%s(): Bad teamID: %d", caller, teamID);
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -442,10 +445,49 @@ static CTeam* ParseTeam(lua_State* L, const char* caller, int index)
 // The call-outs
 //
 
+
+int LuaSyncedCtrl::KillTeam(lua_State* L)
+{
+	const int teamID = luaL_checkint(L, 1);
+	if (!teamHandler->IsValidTeam(teamID)) {
+		return 0;
+	}
+	CTeam* team = teamHandler->Team(teamID);
+	if (team == NULL) {
+		return 0;
+	}
+	team->Died();
+	return 0;
+}
+
+
+int LuaSyncedCtrl::GameOver(lua_State* L)
+{
+	const int args = lua_gettop(L); // number of arguments
+	if (!lua_istable(L, 1)) {
+		luaL_error(L, "Incorrect arguments to GameOver()");
+	}
+	std::vector<unsigned char> winningAllyTeams;
+	const int table = 1;
+	for (lua_pushnil(L); lua_next(L, table) != 0; lua_pop(L, 1)) {
+		if (!lua_israwnumber(L, -1)) {
+			continue;
+		}
+		unsigned char AllyTeamID = lua_toint( L, -1 );
+		if ( !teamHandler->ValidAllyTeam(AllyTeamID) ) {
+			continue;
+		}
+		winningAllyTeams.push_back( AllyTeamID );
+	}
+	game->GameEnd( winningAllyTeams );
+	return 0;
+}
+
+
 int LuaSyncedCtrl::AddTeamResource(lua_State* L)
 {
 	const int teamID = luaL_checkint(L, 1);
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
 	if (!CanControlTeam(teamID)) {
@@ -473,7 +515,7 @@ int LuaSyncedCtrl::AddTeamResource(lua_State* L)
 int LuaSyncedCtrl::UseTeamResource(lua_State* L)
 {
 	const int teamID = luaL_checkint(L, 1);
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
 	if (!CanControlTeam(teamID)) {
@@ -536,7 +578,7 @@ int LuaSyncedCtrl::UseTeamResource(lua_State* L)
 int LuaSyncedCtrl::SetTeamResource(lua_State* L)
 {
 	const int teamID = luaL_checkint(L, 1);
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
 	if (!CanControlTeam(teamID)) {
@@ -572,7 +614,7 @@ int LuaSyncedCtrl::SetTeamResource(lua_State* L)
 int LuaSyncedCtrl::SetTeamShareLevel(lua_State* L)
 {
 	const int teamID = luaL_checkint(L, 1);
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
 	if (!CanControlTeam(teamID)) {
@@ -600,7 +642,7 @@ int LuaSyncedCtrl::SetTeamShareLevel(lua_State* L)
 int LuaSyncedCtrl::ShareTeamResource(lua_State* L)
 {
 	const int teamID1 = luaL_checkint(L, 1);
-	if ((teamID1 < 0) || (teamID1 >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID1)) {
 		luaL_error(L, "Incorrect arguments to ShareTeamResource(teamID1, teamID2, type, amount)");
 	}
 	if (!CanControlTeam(teamID1)) {
@@ -612,7 +654,7 @@ int LuaSyncedCtrl::ShareTeamResource(lua_State* L)
 	}
 
 	const int teamID2 = luaL_checkint(L, 2);
-	if ((teamID2 < 0) || (teamID2 >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID2)) {
 		luaL_error(L, "Incorrect arguments to ShareTeamResource(teamID1, teamID2, type, amount)");
 	}
 	CTeam* team2 = teamHandler->Team(teamID2);
@@ -911,15 +953,8 @@ int LuaSyncedCtrl::CreateUnit(lua_State* L)
 	if (lua_israwnumber(L, 6)) {
 		teamID = lua_toint(L, 6);
 	}
-	if ((teamID < 0) || (teamID >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(teamID)) {
 		luaL_error(L, "CreateUnit(): bad team number: %d", teamID);
-		return 0;
-	}
-
-	if (teamHandler->AllyTeam(teamID) >= teamHandler->ActiveAllyTeams()) {
-		// FIXME: there's a segv in CLosHandler::LosAddAir,
-		//        this is a dirty hack to avoid it
-		luaL_error(L, "CreateUnit(): inactive team: %d", teamID);
 		return 0;
 	}
 
@@ -1001,7 +1036,7 @@ int LuaSyncedCtrl::TransferUnit(lua_State* L)
 	}
 
 	const int newTeam = luaL_checkint(L, 2);
-	if ((newTeam < 0) || (newTeam >= teamHandler->ActiveTeams())) {
+	if (!teamHandler->IsValidTeam(newTeam)) {
 		return 0;
 	}
 	const CTeam* team = teamHandler->Team(newTeam);
@@ -1375,7 +1410,7 @@ int LuaSyncedCtrl::SetUnitLosMask(lua_State* L)
 		return 0;
 	}
 	const int allyTeam = luaL_checkint(L, 2);
-	if ((allyTeam < 0) || (allyTeam >= teamHandler->ActiveAllyTeams())) {
+	if (!teamHandler->IsValidAllyTeam(allyTeam)) {
 		luaL_error(L, "bad allyTeam");
 	}
 	const unsigned short losStatus = unit->losStatus[allyTeam];
@@ -1397,7 +1432,7 @@ int LuaSyncedCtrl::SetUnitLosState(lua_State* L)
 		return 0;
 	}
 	const int allyTeam = luaL_checkint(L, 2);
-	if ((allyTeam < 0) || (allyTeam >= teamHandler->ActiveAllyTeams())) {
+	if (!teamHandler->IsValidAllyTeam(allyTeam)) {
 		luaL_error(L, "bad allyTeam");
 	}
 	const unsigned short losStatus = unit->losStatus[allyTeam];
@@ -1663,27 +1698,6 @@ int LuaSyncedCtrl::SetUnitFuel(lua_State* L)
 		return 0;
 	}
 	unit->currentFuel = luaL_checkfloat(L, 2);
-	return 0;
-}
-
-
-int LuaSyncedCtrl::SetUnitLineage(lua_State* L)
-{
-	if (!FullCtrl()) {
-		return 0;
-	}
-	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
-	if (unit == NULL) {
-		return 0;
-	}
-	CTeam* team = ParseTeam(L, __FUNCTION__, 2);
-	if (team == NULL) {
-		return 0;
-	}
-	unit->lineage = team->teamNum;
-	if (lua_isboolean(L, 3) && lua_toboolean(L, 3)) {
-		team->lineageRoot = unit->id;
-	}
 	return 0;
 }
 
@@ -2278,11 +2292,11 @@ int LuaSyncedCtrl::TransferFeature(lua_State* L)
 	if (feature == NULL) {
 		return 0;
 	}
-	const int team = luaL_checkint(L, 2);
-	if (team >= teamHandler->ActiveTeams()) {
+	const int teamId = luaL_checkint(L, 2);
+	if (!teamHandler->IsValidTeam(teamId)) {
 		return 0;
 	}
-	feature->ChangeTeam(team);
+	feature->ChangeTeam(teamId);
 	return 0;
 }
 

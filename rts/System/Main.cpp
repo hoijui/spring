@@ -11,13 +11,15 @@
 #include <sstream>
 #include <boost/system/system_error.hpp>
 
-#include "Platform/errorhandler.h"
+#include "System/Platform/errorhandler.h"
+#include "System/Platform/Threading.h"
+
 #ifndef _MSC_VER
 #include "StdAfx.h"
 #endif
 #include "lib/gml/gml.h"
-#include "LogOutput.h"
-#include "Exceptions.h"
+#include "System/LogOutput.h"
+#include "System/Exceptions.h"
 
 #include "SpringApp.h"
 
@@ -25,12 +27,7 @@
 #include "Platform/Win/win32.h"
 #endif
 
-
-
-// On msvc main() is declared as a non-throwing function.
-// Moving the catch clause to a seperate function makes it possible to re-throw the exception for the installed crash reporter
-int Run(int argc, char* argv[])
-{
+void MainFunc(int argc, char** argv, int* ret) {
 #ifdef __MINGW32__
 	// For the MinGW backtrace() implementation we need to know the stack end.
 	{
@@ -40,39 +37,41 @@ int Run(int argc, char* argv[])
 	}
 #endif
 
+	while (Threading::GetMainThread() == NULL);
+
 #ifdef USE_GML
-	set_threadnum(0);
-#	if GML_ENABLE_TLS_CHECK
-	if (gmlThreadNumber != 0) {
+	set_threadnum(GML_DRAW_THREAD_NUM);
+  #if GML_ENABLE_TLS_CHECK
+	if (gmlThreadNumber != GML_DRAW_THREAD_NUM) {
 		handleerror(NULL, "Thread Local Storage test failed", "GML error:", MBF_OK | MBF_EXCL);
 	}
-#	endif
+  #endif
 #endif
 
+	try  {
+		try {
+			SpringApp app;
+			*ret = app.Run(argc, argv);
+		} CATCH_SPRING_ERRORS
+	} catch (boost::thread_interrupted const&) {
+		handleerror(NULL, Threading::GetThreadError().what(), "Thread error:", MBF_OK | MBF_EXCL);
+	}
 
-	try {
-		SpringApp app;
-		return app.Run(argc, argv);
-	}
-	catch (const content_error& e) {
-		ErrorMessageBox(e.what(), "Incorrect/Missing content:", MBF_OK | MBF_EXCL);
-	}
-#ifndef NO_CATCH_EXCEPTIONS
-	catch (const boost::system::system_error& e) {
-		std::stringstream ss;
-		ss << e.code().value() << ": " << e.what();
-		std::string tmp = ss.str();
-		ErrorMessageBox(tmp, "Fatal Error", MBF_OK | MBF_EXCL);
-	}
-	catch (const std::exception& e) {
-		ErrorMessageBox(e.what(), "Fatal Error", MBF_OK | MBF_EXCL);
-	}
-	catch (const char* e) {
-		ErrorMessageBox(e, "Fatal Error", MBF_OK | MBF_EXCL);
-	}
-#endif
+	*ret = -1;
+}
 
-	return -1;
+
+
+int Run(int argc, char* argv[])
+{
+	int ret = 0;
+
+	boost::thread* mainThread = new boost::thread(boost::bind(&MainFunc, argc, argv, &ret));
+	Threading::SetMainThread(mainThread);
+	mainThread->join();
+	delete mainThread;
+
+	return ret;
 }
 
 

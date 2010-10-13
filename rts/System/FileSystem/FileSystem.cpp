@@ -199,7 +199,7 @@ std::vector<std::string> FileSystem::FindFiles(std::string dir, const std::strin
 
 /**
  * @brief get the directory part of a path
- * "/home/user/.spring/test.txt" -> "/home/user/.spring"
+ * "/home/user/.spring/test.txt" -> "/home/user/.spring/"
  */
 std::string FileSystem::GetDirectory(const std::string& path) const
 {
@@ -399,7 +399,7 @@ std::vector<std::string> FileSystem::FindDirsInDirectSubDirs(
 	static const std::string pattern = "*";
 
 	// list of all occurences of the relative path in the data directories
-	std::vector<std::string> rootDirs = LocateDirs(relPath);
+	const std::vector<std::string> &rootDirs = LocateDirs(relPath);
 
 	// list of subdirs in all occurences of the relative path in the data directories
 	std::vector<std::string> mainDirs;

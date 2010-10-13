@@ -118,7 +118,6 @@ void CFactory::Update()
 			quedBuild = false;
 			CUnit* b = unitLoader.LoadUnit(nextBuild, buildPos + float3(0.01f, 0.01f, 0.01f), team,
 											true, buildFacing, this);
-			b->lineage = this->lineage;
 
 			if (!unitDef->canBeAssisted) {
 				b->soloBuilder = this;
@@ -137,7 +136,7 @@ void CFactory::Update()
 					unitDef->sounds.build.getVolume(0));
 			}
 		} else {
-			helper->BuggerOff(buildPos - float3(0.01f, 0, 0.02f), radius + 8);
+			helper->BuggerOff(buildPos - float3(0.01f, 0, 0.02f), radius + 8, true, true, NULL);
 		}
 	}
 
@@ -352,7 +351,8 @@ void CFactory::AssignBuildeeOrders(CUnit* unit) {
 
 void CFactory::SlowUpdate(void)
 {
-	helper->BuggerOff(pos - float3(0.01f, 0, 0.02f), radius);
+	if (!transporter)
+		helper->BuggerOff(pos - float3(0.01f, 0, 0.02f), radius, true, true, NULL);
 	CBuilding::SlowUpdate();
 }
 

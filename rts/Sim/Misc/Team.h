@@ -31,8 +31,8 @@ public:
 	void ResetFrameVariables();
 	void SlowUpdate();
 
-	void AddMetal(float amount, bool handicap = true);
-	void AddEnergy(float amount, bool handicap = true);
+	void AddMetal(float amount, bool useIncomeMultiplier = true);
+	void AddEnergy(float amount, bool useIncomeMultiplier = true);
 	bool UseEnergy(float amount);
 	bool UseMetal(float amount);
 	bool UseEnergyUpkeep(float amount);
@@ -63,10 +63,10 @@ public:
 	void AddUnit(CUnit* unit, AddType type);
 	void RemoveUnit(CUnit* unit, RemoveType type);
 
+
 	int teamNum;
 	bool isDead;
 	bool gaia;
-	int lineageRoot;
 
 	/// color info is unsynced
 	unsigned char origColor[4];
@@ -100,12 +100,6 @@ public:
 	TeamStatistics* currentStats;
 	std::list<TeamStatistics> statHistory;
 	typedef TeamStatistics Statistics; //! for easier access via CTeam::Statistics
-
-	/// number of units with commander tag in team, if it reaches zero with cmd ends the team dies
-	int numCommanders;
-
-	void CommanderDied(CUnit* commander);
-	void LeftLineage(CUnit* unit);
 
 	/// mod controlled parameters
 	LuaRulesParams::Params  modParams;

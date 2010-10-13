@@ -47,7 +47,7 @@
 #endif // WIN32
 
 
-// BEGINN: Error handling realated functions
+// BEGINN: Error handling related functions
 
 // internal error buffer
 static const unsigned int i_error_sizeMax = 1024;
@@ -86,10 +86,10 @@ bool util_clearError() {
 	i_error = NULL;
 }
 
-// END: Error handling realated functions
+// END: Error handling related functions
 
 
-// BEGINN: String realated functions
+// BEGINN: String related functions
 
 char* util_allocStr(unsigned int length) {
 	return (char*) calloc(length+1, sizeof(char));
@@ -460,10 +460,10 @@ bool util_strToBool(const char* str) {
 	return res;
 }
 
-// END: String realated functions
+// END: String related functions
 
 
-// BEGINN: File system realated functions
+// BEGINN: File system related functions
 
 #if defined WIN32
 static bool util_isFile(const struct _finddata_t* fileInfo) {
@@ -1186,7 +1186,7 @@ bool util_getModuleFile(const char* moduleName, char* path, const unsigned int p
 	}
 }
 
-// END: File system realated functions
+// END: File system related functions
 
 
 const char* util_map_getValueByKey(

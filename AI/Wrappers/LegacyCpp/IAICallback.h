@@ -48,9 +48,17 @@ public:
 	// speed)
 	virtual int GetCurrentFrame() = 0;
 
+	virtual int GetMySkirmishAIId() = 0;
 	virtual int GetMyTeam() = 0;
 	virtual int GetMyAllyTeam() = 0;
 	virtual int GetPlayerTeam(int playerId) = 0;
+	/**
+	 * Returns the number of active teams participating
+	 * in the currently running game.
+	 * A return value of 6 for example, would mean that teams 0 till 5
+	 * take part in the game.
+	 */
+	virtual int GetTeams() = 0;
 	/**
 	 * Returns the name of the side of a team in the game.
 	 *
@@ -63,6 +71,17 @@ public:
 	 */
 	virtual const char* GetTeamSide(int teamId) = 0;
 	virtual int GetTeamAllyTeam(int teamId) = 0;
+
+	virtual float GetTeamMetalCurrent(int teamId) = 0;
+	virtual float GetTeamMetalIncome(int teamId) = 0;
+	virtual float GetTeamMetalUsage(int teamId) = 0;
+	virtual float GetTeamMetalStorage(int teamId) = 0;
+
+	virtual float GetTeamEnergyCurrent(int teamId) = 0;
+	virtual float GetTeamEnergyIncome(int teamId) = 0;
+	virtual float GetTeamEnergyUsage(int teamId) = 0;
+	virtual float GetTeamEnergyStorage(int teamId) = 0;
+
 	/// Returns true, if the two supplied ally-teams are currently allied
 	virtual bool IsAllied(int firstAllyTeamId, int secondAllyTeamId) = 0;
 
