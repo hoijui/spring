@@ -6,12 +6,11 @@
 #include "FireBallProjectile.h"
 #include "Game/Camera.h"
 #include "Map/Ground.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/TextureAtlas.h"
-#include "Rendering/ProjectileDrawer.hpp"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/creg/STL_Deque.h"
+// FIXME: the following should not be here
+#include "Rendering/Projectiles/WeaponProjectiles/FireBallProjectileDrawer.h"
 
 CR_BIND_DERIVED(CFireBallProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, NULL, NULL, ZeroVector, NULL));
 CR_BIND(CFireBallProjectile::Spark, );
@@ -55,49 +54,21 @@ CFireBallProjectile::~CFireBallProjectile()
 
 void CFireBallProjectile::Draw()
 {
-	inArray = true;
-	unsigned char col[4] = { 255, 150, 100, 1 };
-
-	float3 interPos = checkCol ? drawPos : pos;
-	float size = radius * 1.3f;
-
-	int numSparks = sparks.size();
-	int numFire = std::min(10, numSparks);
-	va->EnlargeArrays((numSparks + numFire) * 4, 0, VA_SIZE_TC);
-
-	for (int i = 0; i < numSparks; i++) {
-		//! CAUTION: loop count must match EnlargeArrays above
-		col[0] = (numSparks - i) * 12;
-		col[1] = (numSparks - i) *  6;
-		col[2] = (numSparks - i) *  4;
-
-		#define ept projectileDrawer->explotex
-		va->AddVertexQTC(sparks[i].pos - camera->right * sparks[i].size - camera->up * sparks[i].size, ept->xstart, ept->ystart, col);
-		va->AddVertexQTC(sparks[i].pos + camera->right * sparks[i].size - camera->up * sparks[i].size, ept->xend,   ept->ystart, col);
-		va->AddVertexQTC(sparks[i].pos + camera->right * sparks[i].size + camera->up * sparks[i].size, ept->xend,   ept->yend,   col);
-		va->AddVertexQTC(sparks[i].pos - camera->right * sparks[i].size + camera->up * sparks[i].size, ept->xstart, ept->yend,   col);
-		#undef ept
-	}
-
-	int maxCol = numFire;
-	if (checkCol) {
-		maxCol = 10;
-	}
-
-	for (int i = 0; i < numFire; i++) //! CAUTION: loop count must match EnlargeArrays above
-	{
-		col[0] = (maxCol - i) * 25;
-		col[1] = (maxCol - i) * 15;
-		col[2] = (maxCol - i) * 10;
-		#define dgt projectileDrawer->dguntex
-		va->AddVertexQTC(interPos - camera->right * size - camera->up * size, dgt->xstart, dgt->ystart, col);
-		va->AddVertexQTC(interPos + camera->right * size - camera->up * size, dgt->xend ,  dgt->ystart, col);
-		va->AddVertexQTC(interPos + camera->right * size + camera->up * size, dgt->xend ,  dgt->yend,   col);
-		va->AddVertexQTC(interPos  -camera->right * size + camera->up * size, dgt->xstart, dgt->yend,   col);
-		#undef dgt
-		interPos = interPos - speed * 0.5f;
-	}
+	GetDrawer()->Render(this);
 }
+
+ProjectileDrawer* CFireBallProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CFireBallProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CFireBallProjectileDrawer();
+	}
+
+	return myProjectileDrawer;
+}
+
 
 void CFireBallProjectile::Update()
 {

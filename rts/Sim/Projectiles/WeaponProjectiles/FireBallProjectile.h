@@ -9,8 +9,10 @@
 #if defined(USE_GML) && GML_ENABLE_SIM
 #define SPARK_QUEUE gmlCircularQueue<CFireBallProjectile::Spark,32>
 #else
-#define SPARK_QUEUE std::deque<Spark>
+#define SPARK_QUEUE std::deque<CFireBallProjectile::Spark>
 #endif
+
+class ProjectileDrawer;
 
 class CFireBallProjectile : public CWeaponProjectile
 {
@@ -18,7 +20,7 @@ class CFireBallProjectile : public CWeaponProjectile
 	CR_DECLARE_SUB(Spark);
 public:
 	CFireBallProjectile(const float3& pos,const float3& speed, CUnit* owner,
-			CUnit *target, const float3 &targetPos, const WeaponDef* weaponDef);
+			CUnit* target, const float3& targetPos, const WeaponDef* weaponDef);
 	~CFireBallProjectile();
 
 	void Draw();
@@ -34,10 +36,23 @@ public:
 		int ttl;
 	};
 
+	const SPARK_QUEUE& GetSparks() const { return sparks; }
+
 private:
 	SPARK_QUEUE sparks;
 
 	void EmitSpark();
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
 };
 
 #endif // _FIRE_BALL_PROJECTILE_H
