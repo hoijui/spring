@@ -41,7 +41,22 @@ public:
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 	virtual void DrawCallback() {}
 
+	/// Is this projectile part of the simulation?
+	bool GetSynced() const { return synced; }
+	/// Is this a weapon projectile? (true implies synced true)
+	bool GetWeapon() const { return weapon; }
+	/// Is this a piece projectile? (true implies synced true)
+	bool GetPiece() const { return piece; }
+	bool GetLuaMoveCtrl() const { return luaMoveCtrl; }
+	bool GetCheckCol() const { return checkCol; }
+	bool GetDeleteMe() const { return deleteMe; }
+	bool GetCastShadow() const { return castShadow; }
+	unsigned int GetCollisionFlags() const { return collisionFlags; }
 	const float3& GetDrawPos() const { return drawPos; }
+	const float3& GetDir() const { return dir; }
+	const float3& GetSpeed() const { return speed; }
+	float GetMygravity() const { return mygravity; }
+	float GetTempdist() const { return tempdist; }
 	CUnit* owner() const { return uh->units[ownerId]; }
 	int GetProjectileType() const { return projectileType; }
 

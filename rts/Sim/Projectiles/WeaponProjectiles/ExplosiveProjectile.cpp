@@ -6,12 +6,11 @@
 #include "ExplosiveProjectile.h"
 #include "Game/Camera.h"
 #include "Map/Ground.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/ColorMap.h"
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/InterceptHandler.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
+// FIXME: the following should not be here
+#include "Rendering/Projectiles/WeaponProjectiles/ExplosiveProjectileDrawer.h"
 
 #ifdef TRACE_SYNC
 	#include "System/Sync/SyncTracer.h"
@@ -49,9 +48,9 @@ CExplosiveProjectile::CExplosiveProjectile(
 	}
 
 	if (ttl <= 0) {
-		invttl = 1;
+		invTtl = 1;
 	} else {
-		invttl = 1.0f / ttl;
+		invTtl = 1.0f / ttl;
 	}
 
 #ifdef TRACE_SYNC
@@ -86,7 +85,7 @@ void CExplosiveProjectile::Update()
 		}
 	}
 
-	curTime += invttl;
+	curTime += invTtl;
 	if (curTime > 1) {
 		curTime = 1;
 	}
@@ -116,55 +115,19 @@ void CExplosiveProjectile::Collision(CUnit* unit)
 
 void CExplosiveProjectile::Draw()
 {
-	if (model) {
-		// do not draw if a 3D model has been defined for us
-		return;
+	GetDrawer()->Render(this);
+}
+
+ProjectileDrawer* CExplosiveProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CExplosiveProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CExplosiveProjectileDrawer();
 	}
 
-	inArray = true;
-
-	unsigned char col[4] = {0};
-
-	if (weaponDef->visuals.colorMap) {
-		weaponDef->visuals.colorMap->GetColor(col, curTime);
-	} else {
-		col[0] = weaponDef->visuals.color.x * 255;
-		col[1] = weaponDef->visuals.color.y * 255;
-		col[2] = weaponDef->visuals.color.z * 255;
-		col[3] = weaponDef->intensity       * 255;
-	}
-
-	const AtlasedTexture* tex = weaponDef->visuals.texture1;
-	const float  alphaDecay = weaponDef->visuals.alphaDecay;
-	const float  sizeDecay  = weaponDef->visuals.sizeDecay;
-	const float  separation = weaponDef->visuals.separation;
-	const bool   noGap      = weaponDef->visuals.noGap;
-	const int    stages     = weaponDef->visuals.stages;
-	const float  invStages  = 1.0f / stages;
-
-	const float3 ndir = dir * separation * 0.6f;
-
-	va->EnlargeArrays(stages * 4,0, VA_SIZE_TC);
-
-	for (int stage = 0; stage < stages; ++stage) { //! CAUTION: loop count must match EnlargeArrays above
-		const float stageDecay = (stages - (stage * alphaDecay)) * invStages;
-		const float stageSize  = drawRadius * (1.0f - (stage * sizeDecay));
-
-		const float3 ydirCam  = camera->up    * stageSize;
-		const float3 xdirCam  = camera->right * stageSize;
-		const float3 stageGap = (noGap)? (ndir * stageSize * stage): (ndir * drawRadius * stage);
-		const float3 stagePos = drawPos - stageGap;
-
-		col[0] = stageDecay * col[0];
-		col[1] = stageDecay * col[1];
-		col[2] = stageDecay * col[2];
-		col[3] = stageDecay * col[3];
-
-		va->AddVertexQTC(stagePos - xdirCam - ydirCam, tex->xstart, tex->ystart, col);
-		va->AddVertexQTC(stagePos + xdirCam - ydirCam, tex->xend,   tex->ystart, col);
-		va->AddVertexQTC(stagePos + xdirCam + ydirCam, tex->xend,   tex->yend,   col);
-		va->AddVertexQTC(stagePos - xdirCam + ydirCam, tex->xstart, tex->yend,   col);
-	}
+	return myProjectileDrawer;
 }
 
 int CExplosiveProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)

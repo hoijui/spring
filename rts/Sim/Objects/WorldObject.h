@@ -27,10 +27,15 @@ public:
 	void SetRadius(float r);
 	virtual ~CWorldObject();
 
+	int GetId() const { return id; }
 	const float3& GetPos() const { return pos; }
-
+	float GetRadius() const { return radius; }
+	float GetSqRadius() const { return sqRadius; }
 	/// used to see if in LOS
 	float GetDrawRadius() const { return drawRadius; }
+	bool GetUseAirLos() const { return useAirLos; }
+	bool GetAlwaysVisible() const { return alwaysVisible; }
+	const S3DModel* GetModel() const { return model; }
 
 	int id;
 

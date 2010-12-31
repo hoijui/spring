@@ -5,6 +5,8 @@
 
 #include "WeaponProjectile.h"
 
+class ProjectileDrawer;
+
 class CExplosiveProjectile : public CWeaponProjectile
 {
 	CR_DECLARE(CExplosiveProjectile);
@@ -22,10 +24,25 @@ public:
 	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
 			float shieldForce, float shieldMaxSpeed);
 
+	float GetareaOfEffect() const { return areaOfEffect; }
+	float GetInvTtl() const { return invTtl; }
+	float GetCurTime() const { return curTime; }
+
 private:
 	float areaOfEffect;
-	float invttl;
+	float invTtl;
 	float curTime;
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
 };
 
 #endif // _EXPLOSIVE_PROJECTILE_H
