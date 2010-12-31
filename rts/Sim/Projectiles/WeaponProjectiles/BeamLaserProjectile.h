@@ -18,19 +18,31 @@ public:
 	void Draw();
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 
+	const float3& GetStartPos() const { return startPos; }
+	const float3& GetEndPos() const { return endPos; }
+	const unsigned char* GetCoreColStart() const { return coreColStart; }
+	const unsigned char* GetCoreColEnd() const { return coreColEnd; }
+	const unsigned char* GetKoColStart() const { return koColStart; }
+	const unsigned char* GetKoColEnd() const { return koColEnd; }
+	float GetThickness() const { return thickness; }
+	float GetCoreThickness() const { return coreThickness; }
+	float GetFlareSize() const { return flareSize; }
+	float GetMidTexx() const { return midTexx; }
+	float GetDecay() const { return decay; }
+
 private:
 	float3 startPos;
 	float3 endPos;
-	unsigned char corecolstart[4];
-	unsigned char corecolend[4];
-	unsigned char kocolstart[4];
-	unsigned char kocolend[4];
+	unsigned char coreColStart[4];
+	unsigned char coreColEnd[4];
+	unsigned char koColStart[4];
+	unsigned char koColEnd[4];
 
 	float thickness;
-	float corethickness;
-	float flaresize;
-	float midtexx;
-	
+	float coreThickness;
+	float flareSize;
+	float midTexx;
+
 	float decay;
 };
 
