@@ -5,6 +5,9 @@
 
 #include "WeaponProjectile.h"
 
+class ProjectileDrawer;
+class ProjectileMinimapDrawer;
+
 class CBeamLaserProjectile: public CWeaponProjectile
 {
 	CR_DECLARE(CBeamLaserProjectile);
@@ -15,7 +18,10 @@ public:
 	~CBeamLaserProjectile() {}
 
 	void Update();
+
+	/// @deprecated
 	void Draw();
+	/// @deprecated
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 
 	const float3& GetStartPos() const { return startPos; }
@@ -44,6 +50,28 @@ private:
 	float midTexx;
 
 	float decay;
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* myProjectileMinimapDrawer;
+	/**
+	 * @see myProjectileMinimapDrawer
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* GetMinimapDrawer();
 };
 
 #endif // BEAM_LASER_PROJECTILE_H

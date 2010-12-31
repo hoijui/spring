@@ -4,11 +4,12 @@
 #include "mmgr.h"
 
 #include "BeamLaserProjectile.h"
-#include "Game/Camera.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
+// FIXME: the following should not be here
+#include "Rendering/Textures/TextureAtlas.h"
+#include "Rendering/Projectiles/WeaponProjectiles/BeamLaserProjectileDrawer.h"
+#include "Rendering/Projectiles/WeaponProjectiles/BeamLaserProjectileMinimapDrawer.h"
 
 CR_BIND_DERIVED(CBeamLaserProjectile, CWeaponProjectile,
 	(float3(ZeroVector), float3(ZeroVector), 0.0f, 0.0f, float3(ZeroVector), NULL, NULL));
@@ -103,93 +104,38 @@ void CBeamLaserProjectile::Update()
 
 void CBeamLaserProjectile::Draw()
 {
-
-	inArray = true;
-
-	float3 dif(pos - camera->pos);
-	float camDist = dif.Length();
-	dif /= camDist;
-
-	const float3 ddir = (GetEndPos() - GetStartPos()).Normalize();
-	const float3 dir1 = (dif.cross(ddir)).Normalize();
-	const float3 dir2(dif.cross(dir1));
-
-	const float size = GetThickness();
-	const float coresize = size * GetCoreThickness();
-	const float3& pos1 = GetStartPos();
-	const float3& pos2 = GetEndPos();
-
-	va->EnlargeArrays(32, 0, VA_SIZE_TC);
-
-	#define WT1 weaponDef->visuals.texture1
-	#define WT2 weaponDef->visuals.texture2
-	#define WT3 weaponDef->visuals.texture3
-
-	if (camDist < 1000.0f) {
-		va->AddVertexQTC(pos1 - dir1 * size,                       GetMidTexx(),   WT2->ystart, GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       GetMidTexx(),   WT2->yend,   GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size - dir2 * size,         WT2->xend,      WT2->yend,   GetKoColStart());
-		va->AddVertexQTC(pos1 - dir1 * size - dir2 * size,         WT2->xend,      WT2->ystart, GetKoColStart());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   GetMidTexx(),   WT2->ystart, GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   GetMidTexx(),   WT2->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize - dir2 * coresize, WT2->xend,      WT2->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos1 - dir1 * coresize - dir2 * coresize, WT2->xend,      WT2->ystart, GetCoreColStart());
-
-		va->AddVertexQTC(pos1 - dir1 * size,                       WT1->xstart, WT1->ystart, GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       WT1->xstart, WT1->yend,   GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       WT1->xend,   WT1->yend,   GetKoColEnd());
-		va->AddVertexQTC(pos2 - dir1 * size,                       WT1->xend,   WT1->ystart, GetKoColEnd());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   WT1->xstart, WT1->ystart, GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   WT1->xstart, WT1->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   WT1->xend,   WT1->yend,   GetCoreColEnd());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   WT1->xend,   WT1->ystart, GetCoreColEnd());
-
-		va->AddVertexQTC(pos2 - dir1 * size,                       GetMidTexx(),   WT2->ystart, GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       GetMidTexx(),   WT2->yend,   GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size + dir2 * size,         WT2->xend,      WT2->yend,   GetKoColStart());
-		va->AddVertexQTC(pos2 - dir1 * size + dir2 * size,         WT2->xend,      WT2->ystart, GetKoColStart());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   GetMidTexx(),   WT2->ystart, GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   GetMidTexx(),   WT2->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize + dir2 * coresize, WT2->xend,      WT2->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos2 - dir1 * coresize + dir2 * coresize, WT2->xend,      WT2->ystart, GetCoreColStart());
-	} else {
-		va->AddVertexQTC(pos1 - dir1 * size,                       WT1->xstart, WT1->ystart, GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       WT1->xstart, WT1->yend,   GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       WT1->xend,   WT1->yend,   GetKoColEnd());
-		va->AddVertexQTC(pos2 - dir1 * size,                       WT1->xend,   WT1->ystart, GetKoColEnd());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   WT1->xstart, WT1->ystart, GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   WT1->xstart, WT1->yend,   GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   WT1->xend,   WT1->yend,   GetCoreColEnd());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   WT1->xend,   WT1->ystart, GetCoreColEnd());
-	}
-
-	// draw flare
-	float fsize = size * GetFlareSize();
-	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, WT3->xstart, WT3->ystart, GetKoColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, WT3->xend,   WT3->ystart, GetKoColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, WT3->xend,   WT3->yend,   GetKoColStart());
-	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, WT3->xstart, WT3->yend,   GetKoColStart());
-
-	fsize = fsize * GetCoreThickness();
-	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, WT3->xstart, WT3->ystart, GetCoreColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, WT3->xend,   WT3->ystart, GetCoreColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, WT3->xend,   WT3->yend,   GetCoreColStart());
-	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, WT3->xstart, WT3->yend,   GetCoreColStart());
-
-	#undef WT3
-	#undef WT2
-	#undef WT1
+	GetDrawer()->Render(this);
 }
 
 void CBeamLaserProjectile::DrawOnMinimap(CVertexArray& lines, CVertexArray& points)
 {
-	const unsigned char color[4] = {
-			GetKoColStart()[0],
-			GetKoColStart()[1],
-			GetKoColStart()[2],
-			255
-			};
+	ProjectileMinimapDrawer::SetLines(&lines);
+	ProjectileMinimapDrawer::SetPoints(&points);
+	GetMinimapDrawer()->Render(this);
+}
 
-	lines.AddVertexQC(GetStartPos(), color);
-	lines.AddVertexQC(GetEndPos(),   color);
+
+ProjectileDrawer* CBeamLaserProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CBeamLaserProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CBeamLaserProjectileDrawer();
+	}
+
+	return myProjectileDrawer;
+}
+
+
+ProjectileMinimapDrawer* CBeamLaserProjectile::myProjectileMinimapDrawer = NULL;
+
+ProjectileMinimapDrawer* CBeamLaserProjectile::GetMinimapDrawer() {
+
+	if (myProjectileMinimapDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileMinimapDrawer = new CBeamLaserProjectileMinimapDrawer();
+	}
+
+	return myProjectileMinimapDrawer;
 }

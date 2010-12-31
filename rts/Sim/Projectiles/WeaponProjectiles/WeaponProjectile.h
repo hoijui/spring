@@ -46,6 +46,8 @@ public:
 
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 
+	const WeaponDef* GetWeaponDef() const { return weaponDef; }
+
 	/// true if we are a nuke and an anti is on the way
 	bool targeted;
 	const WeaponDef* weaponDef;
