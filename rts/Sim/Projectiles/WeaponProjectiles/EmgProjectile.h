@@ -5,6 +5,8 @@
 
 #include "WeaponProjectile.h"
 
+class ProjectileDrawer;
+
 class CEmgProjectile : public CWeaponProjectile
 {
 	CR_DECLARE(CEmgProjectile);
@@ -22,9 +24,23 @@ public:
 	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
 			float shieldForce, float shieldMaxSpeed);
 
+	float GetIntensity() const { return intensity; }
+	const float3& GetColor() const { return color; }
+
 private:
 	float intensity;
 	float3 color;
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
 };
 
 #endif // _EMG_PROJECTILE_H

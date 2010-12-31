@@ -29,6 +29,9 @@ public:
 
 	const float3& GetPos() const { return pos; }
 
+	/// used to see if in LOS
+	float GetDrawRadius() const { return drawRadius; }
+
 	int id;
 
 	float3 pos;

@@ -6,11 +6,11 @@
 #include "EmgProjectile.h"
 #include "Game/Camera.h"
 #include "Map/Ground.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/Sync/SyncTracer.h"
+// FIXME: the following should not be here
+#include "Rendering/Projectiles/WeaponProjectiles/EmgProjectileDrawer.h"
 
 CR_BIND_DERIVED(CEmgProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, NULL, ZeroVector, 0, 0, NULL));
 
@@ -84,17 +84,21 @@ void CEmgProjectile::Collision() {
 
 void CEmgProjectile::Draw()
 {
-	inArray = true;
-	unsigned char col[4];
-	col[0] = (unsigned char) (color.x * intensity * 255);
-	col[1] = (unsigned char) (color.y * intensity * 255);
-	col[2] = (unsigned char) (color.z * intensity * 255);
-	col[3] = 5; //intensity*255;
-	va->AddVertexTC(drawPos - camera->right * drawRadius-camera->up * drawRadius, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * drawRadius-camera->up * drawRadius, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * drawRadius+camera->up * drawRadius, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->yend,   col);
-	va->AddVertexTC(drawPos - camera->right * drawRadius+camera->up * drawRadius, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->yend,   col);
+	GetDrawer()->Render(this);
 }
+
+ProjectileDrawer* CEmgProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CEmgProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CEmgProjectileDrawer();
+	}
+
+	return myProjectileDrawer;
+}
+
 
 int CEmgProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)
 {

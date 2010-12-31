@@ -41,6 +41,7 @@ public:
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 	virtual void DrawCallback() {}
 
+	const float3& GetDrawPos() const { return drawPos; }
 	CUnit* owner() const { return uh->units[ownerId]; }
 	int GetProjectileType() const { return projectileType; }
 
