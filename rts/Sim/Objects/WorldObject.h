@@ -36,6 +36,8 @@ public:
 	void SetRadius(float r);
 	virtual ~CWorldObject();
 
+	const float3& GetPos() const { return pos; }
+
 	int id;
 
 	float3 pos;

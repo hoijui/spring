@@ -7,6 +7,7 @@
 
 struct WeaponDef;
 class CPlasmaRepulser;
+class ProjectileMinimapDrawer;
 
 /**
  * Base class for all projectiles originating from a weapon or having
@@ -46,6 +47,9 @@ public:
 
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 
+	void DependentDied(CObject* o);
+	void PostLoad();
+
 	const WeaponDef* GetWeaponDef() const { return weaponDef; }
 
 	/// true if we are a nuke and an anti is on the way
@@ -72,9 +76,17 @@ protected:
 	bool TraveledRange();
 	CWeaponProjectile* interceptTarget;
 
-public:
-	void DependentDied(CObject* o);
-	void PostLoad();
+private:
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* myProjectileMinimapDrawer;
+	/**
+	 * @see myProjectileMinimapDrawer
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* GetMinimapDrawer();
 };
 
 #endif /* WEAPON_PROJECTILE_H */

@@ -10,10 +10,10 @@
 #include "Sim/Features/Feature.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Misc/InterceptHandler.h"
-#include "Rendering/Colors.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Models/IModelParser.h"
+#include "Rendering/Projectiles/WeaponProjectiles/WeaponProjectileMinimapDrawer.h"
 #include "Map/Ground.h"
 #include "System/Matrix44f.h"
 #include "System/GlobalUnsynced.h"
@@ -283,7 +283,9 @@ bool CWeaponProjectile::TraveledRange()
 
 void CWeaponProjectile::DrawOnMinimap(CVertexArray& lines, CVertexArray& points)
 {
-	points.AddVertexQC(pos, color4::yellow);
+	ProjectileMinimapDrawer::SetLines(&lines);
+	ProjectileMinimapDrawer::SetPoints(&points);
+	GetMinimapDrawer()->Render(this);
 }
 
 void CWeaponProjectile::DependentDied(CObject* o)
@@ -318,4 +320,17 @@ void CWeaponProjectile::PostLoad()
 	}
 
 //	collisionFlags = weaponDef->collisionFlags;
+}
+
+
+ProjectileMinimapDrawer* CWeaponProjectile::myProjectileMinimapDrawer = NULL;
+
+ProjectileMinimapDrawer* CWeaponProjectile::GetMinimapDrawer() {
+
+	if (myProjectileMinimapDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileMinimapDrawer = new WeaponProjectileMinimapDrawer();
+	}
+
+	return myProjectileMinimapDrawer;
 }

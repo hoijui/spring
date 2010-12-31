@@ -5,8 +5,11 @@
 
 #include "Rendering/Projectiles/ProjectileMinimapDrawer.h"
 
+class CWorldObject;
+
 class WeaponProjectileMinimapDrawer : public ProjectileMinimapDrawer
 {
+	virtual void Render(const CWorldObject* object) const;
 };
 
 #endif // WEAPON_PROJECTILE_MINIMAP_DRAWER_H
