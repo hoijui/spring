@@ -7,27 +7,18 @@
 #include "float3.h"
 
 struct S3DModel;
+
 class CWorldObject: public CObject
 {
 public:
 	CR_DECLARE(CWorldObject);
 
-	CWorldObject()
-		: id(0)
-		, pos(ZeroVector)
-		, radius(0)
-		, sqRadius(0)
-		, drawRadius(0)
-		, useAirLos(false)
-		, alwaysVisible(false)
-		, model(NULL)
-	{}
-	CWorldObject(const float3& pos)
+	CWorldObject(const float3& pos = ZeroVector)
 		: id(0)
 		, pos(pos)
-		, radius(0)
-		, sqRadius(0)
-		, drawRadius(0)
+		, radius(0.0f)
+		, sqRadius(0.0f)
+		, drawRadius(0.0f)
 		, useAirLos(false)
 		, alwaysVisible(false)
 		, model(NULL)
@@ -45,7 +36,8 @@ public:
 	float sqRadius;
 
 	float drawRadius;   ///< used to see if in los
-	bool useAirLos;     ///< if true, object's visibility is checked against airLosMap[allyteam]
+	/// if true, object's visibility is checked against airLosMap[allyteam]
+	bool useAirLos;
 	bool alwaysVisible;
 
 	S3DModel* model;
