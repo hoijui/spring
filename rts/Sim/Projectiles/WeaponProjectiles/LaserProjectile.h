@@ -5,6 +5,8 @@
 
 #include "WeaponProjectile.h"
 
+class ProjectileDrawer;
+
 class CLaserProjectile : public CWeaponProjectile
 {
 	CR_DECLARE(CLaserProjectile);
@@ -30,7 +32,6 @@ public:
 	float GetCurLength() const { return curLength; }
 	float GetSpeedF() const { return speedF; }
 	float GetIntensityFalloff() const { return intensityFalloff; }
-	float GetMidTexx() const { return midTexx; }
 	/**
 	 * Number of frames the laser had left to expand
 	 * if it impacted before reaching full length.
@@ -45,12 +46,22 @@ private:
 	float curLength;
 	float speedF;
 	float intensityFalloff;
-	float midTexx;
 	/**
 	 * Number of frames the laser had left to expand
 	 * if it impacted before reaching full length.
 	 */
 	int stayTime;
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
 };
 
 #endif /* LASER_PROJECTILE_H */
