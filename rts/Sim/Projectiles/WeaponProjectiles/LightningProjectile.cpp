@@ -3,14 +3,13 @@
 #include "StdAfx.h"
 #include "mmgr.h"
 
-#include "Game/Camera.h"
 #include "LightningProjectile.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Weapons/Weapon.h"
-#include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
+// FIXME: the following should not be here
+#include "Rendering/Projectiles/WeaponProjectiles/LightningProjectileDrawer.h"
+#include "Rendering/Projectiles/WeaponProjectiles/LightningProjectileMinimapDrawer.h"
 
 #ifdef TRACE_SYNC
 	#include "Sync/SyncTracer.h"
@@ -91,60 +90,44 @@ void CLightningProjectile::Update()
 	}
 }
 
+
 void CLightningProjectile::Draw()
 {
-	inArray = true;
-	unsigned char col[4];
-	col[0] = (unsigned char) (color.x * 255);
-	col[1] = (unsigned char) (color.y * 255);
-	col[2] = (unsigned char) (color.z * 255);
-	col[3] = 1; //intensity*255;
-
-	const float3 ddir = (endPos - pos).Normalize();
-	float3 dif(pos - camera->pos);
-	float camDist = dif.Length();
-	dif /= camDist;
-	const float3 dir1 = (dif.cross(ddir)).Normalize();
-	float3 tempPos = pos;
-
-	va->EnlargeArrays(18 * 4, 0, VA_SIZE_TC);
-	for (size_t d = 1; d < displacements_size-1; ++d) {
-		float f = (d + 1) * 0.111f;
-
-		#define WD weaponDef
-		va->AddVertexQTC(tempPos + (dir1 * (displacements[d    ] + WD->thickness)), WD->visuals.texture1->xstart, WD->visuals.texture1->ystart, col);
-		va->AddVertexQTC(tempPos + (dir1 * (displacements[d    ] - WD->thickness)), WD->visuals.texture1->xstart, WD->visuals.texture1->yend,   col);
-		tempPos = (pos * (1.0f - f)) + (endPos * f);
-		va->AddVertexQTC(tempPos + (dir1 * (displacements[d + 1] - WD->thickness)), WD->visuals.texture1->xend,   WD->visuals.texture1->yend,   col);
-		va->AddVertexQTC(tempPos + (dir1 * (displacements[d + 1] + WD->thickness)), WD->visuals.texture1->xend,   WD->visuals.texture1->ystart, col);
-		#undef WD
-	}
-
-	tempPos = pos;
-	for (size_t d = 1; d < displacements_size-1; ++d) {
-		float f = (d + 1) * 0.111f;
-
-		#define WD weaponDef
-		va->AddVertexQTC(tempPos + dir1 * (displacements2[d    ] + WD->thickness), WD->visuals.texture1->xstart, WD->visuals.texture1->ystart, col);
-		va->AddVertexQTC(tempPos + dir1 * (displacements2[d    ] - WD->thickness), WD->visuals.texture1->xstart, WD->visuals.texture1->yend,   col);
-		tempPos = pos * (1.0f - f) + endPos * f;
-		va->AddVertexQTC(tempPos + dir1 * (displacements2[d + 1] - WD->thickness), WD->visuals.texture1->xend,   WD->visuals.texture1->yend,   col);
-		va->AddVertexQTC(tempPos + dir1 * (displacements2[d + 1] + WD->thickness), WD->visuals.texture1->xend,   WD->visuals.texture1->ystart, col);
-		#undef WD
-	}
+	GetDrawer()->Render(this);
 }
+
+ProjectileDrawer* CLightningProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CLightningProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CLightningProjectileDrawer();
+	}
+
+	return myProjectileDrawer;
+}
+
 
 void CLightningProjectile::DrawOnMinimap(CVertexArray& lines, CVertexArray& points)
 {
-	const unsigned char lcolor[4] = {
-			(unsigned char)color[0] * 255,
-			(unsigned char)color[1] * 255,
-			(unsigned char)color[2] * 255,
-			1                       * 255
-			};
-	lines.AddVertexQC(pos,    lcolor);
-	lines.AddVertexQC(endPos, lcolor);
+	ProjectileMinimapDrawer::SetLines(&lines);
+	ProjectileMinimapDrawer::SetPoints(&points);
+	GetMinimapDrawer()->Render(this);
 }
+
+ProjectileMinimapDrawer* CLightningProjectile::myProjectileMinimapDrawer = NULL;
+
+ProjectileMinimapDrawer* CLightningProjectile::GetMinimapDrawer() {
+
+	if (myProjectileMinimapDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileMinimapDrawer = new CLightningProjectileMinimapDrawer();
+	}
+
+	return myProjectileMinimapDrawer;
+}
+
 
 void CLightningProjectile::DependentDied(CObject* o)
 {
