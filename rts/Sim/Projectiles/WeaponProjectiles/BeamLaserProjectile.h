@@ -33,7 +33,6 @@ public:
 	float GetThickness() const { return thickness; }
 	float GetCoreThickness() const { return coreThickness; }
 	float GetFlareSize() const { return flareSize; }
-	float GetMidTexx() const { return midTexx; }
 	float GetDecay() const { return decay; }
 
 private:
@@ -47,7 +46,6 @@ private:
 	float thickness;
 	float coreThickness;
 	float flareSize;
-	float midTexx;
 
 	float decay;
 

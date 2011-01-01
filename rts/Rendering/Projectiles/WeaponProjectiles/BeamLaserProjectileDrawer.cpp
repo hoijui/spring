@@ -23,6 +23,12 @@ void CBeamLaserProjectileDrawer::Render(const CWorldObject* object) const
 
 	CProjectile::inArray = true;
 
+	float midTexx = 0.0f;
+	if (proj->GetWeaponDef()) {
+		const AtlasedTexture* tex2 = proj->GetWeaponDef()->visuals.texture2;
+		midTexx = tex2->xstart + (tex2->xend - tex2->xstart) * 0.5f;
+	}
+
 	float3 dif(proj->pos - camera->pos);
 	float camDist = dif.Length();
 	dif /= camDist;
@@ -41,62 +47,57 @@ void CBeamLaserProjectileDrawer::Render(const CWorldObject* object) const
 
 	va->EnlargeArrays(32, 0, VA_SIZE_TC);
 
-	#define WT1 proj->GetWeaponDef()->visuals.texture1
-	#define WT2 proj->GetWeaponDef()->visuals.texture2
-	#define WT3 proj->GetWeaponDef()->visuals.texture3
-
+	const AtlasedTexture* tex1 = proj->GetWeaponDef()->visuals.texture1;
 	if (camDist < 1000.0f) {
-		va->AddVertexQTC(pos1 - dir1 * size,                       proj->GetMidTexx(),   WT2->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       proj->GetMidTexx(),   WT2->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size - dir2 * size,         WT2->xend,            WT2->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos1 - dir1 * size - dir2 * size,         WT2->xend,            WT2->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   proj->GetMidTexx(),   WT2->ystart, proj->GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   proj->GetMidTexx(),   WT2->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize - dir2 * coresize, WT2->xend,            WT2->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos1 - dir1 * coresize - dir2 * coresize, WT2->xend,            WT2->ystart, proj->GetCoreColStart());
+		const AtlasedTexture* tex2 = proj->GetWeaponDef()->visuals.texture2;
+		va->AddVertexQTC(pos1 - dir1 * size,                       midTexx,    tex2->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos1 + dir1 * size,                       midTexx,    tex2->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos1 + dir1 * size - dir2 * size,         tex2->xend, tex2->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos1 - dir1 * size - dir2 * size,         tex2->xend, tex2->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos1 - dir1 * coresize,                   midTexx,    tex2->ystart, proj->GetCoreColStart());
+		va->AddVertexQTC(pos1 + dir1 * coresize,                   midTexx,    tex2->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos1 + dir1 * coresize - dir2 * coresize, tex2->xend, tex2->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos1 - dir1 * coresize - dir2 * coresize, tex2->xend, tex2->ystart, proj->GetCoreColStart());
 
-		va->AddVertexQTC(pos1 - dir1 * size,                       WT1->xstart, WT1->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       WT1->xstart, WT1->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       WT1->xend,   WT1->yend,   proj->GetKoColEnd());
-		va->AddVertexQTC(pos2 - dir1 * size,                       WT1->xend,   WT1->ystart, proj->GetKoColEnd());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   WT1->xstart, WT1->ystart, proj->GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   WT1->xstart, WT1->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   WT1->xend,   WT1->yend,   proj->GetCoreColEnd());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   WT1->xend,   WT1->ystart, proj->GetCoreColEnd());
+		va->AddVertexQTC(pos1 - dir1 * size,                       tex1->xstart, tex1->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos1 + dir1 * size,                       tex1->xstart, tex1->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos2 + dir1 * size,                       tex1->xend,   tex1->yend,   proj->GetKoColEnd());
+		va->AddVertexQTC(pos2 - dir1 * size,                       tex1->xend,   tex1->ystart, proj->GetKoColEnd());
+		va->AddVertexQTC(pos1 - dir1 * coresize,                   tex1->xstart, tex1->ystart, proj->GetCoreColStart());
+		va->AddVertexQTC(pos1 + dir1 * coresize,                   tex1->xstart, tex1->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 + dir1 * coresize,                   tex1->xend,   tex1->yend,   proj->GetCoreColEnd());
+		va->AddVertexQTC(pos2 - dir1 * coresize,                   tex1->xend,   tex1->ystart, proj->GetCoreColEnd());
 
-		va->AddVertexQTC(pos2 - dir1 * size,                       proj->GetMidTexx(),   WT2->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       proj->GetMidTexx(),   WT2->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size + dir2 * size,         WT2->xend,            WT2->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos2 - dir1 * size + dir2 * size,         WT2->xend,            WT2->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   proj->GetMidTexx(),   WT2->ystart, proj->GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   proj->GetMidTexx(),   WT2->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize + dir2 * coresize, WT2->xend,            WT2->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos2 - dir1 * coresize + dir2 * coresize, WT2->xend,            WT2->ystart, proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 - dir1 * size,                       midTexx,    tex2->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos2 + dir1 * size,                       midTexx,    tex2->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos2 + dir1 * size + dir2 * size,         tex2->xend, tex2->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos2 - dir1 * size + dir2 * size,         tex2->xend, tex2->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos2 - dir1 * coresize,                   midTexx,    tex2->ystart, proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 + dir1 * coresize,                   midTexx,    tex2->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 + dir1 * coresize + dir2 * coresize, tex2->xend, tex2->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 - dir1 * coresize + dir2 * coresize, tex2->xend, tex2->ystart, proj->GetCoreColStart());
 	} else {
-		va->AddVertexQTC(pos1 - dir1 * size,                       WT1->xstart, WT1->ystart, proj->GetKoColStart());
-		va->AddVertexQTC(pos1 + dir1 * size,                       WT1->xstart, WT1->yend,   proj->GetKoColStart());
-		va->AddVertexQTC(pos2 + dir1 * size,                       WT1->xend,   WT1->yend,   proj->GetKoColEnd());
-		va->AddVertexQTC(pos2 - dir1 * size,                       WT1->xend,   WT1->ystart, proj->GetKoColEnd());
-		va->AddVertexQTC(pos1 - dir1 * coresize,                   WT1->xstart, WT1->ystart, proj->GetCoreColStart());
-		va->AddVertexQTC(pos1 + dir1 * coresize,                   WT1->xstart, WT1->yend,   proj->GetCoreColStart());
-		va->AddVertexQTC(pos2 + dir1 * coresize,                   WT1->xend,   WT1->yend,   proj->GetCoreColEnd());
-		va->AddVertexQTC(pos2 - dir1 * coresize,                   WT1->xend,   WT1->ystart, proj->GetCoreColEnd());
+		va->AddVertexQTC(pos1 - dir1 * size,                       tex1->xstart, tex1->ystart, proj->GetKoColStart());
+		va->AddVertexQTC(pos1 + dir1 * size,                       tex1->xstart, tex1->yend,   proj->GetKoColStart());
+		va->AddVertexQTC(pos2 + dir1 * size,                       tex1->xend,   tex1->yend,   proj->GetKoColEnd());
+		va->AddVertexQTC(pos2 - dir1 * size,                       tex1->xend,   tex1->ystart, proj->GetKoColEnd());
+		va->AddVertexQTC(pos1 - dir1 * coresize,                   tex1->xstart, tex1->ystart, proj->GetCoreColStart());
+		va->AddVertexQTC(pos1 + dir1 * coresize,                   tex1->xstart, tex1->yend,   proj->GetCoreColStart());
+		va->AddVertexQTC(pos2 + dir1 * coresize,                   tex1->xend,   tex1->yend,   proj->GetCoreColEnd());
+		va->AddVertexQTC(pos2 - dir1 * coresize,                   tex1->xend,   tex1->ystart, proj->GetCoreColEnd());
 	}
 
 	// draw flare
+	const AtlasedTexture* tex3 = proj->GetWeaponDef()->visuals.texture3;
 	float fsize = size * proj->GetFlareSize();
-	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, WT3->xstart, WT3->ystart, proj->GetKoColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, WT3->xend,   WT3->ystart, proj->GetKoColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, WT3->xend,   WT3->yend,   proj->GetKoColStart());
-	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, WT3->xstart, WT3->yend,   proj->GetKoColStart());
+	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, tex3->xstart, tex3->ystart, proj->GetKoColStart());
+	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, tex3->xend,   tex3->ystart, proj->GetKoColStart());
+	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, tex3->xend,   tex3->yend,   proj->GetKoColStart());
+	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, tex3->xstart, tex3->yend,   proj->GetKoColStart());
 
 	fsize = fsize * proj->GetCoreThickness();
-	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, WT3->xstart, WT3->ystart, proj->GetCoreColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, WT3->xend,   WT3->ystart, proj->GetCoreColStart());
-	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, WT3->xend,   WT3->yend,   proj->GetCoreColStart());
-	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, WT3->xstart, WT3->yend,   proj->GetCoreColStart());
-
-	#undef WT3
-	#undef WT2
-	#undef WT1
+	va->AddVertexQTC(pos1 - camera->right * fsize-camera->up * fsize, tex3->xstart, tex3->ystart, proj->GetCoreColStart());
+	va->AddVertexQTC(pos1 + camera->right * fsize-camera->up * fsize, tex3->xend,   tex3->ystart, proj->GetCoreColStart());
+	va->AddVertexQTC(pos1 + camera->right * fsize+camera->up * fsize, tex3->xend,   tex3->yend,   proj->GetCoreColStart());
+	va->AddVertexQTC(pos1 - camera->right * fsize+camera->up * fsize, tex3->xstart, tex3->yend,   proj->GetCoreColStart());
 }

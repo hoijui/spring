@@ -7,7 +7,6 @@
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 // FIXME: the following should not be here
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Rendering/Projectiles/WeaponProjectiles/BeamLaserProjectileDrawer.h"
 #include "Rendering/Projectiles/WeaponProjectiles/BeamLaserProjectileMinimapDrawer.h"
 
@@ -26,7 +25,6 @@ CR_REG_METADATA(CBeamLaserProjectile,(
 	CR_MEMBER(coreThickness),
 	CR_MEMBER(flareSize),
 	CR_MEMBER(decay),
-	CR_MEMBER(midTexx),
 	CR_RESERVED(16)
 	));
 
@@ -52,10 +50,6 @@ CBeamLaserProjectile::CBeamLaserProjectile(
 	SetRadius(pos.distance(endPos));
 
 	if (weaponDef) {
-		midTexx =
-			(weaponDef->visuals.texture2->xstart +
-			(weaponDef->visuals.texture2->xend - weaponDef->visuals.texture2->xstart) * 0.5f);
-
 		coreColStart[0] = (weaponDef->visuals.color2.x * startAlpha);
 		coreColStart[1] = (weaponDef->visuals.color2.y * startAlpha);
 		coreColStart[2] = (weaponDef->visuals.color2.z * startAlpha);
@@ -72,8 +66,6 @@ CBeamLaserProjectile::CBeamLaserProjectile(
 		koColEnd[1] = (color.y * endAlpha);
 		koColEnd[2] = (color.z * endAlpha);
 		koColEnd[3] = 1;
-	} else {
-		midTexx = 0.0f;
 	}
 
 	if (!cegTag.empty()) {
