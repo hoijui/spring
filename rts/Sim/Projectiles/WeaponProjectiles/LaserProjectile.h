@@ -4,7 +4,6 @@
 #define LASER_PROJECTILE_H
 
 #include "WeaponProjectile.h"
-#include "Sim/Misc/DamageArray.h"
 
 class CLaserProjectile : public CWeaponProjectile
 {
@@ -14,12 +13,29 @@ public:
 			float length, const float3& color, const float3& color2,
 			float intensity, const WeaponDef* weaponDef, int ttl = 1000);
 	virtual ~CLaserProjectile();
+
 	void Draw();
 	void Update();
 	void Collision(CUnit* unit);
 	void Collision(CFeature* feature);
 	void Collision();
-	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed);
+
+	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
+			float shieldForce, float shieldMaxSpeed);
+
+	float GetIntensity() const { return intensity; }
+	const float3& GetColor() const { return color; }
+	const float3& GetColor2() const { return color2; }
+	float GetLength() const { return length; }
+	float GetCurLength() const { return curLength; }
+	float GetSpeedF() const { return speedF; }
+	float GetIntensityFalloff() const { return intensityFalloff; }
+	float GetMidTexx() const { return midTexx; }
+	/**
+	 * Number of frames the laser had left to expand
+	 * if it impacted before reaching full length.
+	 */
+	float GetStayTime() const { return stayTime; }
 
 private:
 	float intensity;
@@ -27,9 +43,9 @@ private:
 	float3 color2;
 	float length;
 	float curLength;
-	float speedf;
+	float speedF;
 	float intensityFalloff;
-	float midtexx;
+	float midTexx;
 	/**
 	 * Number of frames the laser had left to expand
 	 * if it impacted before reaching full length.

@@ -17,7 +17,7 @@
 	#include "Sync/SyncTracer.h"
 #endif
 
-CR_BIND_DERIVED(CLaserProjectile, CWeaponProjectile, (float3(0,0,0),float3(0,0,0),NULL,0,float3(0,0,0),float3(0,0,0),0,NULL,0));
+CR_BIND_DERIVED(CLaserProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, NULL, 0.0f, ZeroVector, ZeroVector, 0.0f, NULL, 0));
 
 CR_REG_METADATA(CLaserProjectile,(
 	CR_SETFLAG(CF_Synced),
@@ -27,10 +27,10 @@ CR_REG_METADATA(CLaserProjectile,(
 	CR_MEMBER(color2),
 	CR_MEMBER(length),
 	CR_MEMBER(curLength),
-	CR_MEMBER(speedf),
+	CR_MEMBER(speedF),
 	CR_MEMBER(stayTime),
 	CR_MEMBER(intensityFalloff),
-	CR_MEMBER(midtexx),
+	CR_MEMBER(midTexx),
 	CR_RESERVED(16)
 	));
 
@@ -52,15 +52,14 @@ CLaserProjectile::CLaserProjectile(
 {
 	projectileType = WEAPON_LASER_PROJECTILE;
 
-	speedf = speed.Length();
-	dir = speed / speedf;
+	speedF = speed.Length();
+	dir = speed / speedF;
 
 	if (weaponDef) {
 		SetRadius(weaponDef->collisionSize);
 
-		midtexx =
-			(weaponDef->visuals.texture2->xstart +
-			(weaponDef->visuals.texture2->xend - weaponDef->visuals.texture2->xstart) * 0.5f);
+		const AtlasedTexture* tex2 = weaponDef->visuals.texture2;
+		midTexx = (tex2->xstart + (tex2->xend - tex2->xstart) * 0.5f);
 	}
 
 	drawRadius = length;
@@ -87,13 +86,13 @@ void CLaserProjectile::Update()
 
 	if (checkCol) {
 		// normal
-		curLength += speedf;
+		curLength += speedF;
 		if (curLength > length)
 			curLength = length;
 	} else {
 		// fading out after hit
 		if (stayTime <= 0)
-			curLength -= speedf;
+			curLength -= speedF;
 		else
 			stayTime--;
 		if (curLength <= 0) {
@@ -117,7 +116,7 @@ void CLaserProjectile::Update()
 				// if the laser wasn't fully extended yet,
 				// remember how long until it would have been
 				// fully extended
-				stayTime = int(1 + (length - curLength) / speedf);
+				stayTime = int(1 + (length - curLength) / speedF);
 			}
 		}
 	} else {
@@ -158,8 +157,8 @@ void CLaserProjectile::Collision(CUnit* unit)
 			// and was too short for some reason,
 			// remember how long until it would have
 			// been fully extended
-			curLength += speedf;
-			stayTime = int(1 + (length - curLength) / speedf);
+			curLength += speedF;
+			stayTime = int(1 + (length - curLength) / speedF);
 		}
 	}
 }
@@ -179,7 +178,7 @@ void CLaserProjectile::Collision(CFeature* feature)
 			// if the laser wasn't fully extended yet,
 			// remember how long until it would have been
 			// fully extended
-			stayTime = int(1 + (length - curLength) / speedf);
+			stayTime = int(1 + (length - curLength) / speedF);
 		}
 	}
 }
@@ -203,7 +202,7 @@ void CLaserProjectile::Collision()
 			// if the laser wasn't fully extended yet,
 			// remember how long until it would have been
 			// fully extended
-			stayTime = (int)(1 + (length - curLength) / speedf);
+			stayTime = (int)(1 + (length - curLength) / speedF);
 		}
 	}
 }
@@ -240,44 +239,47 @@ void CLaserProjectile::Draw()
 	const float coresize = size * weaponDef->corethickness;
 
 	va->EnlargeArrays(32, 0, VA_SIZE_TC);
+
+	const AtlasedTexture* tex1 = weaponDef->visuals.texture1;
 	if (camDist < weaponDef->lodDistance) {
+		const AtlasedTexture* tex2 = weaponDef->visuals.texture2;
 		const float3 pos2 = drawPos - (dir * curLength);
 		float texStartOffset;
 		float texEndOffset;
 		if (checkCol) { // expanding or contracting?
 			texStartOffset = 0;
-			texEndOffset   = (1.0f - (curLength / length)) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
+			texEndOffset   = (1.0f - (curLength / length)) * (tex1->xstart - tex1->xend);
 		} else {
-			texStartOffset = (-1.0f + (curLength / length) + ((float)stayTime * (speedf / length))) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
-			texEndOffset   = ((float)stayTime * (speedf / length)) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
+			texStartOffset = (-1.0f + (curLength / length) + ((float)stayTime * (speedF / length))) * (tex1->xstart - tex1->xend);
+			texEndOffset   = ((float)stayTime * (speedF / length)) * (tex1->xstart - tex1->xend);
 		}
 
-		va->AddVertexQTC(drawPos - (dir1 * size),                       midtexx,                             weaponDef->visuals.texture2->ystart, col);
-		va->AddVertexQTC(drawPos + (dir1 * size),                       midtexx,                             weaponDef->visuals.texture2->yend,   col);
-		va->AddVertexQTC(drawPos + (dir1 * size) - (dir2 * size),       weaponDef->visuals.texture2->xstart, weaponDef->visuals.texture2->yend,   col);
-		va->AddVertexQTC(drawPos - (dir1 * size) - (dir2 * size),       weaponDef->visuals.texture2->xstart, weaponDef->visuals.texture2->ystart, col);
-		va->AddVertexQTC(drawPos - (dir1 * coresize),                   midtexx,                             weaponDef->visuals.texture2->ystart, col2);
-		va->AddVertexQTC(drawPos + (dir1 * coresize),                   midtexx,                             weaponDef->visuals.texture2->yend,   col2);
-		va->AddVertexQTC(drawPos + (dir1 * coresize)-(dir2 * coresize), weaponDef->visuals.texture2->xstart, weaponDef->visuals.texture2->yend,   col2);
-		va->AddVertexQTC(drawPos - (dir1 * coresize)-(dir2 * coresize), weaponDef->visuals.texture2->xstart, weaponDef->visuals.texture2->ystart, col2);
+		va->AddVertexQTC(drawPos - (dir1 * size),                         midTexx,      tex2->ystart, col);
+		va->AddVertexQTC(drawPos + (dir1 * size),                         midTexx,      tex2->yend,   col);
+		va->AddVertexQTC(drawPos + (dir1 * size) - (dir2 * size),         tex2->xstart, tex2->yend,   col);
+		va->AddVertexQTC(drawPos - (dir1 * size) - (dir2 * size),         tex2->xstart, tex2->ystart, col);
+		va->AddVertexQTC(drawPos - (dir1 * coresize),                     midTexx,      tex2->ystart, col2);
+		va->AddVertexQTC(drawPos + (dir1 * coresize),                     midTexx,      tex2->yend,   col2);
+		va->AddVertexQTC(drawPos + (dir1 * coresize) - (dir2 * coresize), tex2->xstart, tex2->yend,   col2);
+		va->AddVertexQTC(drawPos - (dir1 * coresize) - (dir2 * coresize), tex2->xstart, tex2->ystart, col2);
 
-		va->AddVertexQTC(drawPos - (dir1 * size),     weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->ystart, col);
-		va->AddVertexQTC(drawPos + (dir1 * size),     weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->yend,   col);
-		va->AddVertexQTC(pos2    + (dir1 * size),     weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->yend,   col);
-		va->AddVertexQTC(pos2    - (dir1 * size),     weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->ystart, col);
-		va->AddVertexQTC(drawPos - (dir1 * coresize), weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->ystart, col2);
-		va->AddVertexQTC(drawPos + (dir1 * coresize), weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->yend,   col2);
-		va->AddVertexQTC(pos2    + (dir1 * coresize), weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->yend,   col2);
-		va->AddVertexQTC(pos2    - (dir1 * coresize), weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->ystart, col2);
+		va->AddVertexQTC(drawPos - (dir1 * size),     tex1->xstart + texStartOffset, tex1->ystart, col);
+		va->AddVertexQTC(drawPos + (dir1 * size),     tex1->xstart + texStartOffset, tex1->yend,   col);
+		va->AddVertexQTC(pos2    + (dir1 * size),     tex1->xend   + texEndOffset,   tex1->yend,   col);
+		va->AddVertexQTC(pos2    - (dir1 * size),     tex1->xend   + texEndOffset,   tex1->ystart, col);
+		va->AddVertexQTC(drawPos - (dir1 * coresize), tex1->xstart + texStartOffset, tex1->ystart, col2);
+		va->AddVertexQTC(drawPos + (dir1 * coresize), tex1->xstart + texStartOffset, tex1->yend,   col2);
+		va->AddVertexQTC(pos2    + (dir1 * coresize), tex1->xend   + texEndOffset,   tex1->yend,   col2);
+		va->AddVertexQTC(pos2    - (dir1 * coresize), tex1->xend   + texEndOffset,   tex1->ystart, col2);
 
-		va->AddVertexQTC(pos2    - (dir1 * size),                         midtexx,                           weaponDef->visuals.texture2->ystart, col);
-		va->AddVertexQTC(pos2    + (dir1 * size),                         midtexx,                           weaponDef->visuals.texture2->yend,   col);
-		va->AddVertexQTC(pos2    + (dir1 * size) + (dir2 * size),         weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->yend,   col);
-		va->AddVertexQTC(pos2    - (dir1 * size) + (dir2 * size),         weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->ystart, col);
-		va->AddVertexQTC(pos2    - (dir1 * coresize),                     midtexx,                           weaponDef->visuals.texture2->ystart, col2);
-		va->AddVertexQTC(pos2    + (dir1 * coresize),                     midtexx,                           weaponDef->visuals.texture2->yend,   col2);
-		va->AddVertexQTC(pos2    + (dir1 * coresize) + (dir2 * coresize), weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->yend,   col2);
-		va->AddVertexQTC(pos2    - (dir1 * coresize) + (dir2 * coresize), weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->ystart, col2);
+		va->AddVertexQTC(pos2    - (dir1 * size),                         midTexx,    tex2->ystart, col);
+		va->AddVertexQTC(pos2    + (dir1 * size),                         midTexx,    tex2->yend,   col);
+		va->AddVertexQTC(pos2    + (dir1 * size) + (dir2 * size),         tex2->xend, tex2->yend,   col);
+		va->AddVertexQTC(pos2    - (dir1 * size) + (dir2 * size),         tex2->xend, tex2->ystart, col);
+		va->AddVertexQTC(pos2    - (dir1 * coresize),                     midTexx,    tex2->ystart, col2);
+		va->AddVertexQTC(pos2    + (dir1 * coresize),                     midTexx,    tex2->yend,   col2);
+		va->AddVertexQTC(pos2    + (dir1 * coresize) + (dir2 * coresize), tex2->xend, tex2->yend,   col2);
+		va->AddVertexQTC(pos2    - (dir1 * coresize) + (dir2 * coresize), tex2->xend, tex2->ystart, col2);
 	} else {
 		const float3 pos1 = drawPos + (dir * (size * 0.5f));
 		const float3 pos2 = pos1 - (dir * (curLength + size));
@@ -285,20 +287,20 @@ void CLaserProjectile::Draw()
 		float texEndOffset;
 		if (checkCol) { // expanding or contracting?
 			texStartOffset = 0;
-			texEndOffset   = (1.0f - (curLength / length)) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
+			texEndOffset   = (1.0f - (curLength / length)) * (tex1->xstart - tex1->xend);
 		} else {
-			texStartOffset = (-1.0f + (curLength / length) + ((float)stayTime * (speedf / length))) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
-			texEndOffset   = ((float)stayTime * (speedf / length)) * (weaponDef->visuals.texture1->xstart - weaponDef->visuals.texture1->xend);
+			texStartOffset = (-1.0f + (curLength / length) + ((float)stayTime * (speedF / length))) * (tex1->xstart - tex1->xend);
+			texEndOffset   = ((float)stayTime * (speedF / length)) * (tex1->xstart - tex1->xend);
 		}
 
-		va->AddVertexQTC(pos1 - (dir1 * size),     weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->ystart, col);
-		va->AddVertexQTC(pos1 + (dir1 * size),     weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->yend,   col);
-		va->AddVertexQTC(pos2 + (dir1 * size),     weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->yend,   col);
-		va->AddVertexQTC(pos2 - (dir1 * size),     weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->ystart, col);
-		va->AddVertexQTC(pos1 - (dir1 * coresize), weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->ystart, col2);
-		va->AddVertexQTC(pos1 + (dir1 * coresize), weaponDef->visuals.texture1->xstart + texStartOffset, weaponDef->visuals.texture1->yend,   col2);
-		va->AddVertexQTC(pos2 + (dir1 * coresize), weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->yend,   col2);
-		va->AddVertexQTC(pos2 - (dir1 * coresize), weaponDef->visuals.texture1->xend   + texEndOffset,   weaponDef->visuals.texture1->ystart, col2);
+		va->AddVertexQTC(pos1 - (dir1 * size),     tex1->xstart + texStartOffset, tex1->ystart, col);
+		va->AddVertexQTC(pos1 + (dir1 * size),     tex1->xstart + texStartOffset, tex1->yend,   col);
+		va->AddVertexQTC(pos2 + (dir1 * size),     tex1->xend   + texEndOffset,   tex1->yend,   col);
+		va->AddVertexQTC(pos2 - (dir1 * size),     tex1->xend   + texEndOffset,   tex1->ystart, col);
+		va->AddVertexQTC(pos1 - (dir1 * coresize), tex1->xstart + texStartOffset, tex1->ystart, col2);
+		va->AddVertexQTC(pos1 + (dir1 * coresize), tex1->xstart + texStartOffset, tex1->yend,   col2);
+		va->AddVertexQTC(pos2 + (dir1 * coresize), tex1->xend   + texEndOffset,   tex1->yend,   col2);
+		va->AddVertexQTC(pos2 - (dir1 * coresize), tex1->xend   + texEndOffset,   tex1->ystart, col2);
 	}
 }
 
