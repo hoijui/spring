@@ -4,13 +4,10 @@
 #include "mmgr.h"
 
 #include "FlameProjectile.h"
-#include "Game/Camera.h"
 #include "Map/Ground.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Textures/ColorMap.h"
-#include "Rendering/Textures/TextureAtlas.h"
-#include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
+// FIXME: the following should not be here
+#include "Rendering/Projectiles/WeaponProjectiles/FlameProjectileDrawer.h"
 
 CR_BIND_DERIVED(CFlameProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, ZeroVector, NULL, NULL, 0));
 
@@ -22,7 +19,7 @@ CR_REG_METADATA(CFlameProjectile,(
 	CR_MEMBER(spread),
 	CR_MEMBER(curTime),
 	CR_MEMBER(physLife),
-	CR_MEMBER(invttl),
+	CR_MEMBER(invTtl),
 	CR_RESERVED(16)
 	));
 
@@ -39,7 +36,7 @@ CFlameProjectile::CFlameProjectile(
 	curTime(0)
 {
 	projectileType = WEAPON_FLAME_PROJECTILE;
-	invttl = 1.0f / ttl;
+	invTtl = 1.0f / ttl;
 
 	if (weaponDef) {
 		SetRadius(weaponDef->size * weaponDef->collisionSize);
@@ -86,7 +83,7 @@ void CFlameProjectile::Update()
 	sqRadius = radius * radius;
 	drawRadius = radius * weaponDef->collisionSize;
 
-	curTime += invttl;
+	curTime += invTtl;
 	if (curTime > physLife) {
 		checkCol = false;
 	}
@@ -102,15 +99,21 @@ void CFlameProjectile::Update()
 
 void CFlameProjectile::Draw()
 {
-	inArray = true;
-	unsigned char col[4];
-	weaponDef->visuals.colorMap->GetColor(col, curTime);
-
-	va->AddVertexTC(drawPos - camera->right * radius - camera->up * radius, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * radius - camera->up * radius, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * radius + camera->up * radius, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->yend,   col);
-	va->AddVertexTC(drawPos - camera->right * radius + camera->up * radius, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->yend,   col);
+	GetDrawer()->Render(this);
 }
+
+ProjectileDrawer* CFlameProjectile::myProjectileDrawer = NULL;
+
+ProjectileDrawer* CFlameProjectile::GetDrawer() {
+
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CFlameProjectileDrawer();
+	}
+
+	return myProjectileDrawer;
+}
+
 
 int CFlameProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)
 {
