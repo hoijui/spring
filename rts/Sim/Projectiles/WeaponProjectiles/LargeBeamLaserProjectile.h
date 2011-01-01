@@ -4,7 +4,10 @@
 #define LARGE_BEAM_LASER_PROJECTILE_H
 
 #include "WeaponProjectile.h"
-#include "Rendering/Textures/TextureAtlas.h"
+
+class CVertexArray;
+class ProjectileDrawer;
+class ProjectileMinimapDrawer;
 
 class CLargeBeamLaserProjectile : public CWeaponProjectile
 {
@@ -19,27 +22,58 @@ public:
 	void Draw();
 	virtual void DrawOnMinimap(CVertexArray& lines, CVertexArray& points);
 
+	const float3& GetStartPos() const { return startPos; }
+	const float3& GetEndPos() const { return endPos; }
+	const unsigned char* GetCoreColStart() const { return coreColStart; }
+	const unsigned char* GetKoColStart() const { return koColStart; }
+	float GetThickness() const { return thickness; }
+	float GetCoreThickness() const { return coreThickness; }
+	float GetFlareSize() const { return flareSize; }
+	float GetTileLength() const { return tileLength; }
+	float GetScrollSpeed() const { return scrollSpeed; }
+	float GetPulseSpeed() const { return pulseSpeed; }
+	float GetDecay() const { return decay; }
+
 private:
 	float3 startPos;
 	float3 endPos;
-	unsigned char corecolstart[4];
+	unsigned char coreColStart[4];
 	//unsigned char corecolend[4];
-	unsigned char kocolstart[4];
+	unsigned char koColStart[4];
 	//unsigned char kocolend[4];
 
 	//float startAlpha;
 	//float endAlpha;
 	float thickness;
-	float corethickness;
-	float flaresize;
+	float coreThickness;
+	float flareSize;
 	//float midtexx;
-	float tilelength;
-	float scrollspeed;
+	float tileLength;
+	float scrollSpeed;
 	float pulseSpeed;
 	float decay;
 
-	AtlasedTexture beamtex;
-	AtlasedTexture side;
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
+
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* myProjectileMinimapDrawer;
+	/**
+	 * @see myProjectileMinimapDrawer
+	 * @deprecated
+	 */
+	static ProjectileMinimapDrawer* GetMinimapDrawer();
 };
 
 #endif // LARGE_BEAM_LASER_PROJECTILE_H
