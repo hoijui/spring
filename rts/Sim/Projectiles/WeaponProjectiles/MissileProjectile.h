@@ -6,6 +6,7 @@
 #include "WeaponProjectile.h"
 
 class CUnit;
+class ProjectileDrawer;
 
 class CMissileProjectile : public CWeaponProjectile
 {
@@ -17,6 +18,7 @@ public:
 			float areaOfEffect, float maxSpeed, int ttl, CUnit* target,
 			const WeaponDef* weaponDef, float3 targetPos);
 	~CMissileProjectile();
+
 	void DependentDied(CObject* o);
 	void Collision(CUnit* unit);
 	void Collision();
@@ -26,6 +28,32 @@ public:
 
 	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
 			float shieldForce, float shieldMaxSpeed);
+
+	float GetMaxSpeed() const { return maxSpeed; }
+	float GetCurSpeed() const { return curSpeed; }
+	float GetAreaOfEffect() const { return areaOfEffect; }
+	int GetAge() const { return age; }
+	const float3& GetOldSmoke() const { return oldSmoke; }
+	const float3& GetOldDir() const { return oldDir; }
+	const CUnit* GetTarget() const { return target; }
+	const CProjectile* GetDecoyTarget() const { return decoyTarget; }
+	bool GetDrawTrail() const { return drawTrail; }
+	int GetNumParts() const { return numParts; }
+	const float3& GetTargPos() const { return targPos; }
+
+	bool GetIsWobbling() const { return isWobbling; }
+	const float3& GetWobbleDir() const { return wobbleDir; }
+	int GetWobbleTime() const { return wobbleTime; }
+	const float3& GetWobbleDif() const { return wobbleDif; }
+
+	bool GetIsDancing() const { return isDancing; }
+	int GetDanceTime() const { return danceTime; }
+	const float3& GetDanceMove() const { return danceMove; }
+	const float3& GetDanceCenter() const { return danceCenter; }
+
+	float GetExtraHeight() const { return extraHeight; }
+	float GetExtraHeightDecay() const { return extraHeightDecay; }
+	int GetExtraHeightTime() const { return extraHeightTime; }
 
 private:
 	float maxSpeed;
@@ -60,9 +88,21 @@ private:
 	float extraHeightDecay;
 	int extraHeightTime;
 
+public:
 	/// the smokes life-time in frames
 	static const float SMOKE_TIME;
-};
 
+private:
+	/**
+	 * Will be externalized into somewhere under Rendering later on.
+	 * @deprecated
+	 */
+	static ProjectileDrawer* myProjectileDrawer;
+	/**
+	 * @see myProjectileDrawer
+	 * @deprecated
+	 */
+	static ProjectileDrawer* GetDrawer();
+};
 
 #endif /* MISSILE_PROJECTILE_H */

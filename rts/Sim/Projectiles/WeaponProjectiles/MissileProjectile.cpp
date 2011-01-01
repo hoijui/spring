@@ -3,16 +3,9 @@
 #include "StdAfx.h"
 #include "mmgr.h"
 
-#include "Game/Camera.h"
 #include "Game/GameHelper.h"
 #include "Map/Ground.h"
 #include "MissileProjectile.h"
-#include "Rendering/GlobalRendering.h"
-#include "Rendering/ProjectileDrawer.hpp"
-#include "Rendering/GL/myGL.h"
-#include "Rendering/GL/VertexArray.h"
-#include "Rendering/Models/3DModel.h"
-#include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/GeometricObjects.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Projectiles/Unsynced/SmokeTrailProjectile.h"
@@ -22,6 +15,10 @@
 #include "System/myMath.h"
 #include "System/Sync/SyncTracer.h"
 #include "System/GlobalUnsynced.h"
+// FIXME: the following should not be here
+#include "Game/Camera.h"
+#include "Rendering/Models/3DModel.h"
+#include "Rendering/Projectiles/WeaponProjectiles/MissileProjectileDrawer.h"
 
 const float CMissileProjectile::SMOKE_TIME = 60.0f;
 
@@ -343,95 +340,23 @@ void CMissileProjectile::UpdateGroundBounce() {
 }
 
 
-
 void CMissileProjectile::Draw()
 {
-	inArray = true;
-	const float age2 = (age & 7) + globalRendering->timeOffset;
+	GetDrawer()->Render(this);
+}
 
-	unsigned char col[4];
+ProjectileDrawer* CMissileProjectile::myProjectileDrawer = NULL;
 
-	va->EnlargeArrays(8 + (4 * numParts), 0, VA_SIZE_TC);
-	if (weaponDef->visuals.smokeTrail) {
-		const float color = 0.6f;
-		if (drawTrail) {
-			// draw the trail as a single quad
-			float3 dif(drawPos - camera->pos);
-			dif.ANormalize();
-			float3 dir1(dif.cross(dir));
-			dir1.ANormalize();
-			float3 dif2(oldSmoke - camera->pos);
-			dif2.ANormalize();
-			float3 dir2(dif2.cross(oldDir));
-			dir2.ANormalize();
+ProjectileDrawer* CMissileProjectile::GetDrawer() {
 
-			float a1 = (1.0f / (SMOKE_TIME)) * 255;
-			a1 *= 0.7f + fabs(dif.dot(dir));
-			const float alpha1 = std::min(255.0f, std::max(0.0f, a1));
-			col[0] = (unsigned char) (color * alpha1);
-			col[1] = (unsigned char) (color * alpha1);
-			col[2] = (unsigned char) (color * alpha1);
-			col[3] = (unsigned char) alpha1;
-
-			unsigned char col2[4];
-			float a2 = (1 - float(age2) / (SMOKE_TIME)) * 255;
-
-			if (age < 8) {
-				a2 = 0;
-			}
-
-			a2 *= 0.7f + fabs(dif2.dot(oldDir));
-			const float alpha2 = std::min(255.0f, std::max(0.0f, a2));
-			col2[0] = (unsigned char) (color * alpha2);
-			col2[1] = (unsigned char) (color * alpha2);
-			col2[2] = (unsigned char) (color * alpha2);
-			col2[3] = (unsigned char) alpha2;
-
-			const float size = 1.0f;
-			const float size2 = (1 + (age2 * (1 / SMOKE_TIME)) * 7);
-			const float txs = weaponDef->visuals.texture2->xend - (weaponDef->visuals.texture2->xend - weaponDef->visuals.texture2->xstart) * (age2 / 8.0f);
-
-			va->AddVertexQTC(drawPos  - dir1 * size,  txs,                               weaponDef->visuals.texture2->ystart, col);
-			va->AddVertexQTC(drawPos  + dir1 * size,  txs,                               weaponDef->visuals.texture2->yend,   col);
-			va->AddVertexQTC(oldSmoke + dir2 * size2, weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->yend,   col2);
-			va->AddVertexQTC(oldSmoke - dir2 * size2, weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->ystart, col2);
-		} else {
-			// draw the trail as particles
-			const float dist = pos.distance(oldSmoke);
-			const float3 dirpos1 = pos - dir * dist * 0.33f;
-			const float3 dirpos2 = oldSmoke + oldDir * dist * 0.33f;
-
-			for (int a = 0; a < numParts; ++a) { //! CAUTION: loop count must match EnlargeArrays above
-				const float alpha = 255.0f;
-				col[0] = (unsigned char) (color * alpha);
-				col[1] = (unsigned char) (color * alpha);
-				col[2] = (unsigned char) (color * alpha);
-				col[3] = (unsigned char) alpha;
-
-				const float size = (1 + (a * (1 / SMOKE_TIME)) * 7);
-				float3 pos1 = CalcBeizer(float(a) / (numParts), pos, dirpos1, dirpos2, oldSmoke);
-
-				#define st projectileDrawer->smoketex[0]
-				va->AddVertexQTC(pos1 + ( camera->up + camera->right) * size, st->xstart, st->ystart, col);
-				va->AddVertexQTC(pos1 + ( camera->up - camera->right) * size, st->xend,   st->ystart, col);
-				va->AddVertexQTC(pos1 + (-camera->up - camera->right) * size, st->xend,   st->ystart, col);
-				va->AddVertexQTC(pos1 + (-camera->up + camera->right) * size, st->xstart, st->ystart, col);
-				#undef st
-			}
-		}
+	if (myProjectileDrawer == NULL) {
+		// Note: This is never deleted, but it is to be (re-)moved anyway
+		myProjectileDrawer = new CMissileProjectileDrawer();
 	}
 
-	// rocket flare
-	col[0] = 255;
-	col[1] = 210;
-	col[2] = 180;
-	col[3] = 1;
-	const float fsize = radius * 0.4f;
-	va->AddVertexQTC(drawPos - camera->right * fsize-camera->up * fsize, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexQTC(drawPos + camera->right * fsize-camera->up * fsize, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->ystart, col);
-	va->AddVertexQTC(drawPos + camera->right * fsize+camera->up * fsize, weaponDef->visuals.texture1->xend,   weaponDef->visuals.texture1->yend,   col);
-	va->AddVertexQTC(drawPos - camera->right * fsize+camera->up * fsize, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->yend,   col);
+	return myProjectileDrawer;
 }
+
 
 int CMissileProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)
 {
