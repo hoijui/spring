@@ -23,7 +23,7 @@
 
 const float CStarburstProjectile::SMOKE_TIME = 70.0f;
 
-CR_BIND_DERIVED(CStarburstProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, NULL, ZeroVector, 0, 0, 0, 0, NULL, NULL, NULL, 0, ZeroVector));
+CR_BIND_DERIVED(CStarburstProjectile, CWeaponProjectile, (ZeroVector, ZeroVector, NULL, ZeroVector, 0.0f, 0.0f, 0.0f, 0, NULL, NULL, NULL, 0.0f, ZeroVector));
 
 CR_REG_METADATA(CStarburstProjectile,(
 	CR_SETFLAG(CF_Synced),
@@ -32,14 +32,14 @@ CR_REG_METADATA(CStarburstProjectile,(
 	CR_MEMBER(dir),
 	CR_MEMBER(maxSpeed),
 	CR_MEMBER(curSpeed),
-	CR_MEMBER(uptime),
+	CR_MEMBER(upTime),
 	CR_MEMBER(areaOfEffect),
 	CR_MEMBER(age),
 	CR_MEMBER(oldSmoke),
 	CR_MEMBER(oldSmokeDir),
 	CR_MEMBER(drawTrail),
 	CR_MEMBER(numParts),
-	CR_MEMBER(doturn),
+	CR_MEMBER(doTurn),
 	CR_MEMBER(curCallback),
 	CR_MEMBER(missileAge),
 	CR_MEMBER(distanceToTravel),
@@ -62,7 +62,7 @@ CStarburstProjectile::CStarburstProjectile(
 	CUnit* owner,
 	float3 targetPos,
 	float areaOfEffect, float maxSpeed,
-	float tracking, int uptime,
+	float tracking, int upTime,
 	CUnit* target,
 	const WeaponDef* weaponDef,
 	CWeaponProjectile* interceptTarget,
@@ -77,18 +77,18 @@ CStarburstProjectile::CStarburstProjectile(
 	aimError(aimError),
 	drawTrail(true),
 	numParts(0),
-	doturn(true),
+	doTurn(true),
 	curCallback(NULL),
 	numCallback(NULL),
 	missileAge(0),
 	distanceToTravel(maxdistance)
 {
 	projectileType = WEAPON_STARBURST_PROJECTILE;
-	this->uptime = uptime;
+	this->upTime = upTime;
 
 	if (weaponDef) {
 		if (weaponDef->flighttime == 0) {
-			ttl = (int) std::min(3000.0f, uptime + weaponDef->range / maxSpeed + 100);
+			ttl = (int) std::min(3000.0f, upTime + weaponDef->range / maxSpeed + 100);
 		} else {
 			ttl = weaponDef->flighttime;
 		}
@@ -179,7 +179,7 @@ void CStarburstProjectile::Collision(CUnit* unit)
 void CStarburstProjectile::Update()
 {
 	ttl--;
-	uptime--;
+	upTime--;
 	missileAge++;
 
 	if (target && weaponDef->tracks && owner()) {
@@ -193,7 +193,7 @@ void CStarburstProjectile::Update()
 		}
 	}
 
-	if (uptime > 0) {
+	if (upTime > 0) {
 		if (!luaMoveCtrl) {
 			if (curSpeed < maxSpeed) {
 				curSpeed += weaponDef->weaponacceleration;
@@ -201,7 +201,7 @@ void CStarburstProjectile::Update()
 
 			speed = dir * curSpeed;
 		}
-	} else if (doturn && ttl > 0 && distanceToTravel > 0) {
+	} else if (doTurn && ttl > 0 && distanceToTravel > 0) {
 		if (!luaMoveCtrl) {
 			float3 dif(targetPos - pos);
 			dif.Normalize();
@@ -210,7 +210,7 @@ void CStarburstProjectile::Update()
 
 			if (dif.dot(dir) > 0.99f) {
 				dir = dif;
-				doturn = false;
+				doTurn = false;
 			} else {
 				dif = dif - dir;
 				dif -= dir * (dif.dot(dir));
@@ -366,10 +366,8 @@ void CStarburstProjectile::Draw()
 			const float size1 = 1.0f;
 			const float size2 = (1.0f + age2 * (1.0f / SMOKE_TIME) * 7.0f);
 
-			const float txs =
-				weaponDef->visuals.texture2->xend -
-				(weaponDef->visuals.texture2->xend - weaponDef->visuals.texture2->xstart) *
-				(age2 / 8.0f);
+			const AtlasedTexture* wt2 = weaponDef->visuals.texture2;
+			const float txs = wt2->xend - (wt2->xend - wt2->xstart) * (age2 / 8.0f);
 
 			col[0] = (color * alpha1);
 			col[1] = (color * alpha1);
@@ -381,10 +379,10 @@ void CStarburstProjectile::Draw()
 			col2[2] = (color * alpha2);
 			col2[3] = alpha2;
 
-			va->AddVertexQTC(drawPos  - dir1 * size1, txs,                               weaponDef->visuals.texture2->ystart, col);
-			va->AddVertexQTC(drawPos  + dir1 * size1, txs,                               weaponDef->visuals.texture2->yend,   col);
-			va->AddVertexQTC(oldSmoke + dir2 * size2, weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->yend,   col2);
-			va->AddVertexQTC(oldSmoke - dir2 * size2, weaponDef->visuals.texture2->xend, weaponDef->visuals.texture2->ystart, col2);
+			va->AddVertexQTC(drawPos  - dir1 * size1, txs,       wt2->ystart, col);
+			va->AddVertexQTC(drawPos  + dir1 * size1, txs,       wt2->yend,   col);
+			va->AddVertexQTC(oldSmoke + dir2 * size2, wt2->xend, wt2->yend,   col2);
+			va->AddVertexQTC(oldSmoke - dir2 * size2, wt2->xend, wt2->ystart, col2);
 		} else {
 			// draw the trail as particles
 			const float dist = pos.distance(oldSmoke);
@@ -401,18 +399,19 @@ void CStarburstProjectile::Draw()
 				const float size = 1 + (a * (1.0f / SMOKE_TIME) * 7.0f);
 				const float3 pos1 = CalcBeizer((float)a / curNumParts, pos, dirpos1, dirpos2, oldSmoke);
 
-				#define st projectileDrawer->smoketex[0]
+				const AtlasedTexture* st = projectileDrawer->smoketex[0];
 				va->AddVertexQTC(pos1 + ( camera->up + camera->right) * size, st->xstart, st->ystart, col);
 				va->AddVertexQTC(pos1 + ( camera->up - camera->right) * size, st->xend,   st->ystart, col);
 				va->AddVertexQTC(pos1 + (-camera->up - camera->right) * size, st->xend,   st->ystart, col);
 				va->AddVertexQTC(pos1 + (-camera->up + camera->right) * size, st->xstart, st->ystart, col);
-				#undef st
 			}
 		}
 	}
+
 	DrawCallback();
-	if (curCallback == NULL)
+	if (curCallback == NULL) {
 		DrawCallback();
+	}
 }
 
 void CStarburstProjectile::DrawCallback()
@@ -460,12 +459,11 @@ void CStarburstProjectile::DrawCallback()
 
 			const float drawsize = 1.0f + age2 * 0.8f * ageMod * 7;
 
-			#define wt3 weaponDef->visuals.texture3
-			va->AddVertexTC(interPos - camera->right * drawsize - camera->up * drawsize, wt3->xstart, wt3->ystart, col);
-			va->AddVertexTC(interPos + camera->right * drawsize - camera->up * drawsize, wt3->xend,   wt3->ystart, col);
-			va->AddVertexTC(interPos + camera->right * drawsize + camera->up * drawsize, wt3->xend,   wt3->yend,   col);
-			va->AddVertexTC(interPos - camera->right * drawsize + camera->up * drawsize, wt3->xstart, wt3->yend,   col);
-			#undef wt3
+			const AtlasedTexture* wt3 = weaponDef->visuals.texture3;
+			va->AddVertexTC(interPos - (camera->right * drawsize) - (camera->up * drawsize), wt3->xstart, wt3->ystart, col);
+			va->AddVertexTC(interPos + (camera->right * drawsize) - (camera->up * drawsize), wt3->xend,   wt3->ystart, col);
+			va->AddVertexTC(interPos + (camera->right * drawsize) + (camera->up * drawsize), wt3->xend,   wt3->yend,   col);
+			va->AddVertexTC(interPos - (camera->right * drawsize) + (camera->up * drawsize), wt3->xstart, wt3->yend,   col);
 		}
 	}
 
@@ -477,12 +475,11 @@ void CStarburstProjectile::DrawCallback()
 
 	const float fsize = 25.0f;
 
-	#define wt1 weaponDef->visuals.texture1
-	va->AddVertexTC(drawPos - camera->right * fsize - camera->up * fsize, wt1->xstart, wt1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * fsize - camera->up * fsize, wt1->xend,   wt1->ystart, col);
-	va->AddVertexTC(drawPos + camera->right * fsize + camera->up * fsize, wt1->xend,   wt1->yend,   col);
-	va->AddVertexTC(drawPos - camera->right * fsize + camera->up * fsize, wt1->xstart, wt1->yend,   col);
-	#undef wt1
+	const AtlasedTexture* wt1 = weaponDef->visuals.texture1;
+	va->AddVertexTC(drawPos - (camera->right * fsize) - (camera->up * fsize), wt1->xstart, wt1->ystart, col);
+	va->AddVertexTC(drawPos + (camera->right * fsize) - (camera->up * fsize), wt1->xend,   wt1->ystart, col);
+	va->AddVertexTC(drawPos + (camera->right * fsize) + (camera->up * fsize), wt1->xend,   wt1->yend,   col);
+	va->AddVertexTC(drawPos - (camera->right * fsize) + (camera->up * fsize), wt1->xstart, wt1->yend,   col);
 }
 
 int CStarburstProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)

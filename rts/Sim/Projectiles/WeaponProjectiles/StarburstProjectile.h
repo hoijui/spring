@@ -23,7 +23,7 @@ class CStarburstProjectile : public CWeaponProjectile
 public:
 	CStarburstProjectile(const float3& pos, const float3& speed, CUnit* owner,
 			float3 targetPos, float areaOfEffect, float maxSpeed,float tracking,
-			int uptime, CUnit* target, const WeaponDef* weaponDef,
+			int upTime, CUnit* target, const WeaponDef* weaponDef,
 			CWeaponProjectile* interceptTarget, float maxdistance,
 			float3 aimError);
 	~CStarburstProjectile();
@@ -35,6 +35,25 @@ public:
 	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
 			float shieldForce, float shieldMaxSpeed);
 
+	float GetTracking() const { return tracking; }
+	float GetMaxGoodDif() const { return maxGoodDif; }
+	float GetMaxSpeed() const { return maxSpeed; }
+	float GetCurSpeed() const { return curSpeed; }
+	float GetAcceleration() const { return acceleration; }
+	int GetUpTime() const { return upTime; }
+	float GetAreaOfEffect() const { return areaOfEffect; }
+	int GetAge() const { return age; }
+	const float3& GetOldSmoke() const { return oldSmoke; }
+	const float3& GetOldSmokeDir() const { return oldSmokeDir; }
+	const float3& GetAimError() const { return aimError; }
+	bool GetDrawTrail() const { return drawTrail; }
+	int GetNumParts() const { return numParts; }
+	bool GetDoTurn() const { return doTurn; }
+	const CSmokeTrailProjectile* GetCurCallback() const { return curCallback; }
+	const int* GetNumCallback() const { return numCallback; }
+	int GetMissileAge() const { return missileAge; }
+	float GetDistanceToTravel() const { return distanceToTravel; }
+
 private:
 	void DrawCallback();
 
@@ -43,7 +62,7 @@ private:
 	float maxSpeed;
 	float curSpeed;
 	float acceleration;
-	int uptime;
+	int upTime;
 	float areaOfEffect;
 	int age;
 	float3 oldSmoke;
@@ -51,7 +70,7 @@ private:
 	float3 aimError;
 	bool drawTrail;
 	int numParts;
-	bool doturn;
+	bool doTurn;
 	CSmokeTrailProjectile* curCallback;
 	int* numCallback;
 	int missileAge;
