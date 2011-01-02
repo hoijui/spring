@@ -164,10 +164,12 @@ void CScriptMoveType::SlowUpdate()
 void CScriptMoveType::CheckNotify()
 {
 	if (scriptNotify) {
+		scriptNotify = 0;
+
 		if (luaRules && luaRules->MoveCtrlNotify(owner, scriptNotify)) {
+			//! deletes <this>
 			owner->DisableScriptMoveType();
 		}
-		scriptNotify = 0;
 	}
 }
 
