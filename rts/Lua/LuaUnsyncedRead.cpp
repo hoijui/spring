@@ -1097,15 +1097,10 @@ int LuaUnsyncedRead::GetWaterMode(lua_State* L)
 	if (water == NULL) {
 		return 0;
 	}
+
 	const int mode = water->GetID();
-	const char* modeName;
-	switch (mode) {
-		case 0:  { modeName = "basic";      break; }
-		case 1:  { modeName = "reflective"; break; }
-		case 2:  { modeName = "dynamic";    break; }
-		case 3:  { modeName = "refractive"; break; }
-		default: { modeName = "unknown";    break; }
-	}
+	const char* modeName = water->GetName();
+
 	lua_pushnumber(L, mode);
 	lua_pushstring(L, modeName);
 	return 2;
