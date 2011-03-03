@@ -11,7 +11,7 @@ static const float PATHCOST_INFINITY = std::numeric_limits<float>::infinity();
 // NOTE:
 //     PF and PE both use a PathNodeBuffer of size MAX_SEARCHED_NODES,
 //     thus MAX_SEARCHED_NODES_{PF, PE} MUST be <= MAX_SEARCHED_NODES
-static const unsigned int MAX_SEARCHED_NODES = 10000U;
+static const unsigned int MAX_SEARCHED_NODES    = 65536U;
 static const unsigned int MAX_SEARCHED_NODES_PF = MAX_SEARCHED_NODES;
 static const unsigned int MAX_SEARCHED_NODES_PE = MAX_SEARCHED_NODES;
 
@@ -21,7 +21,7 @@ const float MIN_ESTIMATE_DISTANCE = 40;
 const float DETAILED_DISTANCE     = 25;
 const float MIN_DETAILED_DISTANCE = 12;
 
-const unsigned int PATHESTIMATOR_VERSION = 44;
+const unsigned int PATHESTIMATOR_VERSION = 45;
 const unsigned int SQUARES_TO_UPDATE = 600;
 const unsigned int MAX_SEARCHED_NODES_ON_REFINE = 2000;
 

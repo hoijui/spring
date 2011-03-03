@@ -2,9 +2,10 @@
 
 #include "StdAfx.h"
 #include "mmgr.h"
-#include <SDL.h>
 #include <vector>
+#include <SDL.h>
 
+#include "Rendering/GL/myGL.h"
 #include "LoadScreen.h"
 #include "Game.h"
 #include "GameVersion.h"
@@ -26,10 +27,12 @@
 #include "System/LogOutput.h"
 #include "System/NetProtocol.h"
 #include "System/FileSystem/FileHandler.h"
-#include "System/Platform/CrashHandler.h"
+#include "System/Platform/Watchdog.h"
 #include "System/Sound/ISound.h"
-#include "System/Sound/IMusicChannel.h"
+#include "System/Sound/SoundChannels.h"
 
+
+CLoadScreen* CLoadScreen::singleton = NULL;
 
 /******************************************************************************/
 
@@ -57,8 +60,16 @@ void CLoadScreen::Init()
 	//! and gu->myPlayerNum has to be set.
 	skirmishAIHandler.LoadPreGame();
 
-	//! Increase hang detection trigger threshold, to prevent false positives during load
-	CrashHandler::GameLoading(true);
+#ifdef HEADLESS
+	mt_loading = false;
+#else
+	mt_loading = configHandler->Get("LoadingMT", true);
+#endif
+
+	//! Create a thread during the loading that pings the host/server, so it knows that this client is still alive/loading
+	netHeartbeatThread = new boost::thread(boost::bind<void, CNetProtocol, CNetProtocol*>(&CNetProtocol::UpdateLoop, net));
+
+	game = new CGame(mapName, modName, saveFile);
 
 	//FIXME: remove when LuaLoadScreen was added
 	{
@@ -75,13 +86,6 @@ void CLoadScreen::Init()
 		if (!mapStartMusic.empty())
 			Channels::BGMusic.Play(mapStartMusic);
 	}
-
-	mt_loading = configHandler->Get("LoadingMT", true);
-
-	//! Create a Thread that pings the host/server, so it knows that this client is still alive
-	netHeartbeatThread = new boost::thread(boost::bind<void, CNetProtocol, CNetProtocol*>(&CNetProtocol::UpdateLoop, net));
-
-	game = new CGame(mapName, modName, saveFile);
 
 	try {
 		//! Create the Game Loading Thread
@@ -105,20 +109,17 @@ void CLoadScreen::Init()
 
 CLoadScreen::~CLoadScreen()
 {
-	delete gameLoadThread;
+	delete gameLoadThread; gameLoadThread = NULL;
 
-	net->loading = false;
-	netHeartbeatThread->join();
-	delete netHeartbeatThread;
+	if (net)
+		net->loading = false;
+	if (netHeartbeatThread)
+		netHeartbeatThread->join();
+	delete netHeartbeatThread; netHeartbeatThread = NULL;
 
-	UnloadStartPicture();
+	Watchdog::ClearTimer();
 
-	CrashHandler::ClearDrawWDT();
-	//! Set hang detection trigger threshold back to normal
-	CrashHandler::GameLoading(false);
-
-	extern volatile bool globalQuit;
-	if (!globalQuit) {
+	if (!gu->globalQuit) {
 		//! sending your playername to the server indicates that you are finished loading
 		const CPlayer* p = playerHandler->Player(gu->myPlayerNum);
 		net->Send(CBaseNetProtocol::Get().SendPlayerName(gu->myPlayerNum, p->name));
@@ -129,12 +130,17 @@ CLoadScreen::~CLoadScreen()
 
 		activeController = game;
 	}
+
+	UnloadStartPicture();
+
+	if (activeController == this)
+		activeController = NULL;
+
+	singleton = NULL;
 }
 
 
 /******************************************************************************/
-
-CLoadScreen* CLoadScreen::singleton = NULL;
 
 void CLoadScreen::CreateInstance(const std::string& mapName, const std::string& modName, ILoadSaveHandler* saveFile)
 {
@@ -144,6 +150,7 @@ void CLoadScreen::CreateInstance(const std::string& mapName, const std::string& 
 	// Init() already requires GetInstance() to work.
 	singleton->Init();
 	if (!singleton->mt_loading) {
+		game->SetupRenderingParams();
 		CLoadScreen::DeleteInstance();
 	}
 }
@@ -206,6 +213,7 @@ bool CLoadScreen::Update()
 	}
 
 	if (game->finishedLoading) {
+		game->SetupRenderingParams();
 		CLoadScreen::DeleteInstance();
 	}
 
@@ -235,7 +243,7 @@ bool CLoadScreen::Draw()
 	float xDiv = 0.0f;
 	float yDiv = 0.0f;
 	const float ratioComp = globalRendering->aspectRatio / aspectRatio;
-	if (fabs(ratioComp - 1.0f) > 0.01f) { //! ~= 1
+	if (fabs(ratioComp - 1.0f) < 0.01f) { //! ~= 1
 		//! show Load-Screen full screen
 		//! nothing to do
 	} else if (ratioComp > 1.0f) {
@@ -281,6 +289,9 @@ bool CLoadScreen::Draw()
 			"This program is distributed under the GNU General Public License, see license.html for more info");
 	font->End();
 
+	if (!mt_loading)
+		SDL_GL_SwapBuffers();
+
 	return true;
 }
 
@@ -290,6 +301,8 @@ bool CLoadScreen::Draw()
 
 void CLoadScreen::SetLoadMessage(const std::string& text, bool replace_lastline)
 {
+	Watchdog::ClearTimer("main");
+
 	boost::recursive_mutex::scoped_lock lck(mutex);
 
 	if (!replace_lastline) {
@@ -371,7 +384,7 @@ void CLoadScreen::LoadStartPicture(const std::string& name)
 		throw content_error("Could not load startpicture from file " + name);
 	}
 
-	aspectRatio = (float) bm.xsize / bm.ysize;
+	aspectRatio = (float)bm.xsize / bm.ysize;
 
 	if ((bm.xsize > globalRendering->viewSizeX) || (bm.ysize > globalRendering->viewSizeY)) {
 		float newX = globalRendering->viewSizeX;

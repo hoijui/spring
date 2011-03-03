@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __GAME_SERVER_H__
-#define __GAME_SERVER_H__
+#ifndef _GAME_SERVER_H
+#define _GAME_SERVER_H
 
 #include <boost/thread/recursive_mutex.hpp>
 #include <boost/thread/thread.hpp>
@@ -15,8 +15,8 @@
 
 #include "GameData.h"
 #include "Sim/Misc/TeamBase.h"
-#include "UnsyncedRNG.h"
-#include "float3.h"
+#include "System/UnsyncedRNG.h"
+#include "System/float3.h"
 #include "System/myTime.h"
 
 namespace netcode
@@ -40,15 +40,15 @@ class GameSkirmishAI;
  * this value is used as the sending player-number.
  */
 const unsigned SERVER_PLAYER = 255;
-const unsigned numCommands = 19;
+const unsigned numCommands = 20;
 extern const std::string commands[numCommands];
 
 class GameTeam : public TeamBase
 {
 public:
-	GameTeam() : active(false) {};
+	GameTeam() : active(false) {}
 	bool active;
-	GameTeam& operator=(const TeamBase& base) { TeamBase::operator=(base); return *this; };
+	GameTeam& operator=(const TeamBase& base) { TeamBase::operator=(base); return *this; }
 };
 
 /**
@@ -59,20 +59,20 @@ public:
  */
 class CGameServer
 {
-	friend class CCregLoadSaveHandler;     //For initialize server state after load
+	friend class CCregLoadSaveHandler; // For initializing server state after load
 public:
-	CGameServer(int hostport, bool onlyLocal, const GameData* const gameData, const CGameSetup* const setup);
+	CGameServer(const std::string& hostIP, int hostPort, const GameData* const gameData, const CGameSetup* const setup);
 	~CGameServer();
 
 	void AddLocalClient(const std::string& myName, const std::string& myVersion);
 
-	void AddAutohostInterface(const std::string& autohostip, const int remotePort);
+	void AddAutohostInterface(const std::string& autohostIP, const int autohostPort);
 
 	/**
 	 * @brief Set frame after loading
 	 * WARNING! No checks are done, so be carefull
 	 */
-	void PostLoad(unsigned lastTick, int serverframenum);
+	void PostLoad(unsigned lastTick, int serverFrameNum);
 
 	void CreateNewFrame(bool fromServerThread, bool fixedFrameTime);
 
@@ -80,11 +80,16 @@ public:
 
 	void SetGamePausable(const bool arg);
 
-	bool HasDemo() const { return (demoReader != NULL); }
+	bool HasStarted() const { return gameHasStarted; }
+	bool HasGameID() const { return generatedGameID; }
 	/// Is the server still running?
 	bool HasFinished() const;
 
 	void UpdateSpeedControl(int speedCtrl);
+
+	#ifdef DEDICATED
+	const boost::scoped_ptr<CDemoRecorder>& GetDemoRecorder() const { return demoRecorder; }
+	#endif
 
 private:
 	/**
@@ -106,17 +111,17 @@ private:
 	void StartGame();
 	void UpdateLoop();
 	void Update();
-	void ProcessPacket(const unsigned playernum, boost::shared_ptr<const netcode::RawPacket> packet);
+	void ProcessPacket(const unsigned playerNum, boost::shared_ptr<const netcode::RawPacket> packet);
 	void CheckSync();
 	void ServerReadNet();
 	void CheckForGameEnd();
 
-	/** @brief Generate a unique game identifier and sent it to all clients. */
+	/** @brief Generate a unique game identifier and send it to all clients. */
 	void GenerateAndSendGameID();
 	std::string GetPlayerNames(const std::vector<int>& indices) const;
 
 	/// read data from demo and send it to clients
-	void SendDemoData(const bool skipping=false);
+	void SendDemoData(const bool skipping = false);
 
 	void Broadcast(boost::shared_ptr<const netcode::RawPacket> packet);
 
@@ -124,25 +129,25 @@ private:
 	 * @brief skip frames
 	 *
 	 * If you are watching a demo, this will push out all data until
-	 * targetframe to all clients
+	 * targetFrame to all clients
 	 */
-	void SkipTo(int targetframe);
+	void SkipTo(int targetFrame);
 
-	void Message(const std::string& message, bool broadcast=true);
-	void PrivateMessage(int playernum, const std::string& message);
+	void Message(const std::string& message, bool broadcast = true);
+	void PrivateMessage(int playerNum, const std::string& message);
 
-	void AddToPacketCache(boost::shared_ptr<const netcode::RawPacket> &pckt);
+	void AddToPacketCache(boost::shared_ptr<const netcode::RawPacket>& pckt);
 
-	void AdjustPlayerNumber(const unsigned char msg, unsigned char &player);
+	bool AdjustPlayerNumber(netcode::RawPacket* buf, int pos, int val = -1);
 	void UpdatePlayerNumberMap();
 
-	float GetDemoTime();
+	float GetDemoTime() const;
 
 	/////////////////// game status variables ///////////////////
 
 	unsigned char playerNumberMap[256];
 	volatile bool quitServer;
-	int serverframenum;
+	int serverFrameNum;
 
 	spring_time serverStartTime;
 	spring_time readyTime;
@@ -162,12 +167,12 @@ private:
 	bool cheating;
 
 	size_t ReserveNextAvailableSkirmishAIId();
-	
+
 	std::map<size_t, GameSkirmishAI> ais;
 	std::list<size_t> usedSkirmishAIIds;
 	void FreeSkirmishAIId(const size_t skirmishAIId);
 
-	std::vector<GameParticipant> players;	
+	std::vector<GameParticipant> players;
 	std::vector<GameTeam> teams;
 	std::vector<unsigned char> winningAllyTeams;
 
@@ -195,7 +200,7 @@ private:
 
 	/////////////////// sync stuff ///////////////////
 #ifdef SYNCCHECK
-	std::deque<int> outstandingSyncFrames;
+	std::set<int> outstandingSyncFrames;
 #endif
 	int syncErrorFrame;
 	int syncWarningFrame;
@@ -221,14 +226,16 @@ private:
 	UnsyncedRNG rng;
 	boost::thread* thread;
 	mutable boost::recursive_mutex gameServerMutex;
-	typedef std::set<unsigned char> PlayersToForwardMsgvec;
-	typedef std::map<unsigned char, PlayersToForwardMsgvec> MsgToForwardMap;
-	MsgToForwardMap relayingMessagesMap;
 
 	bool canReconnect;
-	bool gameHasStarted;
+	volatile bool gameHasStarted;
+	volatile bool generatedGameID;
+
+	spring_time lastBandwidthUpdate;
+	int linkMinPacketSize;
 };
 
 extern CGameServer* gameServer;
 
-#endif // __GAME_SERVER_H__
+#endif // _GAME_SERVER_H
+

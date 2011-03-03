@@ -1,14 +1,15 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
+#include "FPUCheck.h"
 #include "OffscreenGLContext.h"
 
 #include "Exceptions.h"
-#include "FPUCheck.h"
 #include "LogOutput.h"
 #include "maindefines.h"
 #include "lib/streflop/streflop_cond.h"
 #include "System/Platform/errorhandler.h"
+#include "System/Platform/Threading.h"
 
 
 #ifdef HEADLESS
@@ -94,8 +95,14 @@ COffscreenGLContext::COffscreenGLContext()
 	
 
 	//! Get PixelFormat
-	int attributeList[] = { AGL_ACCELERATED, AGL_RGBA, AGL_NONE };
-	pxlfmt = aglChoosePixelFmt(NULL, 0, attributeList);
+	int attributeList[] = {
+		AGL_ACCELERATED,
+		AGL_RGBA,
+		//AGL_OFFSCREEN,
+		//AGL_DISPLAY_MASK, 1 //FIXME: detect SDL Window's CGOpenGLDisplayMask
+		AGL_NONE
+	};
+	pxlfmt = aglChoosePixelFormat(NULL, 0, attributeList);
 	if (!pxlfmt)
 		throw opengl_error("Couldn't create an offscreen GL context: aglChoosePixelFmt failed!");
 
@@ -212,8 +219,10 @@ COffscreenGLThread::COffscreenGLThread(boost::function<void()> f) :
 
 COffscreenGLThread::~COffscreenGLThread()
 {
-	if (thread) thread->join();
-	delete thread;
+	if (thread)
+		Join();
+	Threading::SetLoadingThread(NULL);
+	delete thread; thread = NULL;
 }
 
 
@@ -225,12 +234,15 @@ bool COffscreenGLThread::IsFinished(boost::posix_time::time_duration wait)
 
 void COffscreenGLThread::Join()
 {
-	thread->join();
+	while(thread->joinable())
+		if(thread->timed_join(boost::posix_time::seconds(1)))
+			break;
 }
 
 
 void COffscreenGLThread::WrapFunc(boost::function<void()> f)
 {
+	Threading::SetLoadingThread(thread);
 	glOffscreenCtx.WorkerThreadPost();
 
 #ifdef STREFLOP_H

@@ -3,22 +3,16 @@
 #ifndef __COMMAND_QUEUE_H__
 #define __COMMAND_QUEUE_H__
 
-#ifndef BUILDING_AI
-#include "Rendering/GL/myGL.h"
-#else
-#define GML_STDMUTEX_LOCK(x)
-#endif
+#include "lib/gml/gml.h"
+
 #include <deque>
 #include "Command.h"
 
-// A wrapper class for  std::deque<Command>  to keep track of commands
-
-
+/// A wrapper class for std::deque<Command> to keep track of commands
 class CCommandQueue {
 
 	friend class CCommandAI;
 	friend class CFactoryCAI;
-	friend class CAIAICallback; // the C++ AI interface wrapper
 
 	// see CommandAI.cpp for further creg stuff for this class
 	CR_DECLARE(CCommandQueue);

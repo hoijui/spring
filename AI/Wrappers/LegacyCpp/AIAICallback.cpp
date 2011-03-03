@@ -16,22 +16,18 @@
 */
 
 #include "AIAICallback.h"
-#include "UnitDef.h"
 
 #include "ExternalAI/Interface/SSkirmishAICallback.h"
 #include "ExternalAI/Interface/AISCommands.h"
 
-#include "creg/creg_cond.h"
-#include "Sim/Units/CommandAI/CommandQueue.h"
-#ifdef USING_CREG
-creg::Class* CCommandQueue::GetClass() { return NULL; }
-#endif
-#include "Sim/MoveTypes/MoveInfo.h"
-CIcon::CIcon() {}
-CIcon::~CIcon() {}
-#include "Sim/Features/FeatureDef.h"
-#include "Sim/Weapons/WeaponDefHandler.h"
-WeaponDef::~WeaponDef() {}
+// these are all copies from the engine, so we do not have to adjust
+// to each minor change done there
+#include "MoveData.h"
+#include "UnitDef.h"
+#include "WeaponDef.h"
+#include "FeatureDef.h"
+#include "Command.h"
+#include "CommandQueue.h"
 
 #include <string>
 #include <string.h>
@@ -83,6 +79,27 @@ static inline void copyIntToUShortArray(const int* src, unsigned short* const ds
 	}
 }
 
+// FIXME: group ID's have no runtime bound
+const int maxGroups = MAX_UNITS;
+
+// FIXME: these are far too generous, but we
+// don't have easy access to the right values
+// on the AI side (so better waste memory than
+// risk SEGVs)
+static const int numUnitDefs = MAX_UNITS; // unitDefHandler->numUnitDefs;
+static const int numFeatDefs = MAX_UNITS; // featureHandler->numFeatureDefs;
+static const int numWeapDefs = MAX_UNITS; // weaponDefHandler->numWeaponDefs;
+
+
+size_t CAIAICallback::numClbInstances = 0;
+float* CAIAICallback::heightMap = NULL;
+float* CAIAICallback::cornersHeightMap = NULL;
+float* CAIAICallback::slopeMap = NULL;
+unsigned short* CAIAICallback::losMap = NULL;
+unsigned short* CAIAICallback::radarMap = NULL;
+unsigned short* CAIAICallback::jammerMap = NULL;
+unsigned char* CAIAICallback::metalMap = NULL;
+
 
 CAIAICallback::CAIAICallback()
 	: IAICallback(), skirmishAIId(-1), sAICallback(NULL) {
@@ -94,47 +111,95 @@ CAIAICallback::CAIAICallback(int skirmishAIId, const SSkirmishAICallback* sAICal
 	init();
 }
 
+CAIAICallback::~CAIAICallback() {
+
+	numClbInstances--;
+
+	for (int i=0; i < numWeapDefs; ++i) {
+		delete weaponDefs[i];
+		weaponDefs[i] = NULL;
+	}
+	delete weaponDefs;
+	weaponDefs = NULL;
+	delete weaponDefFrames;
+	weaponDefFrames = NULL;
+
+	for (int i=0; i < numUnitDefs; ++i) {
+		delete unitDefs[i];
+		unitDefs[i] = NULL;
+	}
+	delete unitDefs;
+	unitDefs = NULL;
+	delete unitDefFrames;
+	unitDefFrames = NULL;
+
+	for (int i=0; i < numFeatDefs; ++i) {
+		delete featureDefs[i];
+		featureDefs[i] = NULL;
+	}
+	delete featureDefs;
+	featureDefs = NULL;
+	delete featureDefFrames;
+	featureDefFrames = NULL;
+
+	for (int i=0; i < maxGroups; ++i) {
+		delete groupPossibleCommands[i];
+		groupPossibleCommands[i] = NULL;
+	}
+	delete groupPossibleCommands;
+	groupPossibleCommands = NULL;
+
+	for (int i=0; i < MAX_UNITS; ++i) {
+		delete unitPossibleCommands[i];
+		unitPossibleCommands[i] = NULL;
+	}
+	delete unitPossibleCommands;
+	unitPossibleCommands = NULL;
+
+	for (int i=0; i < MAX_UNITS; ++i) {
+		delete unitCurrentCommandQueues[i];
+		unitCurrentCommandQueues[i] = NULL;
+	}
+	delete unitCurrentCommandQueues;
+	unitCurrentCommandQueues = NULL;
+
+	if (numClbInstances == 0) {
+		delete[] heightMap; heightMap = NULL;
+		delete[] cornersHeightMap; cornersHeightMap = NULL;
+		delete[] slopeMap; slopeMap = NULL;
+		delete[] losMap; losMap = NULL;
+		delete[] radarMap; radarMap = NULL;
+		delete[] jammerMap; jammerMap = NULL;
+		delete[] metalMap; metalMap = NULL;
+	}
+}
+
 
 void CAIAICallback::init() {
-	// FIXME: group ID's have no runtime bound
-	const int maxGroups = MAX_UNITS;
 
-	// FIXME: these are far too generous, but we
-	// don't have easy access to the right values
-	// on the AI side (so better waste memory than
-	// risk SEGVs)
-	const int numUnitDefs = MAX_UNITS; // unitDefHandler->numUnitDefs;
-	const int numFeatDefs = MAX_UNITS; // featureHandler->numFeatureDefs;
-	const int numWeapDefs = MAX_UNITS; // weaponDefHandler->numWeaponDefs;
+	numClbInstances++;
 
 	weaponDefs      = new WeaponDef*[numWeapDefs];
 	weaponDefFrames = new int[numWeapDefs];
-
 	fillWithNULL((void**) weaponDefs, numWeapDefs);
 	fillWithMinusOne(weaponDefFrames, numWeapDefs);
 
-
 	unitDefs      = new UnitDef*[numUnitDefs];
 	unitDefFrames = new int[numUnitDefs];
-
 	fillWithNULL((void**) unitDefs, numUnitDefs);
 	fillWithMinusOne(unitDefFrames, numUnitDefs);
 
+	featureDefs      = new FeatureDef*[numFeatDefs];
+	featureDefFrames = new int[numFeatDefs];
+	fillWithNULL((void**) featureDefs, numFeatDefs);
+	fillWithMinusOne(featureDefFrames, numFeatDefs);
 
 	groupPossibleCommands    = new std::vector<CommandDescription>*[maxGroups];
 	unitPossibleCommands     = new std::vector<CommandDescription>*[MAX_UNITS];
 	unitCurrentCommandQueues = new CCommandQueue*[MAX_UNITS];
-
 	fillWithNULL((void**) groupPossibleCommands,    maxGroups);
 	fillWithNULL((void**) unitPossibleCommands,     MAX_UNITS);
 	fillWithNULL((void**) unitCurrentCommandQueues, MAX_UNITS);
-
-
-	featureDefs      = new FeatureDef*[numFeatDefs];
-	featureDefFrames = new int[numFeatDefs];
-
-	fillWithNULL((void**) featureDefs, numFeatDefs);
-	fillWithMinusOne(featureDefFrames, numFeatDefs);
 }
 
 
@@ -575,19 +640,17 @@ const UnitDef* CAIAICallback::GetUnitDefById(int unitDefId) {
 		{
 			static const size_t facings = 4;
 			const int yardMap_size = sAICallback->UnitDef_getYardMap(skirmishAIId, unitDefId, 0, NULL, 0);
-			short tmpYardMaps[facings][yardMap_size];
-			int ym;
-			for (ym = 0 ; ym < facings; ++ym) {
-				sAICallback->UnitDef_getYardMap(skirmishAIId, unitDefId, ym, tmpYardMaps[ym], yardMap_size);
-			}
+			short* tmpYardMap = new short[yardMap_size];
 
-			int i;
-			for (ym = 0 ; ym < facings; ++ym) {
-				unitDef->yardmaps[ym] = new unsigned char[yardMap_size];
-				for (i = 0; i < yardMap_size; ++i) {
-					unitDef->yardmaps[ym][i] = (const char) tmpYardMaps[ym][i];
+			for (int ym = 0 ; ym < facings; ++ym) {
+				sAICallback->UnitDef_getYardMap(skirmishAIId, unitDefId, ym, tmpYardMap, yardMap_size);
+				unitDef->yardmaps[ym] = new unsigned char[yardMap_size]; // this will be deleted in the dtor
+				for (int i = 0; i < yardMap_size; ++i) {
+					unitDef->yardmaps[ym][i] = (const char) tmpYardMap[i];
 				}
 			}
+
+			delete[] tmpYardMap;
 		}
 		unitDef->xsize = sAICallback->UnitDef_getXSize(skirmishAIId, unitDefId);
 		unitDef->zsize = sAICallback->UnitDef_getZSize(skirmishAIId, unitDefId);
@@ -686,19 +749,19 @@ const UnitDef* CAIAICallback::GetUnitDefById(int unitDefId) {
 		}
 
 		if (sAICallback->UnitDef_isMoveDataAvailable(skirmishAIId, unitDefId)) {
-			unitDef->movedata = new MoveData(NULL);
+			unitDef->movedata = new MoveData();
 			unitDef->movedata->maxAcceleration = sAICallback->UnitDef_MoveData_getMaxAcceleration(skirmishAIId, unitDefId);
 			unitDef->movedata->maxBreaking = sAICallback->UnitDef_MoveData_getMaxBreaking(skirmishAIId, unitDefId);
 			unitDef->movedata->maxSpeed = sAICallback->UnitDef_MoveData_getMaxSpeed(skirmishAIId, unitDefId);
 			unitDef->movedata->maxTurnRate = sAICallback->UnitDef_MoveData_getMaxTurnRate(skirmishAIId, unitDefId);
 
-			unitDef->movedata->size = sAICallback->UnitDef_MoveData_getSize(skirmishAIId, unitDefId);
+			unitDef->movedata->xsize = sAICallback->UnitDef_MoveData_getXSize(skirmishAIId, unitDefId);
+			unitDef->movedata->zsize = sAICallback->UnitDef_MoveData_getZSize(skirmishAIId, unitDefId);
 			unitDef->movedata->depth = sAICallback->UnitDef_MoveData_getDepth(skirmishAIId, unitDefId);
 			unitDef->movedata->maxSlope = sAICallback->UnitDef_MoveData_getMaxSlope(skirmishAIId, unitDefId);
 			unitDef->movedata->slopeMod = sAICallback->UnitDef_MoveData_getSlopeMod(skirmishAIId, unitDefId);
 			unitDef->movedata->depthMod = sAICallback->UnitDef_MoveData_getDepthMod(skirmishAIId, unitDefId);
 			unitDef->movedata->pathType = sAICallback->UnitDef_MoveData_getPathType(skirmishAIId, unitDefId);
-			unitDef->movedata->moveMath = 0;
 			unitDef->movedata->crushStrength = sAICallback->UnitDef_MoveData_getCrushStrength(skirmishAIId, unitDefId);
 			unitDef->movedata->moveType = (enum MoveData::MoveType) sAICallback->UnitDef_MoveData_getMoveType(skirmishAIId, unitDefId);
 			unitDef->movedata->moveFamily = (enum MoveData::MoveFamily) sAICallback->UnitDef_MoveData_getMoveFamily(skirmishAIId, unitDefId);
@@ -786,8 +849,6 @@ int CAIAICallback::GetMapHeight() {
 
 const float* CAIAICallback::GetHeightMap() {
 
-	static float* heightMap = NULL;
-
 	if (heightMap == NULL) {
 		const int size = sAICallback->Map_getHeightMap(skirmishAIId, NULL, 0);
 		heightMap = new float[size]; // NOTE: memory leak, but will be used till end of the game anyway
@@ -798,8 +859,6 @@ const float* CAIAICallback::GetHeightMap() {
 }
 
 const float* CAIAICallback::GetCornersHeightMap() {
-
-	static float* cornersHeightMap = NULL;
 
 	if (cornersHeightMap == NULL) {
 		const int size = sAICallback->Map_getCornersHeightMap(skirmishAIId, NULL, 0);
@@ -820,8 +879,6 @@ float CAIAICallback::GetMaxHeight() {
 
 const float* CAIAICallback::GetSlopeMap() {
 
-	static float* slopeMap = NULL;
-
 	if (slopeMap == NULL) {
 		const int size = sAICallback->Map_getSlopeMap(skirmishAIId, NULL, 0);
 		slopeMap = new float[size]; // NOTE: memory leak, but will be used till end of the game anyway
@@ -833,14 +890,13 @@ const float* CAIAICallback::GetSlopeMap() {
 
 const unsigned short* CAIAICallback::GetLosMap() {
 
-	static unsigned short* losMap = NULL;
-
 	if (losMap == NULL) {
 		const int size = sAICallback->Map_getLosMap(skirmishAIId, NULL, 0);
-		int tmpLosMap[size];
+		int* tmpLosMap = new int[size];
 		sAICallback->Map_getLosMap(skirmishAIId, tmpLosMap, size);
 		losMap = new unsigned short[size]; // NOTE: memory leak, but will be used till end of the game anyway
 		copyIntToUShortArray(tmpLosMap, losMap, size);
+		delete[] tmpLosMap;
 	}
 
 	return losMap;
@@ -856,14 +912,13 @@ int CAIAICallback::GetLosMapResolution() {
 
 const unsigned short* CAIAICallback::GetRadarMap() {
 
-	static unsigned short* radarMap = NULL;
-
 	if (radarMap == NULL) {
 		const int size = sAICallback->Map_getRadarMap(skirmishAIId, NULL, 0);
-		int tmpRadarMap[size];
+		int* tmpRadarMap = new int[size];
 		sAICallback->Map_getRadarMap(skirmishAIId, tmpRadarMap, size);
 		radarMap = new unsigned short[size]; // NOTE: memory leak, but will be used till end of the game anyway
 		copyIntToUShortArray(tmpRadarMap, radarMap, size);
+		delete[] tmpRadarMap;
 	}
 
 	return radarMap;
@@ -871,14 +926,13 @@ const unsigned short* CAIAICallback::GetRadarMap() {
 
 const unsigned short* CAIAICallback::GetJammerMap() {
 
-	static unsigned short* jammerMap = NULL;
-
 	if (jammerMap == NULL) {
 		const int size = sAICallback->Map_getJammerMap(skirmishAIId, NULL, 0);
-		int tmpJammerMap[size];
+		int* tmpJammerMap = new int[size];
 		sAICallback->Map_getJammerMap(skirmishAIId, tmpJammerMap, size);
 		jammerMap = new unsigned short[size]; // NOTE: memory leak, but will be used till end of the game anyway
 		copyIntToUShortArray(tmpJammerMap, jammerMap, size);
+		delete[] tmpJammerMap;
 	}
 
 	return jammerMap;
@@ -886,15 +940,15 @@ const unsigned short* CAIAICallback::GetJammerMap() {
 
 const unsigned char* CAIAICallback::GetMetalMap() {
 
-	static unsigned char* metalMap = NULL;
 	static const int m = getResourceId_Metal(sAICallback, skirmishAIId);
 
 	if (metalMap == NULL) {
 		const int size = sAICallback->Map_getResourceMapRaw(skirmishAIId, m, NULL, 0);
-		short tmpMetalMap[size];
+		short* tmpMetalMap = new short[size];
 		sAICallback->Map_getResourceMapRaw(skirmishAIId, m, tmpMetalMap, size);
 		metalMap = new unsigned char[size]; // NOTE: memory leak, but will be used till end of the game anyway
 		copyShortToUCharArray(tmpMetalMap, metalMap, size);
+		delete[] tmpMetalMap;
 	}
 
 	return metalMap;
@@ -1284,6 +1338,8 @@ void CAIAICallback::GetUnitDefList(const UnitDef** list) {
 	for (int i = 0; i < size; ++i) {
 		list[i] = this->GetUnitDefById(unitDefIds[i]);
 	}
+
+	delete[] unitDefIds;
 }
 
 float CAIAICallback::GetUnitDefHeight(int def) {
@@ -1503,6 +1559,18 @@ const float3* CAIAICallback::GetStartPos() {
 	startPos = pos_cache;
 
 	return &startPos;
+}
+
+unsigned int CAIAICallback::GetCategoryFlag(const char* categoryName) {
+	return sAICallback->Game_getCategoryFlag(skirmishAIId, categoryName);
+}
+
+unsigned int CAIAICallback::GetCategoriesFlag(const char* categoryNames) {
+	return sAICallback->Game_getCategoriesFlag(skirmishAIId, categoryNames);
+}
+
+void CAIAICallback::GetCategoryName(int categoryFlag, char* name, int name_sizeMax) {
+	sAICallback->Game_getCategoryName(skirmishAIId, categoryFlag, name, name_sizeMax);
 }
 
 

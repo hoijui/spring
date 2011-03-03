@@ -6,76 +6,70 @@ namespace Threading {
 	static bool haveMainThreadID = false;
 	static boost::thread* mainThread = NULL;
 	static boost::thread::id mainThreadID;
-	static std::runtime_error* threadError = NULL;
+	static Error* threadError = NULL;
+	static boost::thread* loadingThread = NULL;
+	static boost::thread::id loadingThreadID;
+
+
+	NativeThreadHandle _GetCurrentThread()
+	{
+	#ifdef WIN32
+		//! we need to use this cause GetCurrentThread() just returns a pseudo handle,
+		//! which returns in all threads the current active one, so we need to translate it
+		//! with DuplicateHandle to an absolute handle valid in our watchdog thread
+		NativeThreadHandle hThread;
+		DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &hThread, 0, TRUE, DUPLICATE_SAME_ACCESS);
+		return hThread;
+	#else
+		return pthread_self();
+	#endif
+	}
+
+
+	NativeThreadId _GetCurrentThreadId()
+	{
+	#ifdef WIN32
+		return GetCurrentThreadId();
+	#else
+		return pthread_self();
+	#endif
+	}
+
 
 	void SetMainThread(boost::thread* mt) {
 		if (!haveMainThreadID) {
 			haveMainThreadID = true;
 			mainThread = mt;
-			mainThreadID = mainThread->get_id();
+			mainThreadID = mt ? mt->get_id() : boost::this_thread::get_id();
 		}
+	}
+
+	void SetLoadingThread(boost::thread* lt) {
+		loadingThread = lt;
+		loadingThreadID = lt ? lt->get_id() : boost::this_thread::get_id();
 	}
 
 	boost::thread* GetMainThread() {
 		return mainThread;
 	}
 
-	void SetThreadError(const std::string& s) {
-		threadError = new std::runtime_error(s);
+	boost::thread* GetLoadingThread() {
+		return loadingThread;
 	}
-	std::runtime_error GetThreadError() {
-		return threadError ? *threadError : std::runtime_error("Unknown error");
+
+	void SetThreadError(const Error& err) {
+		threadError = new Error(err); //FIXME memory leak!
+	}
+
+	Error* GetThreadError() {
+		return threadError;
 	}
 
 	bool IsMainThread() {
 		return (boost::this_thread::get_id() == Threading::mainThreadID);
 	}
+
+	bool IsLoadingThread() {
+		return (boost::this_thread::get_id() == Threading::loadingThreadID);
+	}
 };
-
-//FIXME: use TLS? maybe extract the GML code?
-//NOTE: I already tried to use __thread, but it didn't worked, maybe it is limited to newer CPUs?
-
-/*
-#ifdef WIN32
-#include <windows.h>
-
-DWORD mainthread_id;
-
-class CDoOnce {
-public:
-	CDoOnce()
-	{
-		mainthread_id = GetCurrentThreadId();
-	}
-} do_once;
-
-bool IsMainThread()
-{
-	DWORD thread_id = GetCurrentThreadId();
-	return (thread_id == mainthread_id);
-}
-
-
-#else // LINUX & OSX
-
-#include <sys/syscall.h>
-#include <unistd.h>
-
-pid_t mainthread_id;
-
-class CDoOnce {
-public:
-	CDoOnce()
-	{
-		mainthread_id = syscall(SYS_gettid);
-	}
-} do_once;
-
-bool IsMainThread()
-{
-	pid_t thread_id = syscall(SYS_gettid);
-	return (thread_id == mainthread_id);
-}
-
-#endif // WIN32
-*/

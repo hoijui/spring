@@ -5,26 +5,29 @@
  * everything else
  */
 
+
 #ifdef _MSC_VER
-#include "StdAfx.h"
+	#include "StdAfx.h"
 #endif
 #include <sstream>
 #include <boost/system/system_error.hpp>
+#include <boost/bind.hpp>
+//SDL_main.h contains a macro that replaces the main function, see SDL_main.h for details
+#include <SDL_main.h>
 
 #include "System/Platform/errorhandler.h"
 #include "System/Platform/Threading.h"
 
 #ifndef _MSC_VER
-#include "StdAfx.h"
+	#include "StdAfx.h"
 #endif
 #include "lib/gml/gml.h"
-#include "System/LogOutput.h"
 #include "System/Exceptions.h"
 
 #include "SpringApp.h"
 
 #ifdef WIN32
-#include "Platform/Win/win32.h"
+	#include "Platform/Win/win32.h"
 #endif
 
 void MainFunc(int argc, char** argv, int* ret) {
@@ -37,39 +40,37 @@ void MainFunc(int argc, char** argv, int* ret) {
 	}
 #endif
 
-	while (Threading::GetMainThread() == NULL);
+	while (!Threading::IsMainThread())
+		;
 
 #ifdef USE_GML
 	set_threadnum(GML_DRAW_THREAD_NUM);
   #if GML_ENABLE_TLS_CHECK
 	if (gmlThreadNumber != GML_DRAW_THREAD_NUM) {
-		handleerror(NULL, "Thread Local Storage test failed", "GML error:", MBF_OK | MBF_EXCL);
+		ErrorMessageBox("Thread Local Storage test failed", "GML error:", MBF_OK | MBF_EXCL);
 	}
   #endif
 #endif
 
-	try  {
-		try {
-			SpringApp app;
-			*ret = app.Run(argc, argv);
-		} CATCH_SPRING_ERRORS
-	} catch (boost::thread_interrupted const&) {
-		handleerror(NULL, Threading::GetThreadError().what(), "Thread error:", MBF_OK | MBF_EXCL);
-	}
-
-	*ret = -1;
+	try {
+		SpringApp app;
+		*ret = app.Run(argc, argv);
+	} CATCH_SPRING_ERRORS
 }
 
 
 
 int Run(int argc, char* argv[])
 {
-	int ret = 0;
+	int ret = -1;
 
-	boost::thread* mainThread = new boost::thread(boost::bind(&MainFunc, argc, argv, &ret));
-	Threading::SetMainThread(mainThread);
-	mainThread->join();
-	delete mainThread;
+	Threading::SetMainThread();
+	MainFunc(argc, argv, &ret);
+
+	//! check if Spring crashed, if so display an error message
+	Threading::Error* err = Threading::GetThreadError();
+	if (err)
+		ErrorMessageBox(err->message, err->caption, err->flags);
 
 	return ret;
 }
@@ -94,6 +95,6 @@ int main(int argc, char* argv[])
 #ifdef WIN32
 int WINAPI WinMain(HINSTANCE hInstanceIn, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-	return Run(__argc, __argv);
+	return main(__argc, __argv);
 }
 #endif

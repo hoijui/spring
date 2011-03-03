@@ -67,20 +67,7 @@
 
 using namespace std;
 
-#if (LUA_VERSION_NUM < 500)
-#  define LUA_OPEN_LIB(L, lib) lib(L)
-#else
-#  define LUA_OPEN_LIB(L, lib) \
-     lua_pushcfunction((L), lib); \
-     lua_pcall((L), 0, 0, 0);
-#endif
-
-
-extern boost::uint8_t *keys;
-
-
 CLuaUI* luaUI = NULL;
-
 
 const int CMD_INDEX_OFFSET = 1; // starting index for command descriptions
 
@@ -343,24 +330,6 @@ void CLuaUI::Shutdown()
 }
 
 
-void CLuaUI::GameFrame(int frameNumber)
-{
-	LUA_CALL_IN_CHECK(L);
-	lua_checkstack(L, 3);
-	static const LuaHashString cmdStr("GameFrame");
-	if (!cmdStr.GetGlobalFunc(L)) {
-		return;
-	}
-
-	lua_pushnumber(L, frameNumber);
-
-	// call the routine
-	RunCallIn(cmdStr, 1, 0);
-
-	return;
-}
-
-
 bool CLuaUI::ConfigCommand(const string& command)
 {
 	LUA_CALL_IN_CHECK(L);
@@ -379,41 +348,6 @@ bool CLuaUI::ConfigCommand(const string& command)
 	return true;
 }
 
-
-bool CLuaUI::AddConsoleLines()
-{
-	CInfoConsole* ic = game->infoConsole;
-	if (ic == NULL) {
-		return true;
-	}
-
-	vector<CInfoConsole::RawLine> lines;
-	ic->GetNewRawLines(lines);
-
-	LUA_CALL_IN_CHECK(L);
-	lua_checkstack(L, 3);
-
-	const int count = (int)lines.size();
-	for (int i = 0; i < count; i++) {
-		const CInfoConsole::RawLine& rl = lines[i];
-
-		static const LuaHashString cmdStr("AddConsoleLine");
-		if (!cmdStr.GetGlobalFunc(L)) {
-			return true; // the call is not defined
-		}
-
-		// FIXME: migrate priority to subsystem...
-		lua_pushstring(L, rl.text.c_str());
-		lua_pushnumber(L, 0 /*priority*/ );
-		//lua_pushstring(L, rl.subsystem->name);
-
-		// call the function
-		if (!RunCallIn(cmdStr, 2, 0)) {
-			return false;
-		}
-	}
-	return true;
-}
 
 
 static inline float fuzzRand(float fuzz)

@@ -51,8 +51,8 @@
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitLoader.h"
-#include "Sim/Units/COB/CobInstance.h"
-#include "Sim/Units/COB/LuaUnitScript.h"
+#include "Sim/Units/Scripts/CobInstance.h"
+#include "Sim/Units/Scripts/LuaUnitScript.h"
 #include "Sim/Units/UnitTypes/Builder.h"
 #include "Sim/Units/UnitTypes/Factory.h"
 #include "Sim/Units/UnitTypes/TransportUnit.h"
@@ -921,69 +921,70 @@ int LuaSyncedCtrl::CreateUnit(lua_State* L)
 {
 	CheckAllowGameChanges(L);
 
-	const UnitDef* unitDef = NULL;
-	if (lua_israwstring(L, 1)) {
-		const string defName = lua_tostring(L, 1);
-		unitDef = unitDefHandler->GetUnitDefByName(defName);
-		if (unitDef == NULL) {
-			luaL_error(L, "CreateUnit(): bad unitDef name: %s", defName.c_str());
-			return 0;
-		}
-	} else if (lua_israwnumber(L, 1)) {
-		const int defID = lua_toint(L, 1);
-		unitDef = unitDefHandler->GetUnitDefByID(defID);
-		if (unitDef == NULL) {
-			luaL_error(L, "CreateUnit(): bad unitDef ID: %i", defID);
-			return 0;
-		}
-	} else {
-		luaL_error(L, "Incorrect arguments to CreateUnit()");
+	if (inCreateUnit) {
+		luaL_error(L, "[%s()]: recursion is not permitted", __FUNCTION__);
+		return 0;
 	}
 
-	float3 pos(luaL_checkfloat(L, 2),
-	           luaL_checkfloat(L, 3),
-	           luaL_checkfloat(L, 4));
+	const UnitDef* unitDef = NULL;
 
-	//clamps the pos in the map boundings
-	pos.CheckInBounds(); //TODO: fix unit init code to work offmap
+	if (lua_israwstring(L, 1)) {
+		unitDef = unitDefHandler->GetUnitDefByName(lua_tostring(L, 1));
+	} else if (lua_israwnumber(L, 1)) {
+		unitDef = unitDefHandler->GetUnitDefByID(lua_toint(L, 1));
+	} else {
+		luaL_error(L, "[%s()] incorrect type for first argument", __FUNCTION__);
+		return 0;
+	}
 
+	if (unitDef == NULL) {
+		if (lua_israwstring(L, 1)) {
+			luaL_error(L, "[%s()]: bad unitDef name: %s", __FUNCTION__, lua_tostring(L, 1));
+		} else {
+			luaL_error(L, "[%s()]: bad unitDef ID: %d", __FUNCTION__, lua_toint(L, 1));
+		}
+		return 0;
+	}
+
+	// CUnit::PreInit will clamp the position
+	// TODO: also allow off-map unit creation?
+	const float3 pos(
+		luaL_checkfloat(L, 2),
+		luaL_checkfloat(L, 3),
+		luaL_checkfloat(L, 4)
+	);
 	const int facing = LuaUtils::ParseFacing(L, __FUNCTION__, 5);
+	const bool beingBuilt = (lua_isboolean(L, 7) && lua_toboolean(L, 7)); // default false
+	const bool flattenGround = (lua_isboolean(L, 8) && lua_toboolean(L, 8)) || lua_isnone(L, 8); // default true
 
 	int teamID = CtrlTeam();
 	if (lua_israwnumber(L, 6)) {
 		teamID = lua_toint(L, 6);
 	}
 	if (!teamHandler->IsValidTeam(teamID)) {
-		luaL_error(L, "CreateUnit(): bad team number: %d", teamID);
+		luaL_error(L, "[%s()]: invalid team number (%d)", __FUNCTION__, teamID);
 		return 0;
 	}
-
 	if (!FullCtrl() && (CtrlTeam() != teamID)) {
-		luaL_error(L, "CreateUnit(): bad team %d", teamID);
+		luaL_error(L, "[%s()]: not a controllable team (%d)", __FUNCTION__, teamID);
 		return 0;
 	}
-
-
-	const bool build = lua_toboolean(L, 7);
-
 	if (!uh->CanBuildUnit(unitDef, teamID)) {
 		return 0; // unit limit reached
 	}
 
-	// FIXME -- allow specifying the 'builder' parameter?
-
-	if (inCreateUnit) {
-		luaL_error(L, "CreateUnit(): recursion is not permitted");
-		return 0;
-	}
-	inCreateUnit = true;
 	ASSERT_SYNCED_FLOAT3(pos);
-	ASSERT_SYNCED_PRIMITIVE((int)facing);
-	CUnit* unit = unitLoader.LoadUnit(unitDef, pos, teamID, build, facing, NULL);
+	ASSERT_SYNCED_PRIMITIVE(facing);
+
+	// FIXME -- allow specifying the 'builder' parameter?
+	inCreateUnit = true;
+	CUnit* unit = unitLoader->LoadUnit(unitDef, pos, teamID, beingBuilt, facing, NULL);
 	inCreateUnit = false;
 
-	if (unit) {
-		unitLoader.FlattenGround(unit);
+	if (unit != NULL) {
+		if (flattenGround)
+			unitLoader->FlattenGround(unit);
+
 		lua_pushnumber(L, unit->id);
 		return 1;
 	}
@@ -1363,6 +1364,15 @@ int LuaSyncedCtrl::SetUnitArmored(lua_State* L)
 	}
 	if (lua_isboolean(L, 2)) {
 		unit->armoredState = lua_toboolean(L, 2);
+	}
+
+	// armored multiple of 0 will crash spring
+	unit->armoredMultiple = std::max(0.0001f, luaL_optfloat(L, 3, unit->armoredMultiple));
+
+	if (lua_toboolean(L, 2)) {
+		unit->curArmorMultiple = unit->armoredMultiple;
+	} else {
+		unit->curArmorMultiple = 1.0f;
 	}
 	return 0;
 }
@@ -1753,15 +1763,18 @@ int LuaSyncedCtrl::SetUnitCollisionVolumeData(lua_State* L)
 	const float xo = luaL_checkfloat(L, 5);
 	const float yo = luaL_checkfloat(L, 6);
 	const float zo = luaL_checkfloat(L, 7);
-	const int vType = luaL_checkint(L,  8);
-	const int tType = luaL_checkint(L,  9);
-	const int pAxis = luaL_checkint(L, 10);
+	const unsigned int vType = luaL_checkint(L,  8);
+	const unsigned int tType = luaL_checkint(L,  9);
+	const unsigned int pAxis = luaL_checkint(L, 10);
 
 	const float3 scales(xs, ys, zs);
 	const float3 offsets(xo, yo, zo);
 
-	unit->collisionVolume->Init(scales, offsets, vType, tType, pAxis);
+	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES  ) { return 0; }
+	if (tType >= CollisionVolume::COLVOL_NUM_HITTESTS) { return 0; }
+	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES    ) { return 0; }
 
+	unit->collisionVolume->Init(scales, offsets, vType, tType, pAxis);
 	return 0;
 }
 
@@ -1807,33 +1820,33 @@ int LuaSyncedCtrl::SetUnitPieceCollisionVolumeData(lua_State* L)
 	const float xo  = luaL_checkfloat(L, 10);
 	const float yo  = luaL_checkfloat(L, 11);
 	const float zo  = luaL_checkfloat(L, 12);
-	const int vType = luaL_checkint(L, 13);
-	const int pAxis = luaL_checkint(L, 14);
+	const unsigned int vType = luaL_checkint(L, 13);
+	const unsigned int pAxis = luaL_checkint(L, 14);
+	const unsigned int tType = CollisionVolume::COLVOL_HITTEST_CONT;
 
 	const float3 scales(xs, ys, zs);
 	const float3 offset(xo, yo, zo);
 
+	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES) { return 0; }
+	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES  ) { return 0; }
+
 	if (affectLocal) {
 		// affects this unit only
 		if (enableLocal) {
-			if (argc == 14) {
-				lmp->colvol->Init(scales, offset, vType, CollisionVolume::COLVOL_HITTEST_CONT, pAxis);
-			}
-			lmp->colvol->Enable();
+			lmp->GetCollisionVolume()->Init(scales, offset, vType, tType, pAxis);
+			lmp->GetCollisionVolume()->Enable();
 		} else {
-			lmp->colvol->Disable();
+			lmp->GetCollisionVolume()->Disable();
 		}
 	}
 
 	if (affectGlobal) {
 		// affects all future units with this model
 		if (enableGlobal) {
-			if (argc == 14) {
-				omp->colvol->Init(scales, offset, vType, CollisionVolume::COLVOL_HITTEST_CONT, pAxis);
-			}
-			omp->colvol->Enable();
+			omp->GetCollisionVolume()->Init(scales, offset, vType, tType, pAxis);
+			omp->GetCollisionVolume()->Enable();
 		} else {
-			omp->colvol->Disable();
+			omp->GetCollisionVolume()->Disable();
 		}
 	}
 
@@ -1970,9 +1983,9 @@ int LuaSyncedCtrl::SetUnitPosition(lua_State* L)
 	x = luaL_checkfloat(L, 2);
 	z = luaL_checkfloat(L, 3);
 	if (lua_isboolean(L, 4) && lua_toboolean(L, 4)) {
-		y = ground->GetHeight(x, z);
+		y = ground->GetHeightAboveWater(x, z);
 	} else {
-		y = ground->GetHeight2(x, z);
+		y = ground->GetHeightReal(x, z);
 	}
 	unit->ForcedMove(float3(x, y, z));
 
@@ -1986,27 +1999,29 @@ int LuaSyncedCtrl::SetUnitRotation(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	const float3 rot(luaL_checkfloat(L, 2),
-	                 luaL_checkfloat(L, 3),
-	                 luaL_checkfloat(L, 4));
+
+	const float3 rot(ClampRad(luaL_checkfloat(L, 2)),
+	                 ClampRad(luaL_checkfloat(L, 3)),
+	                 ClampRad(luaL_checkfloat(L, 4)));
+
 	CMatrix44f matrix;
 	matrix.RotateZ(rot.z);
 	matrix.RotateX(rot.x);
 	matrix.RotateY(rot.y);
-	unit->rightdir.x = matrix[ 0];
-	unit->rightdir.y = matrix[ 1];
-	unit->rightdir.z = matrix[ 2];
-	unit->updir.x    = matrix[ 4];
-	unit->updir.y    = matrix[ 5];
-	unit->updir.z    = matrix[ 6];
-	unit->frontdir.x = matrix[ 8];
-	unit->frontdir.y = matrix[ 9];
-	unit->frontdir.z = matrix[10];
 
-	const shortint2 HandP = GetHAndPFromVector(unit->frontdir);
-	unit->heading = HandP.x;
+	unit->rightdir.x = -matrix[ 0];
+	unit->rightdir.y = -matrix[ 1];
+	unit->rightdir.z = -matrix[ 2];
+	unit->updir.x    =  matrix[ 4];
+	unit->updir.y    =  matrix[ 5];
+	unit->updir.z    =  matrix[ 6];
+	unit->frontdir.x =  matrix[ 8];
+	unit->frontdir.y =  matrix[ 9];
+	unit->frontdir.z =  matrix[10];
 
+	unit->heading = GetHeadingFromVector(unit->frontdir.x, unit->frontdir.z);
 	unit->ForcedMove(unit->pos);
+
 	return 0;
 }
 
@@ -2256,7 +2271,7 @@ int LuaSyncedCtrl::CreateFeature(lua_State* L)
 	// use SetFeatureResurrect() to fill in the missing bits
 	inCreateFeature = true;
 	CFeature* feature = new CFeature();
-	feature->Initialize(pos, featureDef, heading, facing, team, allyTeam, "");
+	feature->Initialize(pos, featureDef, heading, facing, team, allyTeam, NULL);
 	inCreateFeature = false;
 
 	lua_pushnumber(L, feature->id);
@@ -2380,7 +2395,12 @@ int LuaSyncedCtrl::SetFeatureResurrect(lua_State* L)
 	if (feature == NULL) {
 		return 0;
 	}
-	feature->createdFromUnit = luaL_checkstring(L, 2);
+
+	const UnitDef* ud = unitDefHandler->GetUnitDefByName(luaL_checkstring(L, 2));
+
+	if (ud != NULL) {
+		feature->udef = ud;
+	}
 
 	const int args = lua_gettop(L); // number of arguments
 	if (args >= 3) {
@@ -2555,13 +2575,13 @@ int LuaSyncedCtrl::SetProjectileCEG(lua_State* L)
 	if (proj->weapon) {
 		CWeaponProjectile* wproj = dynamic_cast<CWeaponProjectile*>(proj);
 		if (wproj != NULL) {
-			wproj->ceg.Load(explGenHandler, luaL_checkstring(L, 2));
+			wproj->cegID = gCEG->Load(explGenHandler, luaL_checkstring(L, 2));
 		}
 	}
 	if (proj->piece) {
 		CPieceProjectile* pproj = dynamic_cast<CPieceProjectile*>(proj);
 		if (pproj != NULL) {
-			pproj->ceg.Load(explGenHandler, luaL_checkstring(L, 2));
+			pproj->cegID = gCEG->Load(explGenHandler, luaL_checkstring(L, 2));
 		}
 	}
 
@@ -2800,8 +2820,8 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 /******************************************************************************/
 /******************************************************************************/
 
-static void ParseMapParams(lua_State* L, const char* caller, float& factor,
-                           int& x1, int& z1, int& x2, int& z2)
+static void ParseParams(lua_State* L, const char* caller, float& factor,
+		int& x1, int& z1, int& x2, int& z2, int resolution, int maxX, int maxZ)
 {
 	float fx1 = 0.0f;
 	float fz1 = 0.0f;
@@ -2832,12 +2852,16 @@ static void ParseMapParams(lua_State* L, const char* caller, float& factor,
 	}
 
 	// quantize and clamp
-	x1 = (int)max(0 , min(gs->mapx, (int)(fx1 / SQUARE_SIZE)));
-	z1 = (int)max(0 , min(gs->mapy, (int)(fz1 / SQUARE_SIZE)));
-	x2 = (int)max(0 , min(gs->mapx, (int)(fx2 / SQUARE_SIZE)));
-	z2 = (int)max(0 , min(gs->mapy, (int)(fz2 / SQUARE_SIZE)));
+	x1 = (int)max(0 , min(maxX, (int)(fx1 / resolution)));
+	z1 = (int)max(0 , min(maxZ, (int)(fz1 / resolution)));
+	x2 = (int)max(0 , min(maxX, (int)(fx2 / resolution)));
+	z2 = (int)max(0 , min(maxZ, (int)(fz2 / resolution)));
+}
 
-	return;
+static inline void ParseMapParams(lua_State* L, const char* caller,
+		float& factor, int& x1, int& z1, int& x2, int& z2)
+{
+	ParseParams(L, caller, factor, x1, z1, x2, z2, SQUARE_SIZE, gs->mapx, gs->mapy);
 }
 
 
@@ -3049,44 +3073,12 @@ int LuaSyncedCtrl::SetHeightMapFunc(lua_State* L)
 /* smooth mesh manipulation                                                   */
 /******************************************************************************/
 
-static void ParseSmoothMeshParams(lua_State* L, const char* caller, float& factor,
-			   int& x1, int& z1, int& x2, int& z2)
+static inline void ParseSmoothMeshParams(lua_State* L, const char* caller,
+		float& factor, int& x1, int& z1, int& x2, int& z2)
 {
-	float fx1 = 0.0f;
-	float fz1 = 0.0f;
-	float fx2 = 0.0f;
-	float fz2 = 0.0f;
-
-	const int args = lua_gettop(L); // number of arguments
-	if (args == 3) {
-		fx1 = fx2 = luaL_checkfloat(L, 1);
-		fz1 = fz2 = luaL_checkfloat(L, 2);
-		factor    = luaL_checkfloat(L, 3);
-	}
-	else if (args == 5) {
-		fx1    = luaL_checkfloat(L, 1);
-		fz1    = luaL_checkfloat(L, 2);
-		fx2    = luaL_checkfloat(L, 3);
-		fz2    = luaL_checkfloat(L, 4);
-		factor = luaL_checkfloat(L, 5);
-		if (fx1 > fx2) {
-			swap(fx1, fx2);
-		}
-		if (fz1 > fz2) {
-			swap(fz1, fz2);
-		}
-	}
-	else {
-		luaL_error(L, "Incorrect arguments to %s()", caller);
-	}
-
-	// quantize and clamp
-	x1 = (int)max(0 , min(smoothGround->GetMaxX(), (int)(fx1 / smoothGround->GetResolution())));
-	z1 = (int)max(0 , min(smoothGround->GetMaxY(), (int)(fz1 / smoothGround->GetResolution())));
-	x2 = (int)max(0 , min(smoothGround->GetMaxX(), (int)(fx2 / smoothGround->GetResolution())));
-	z2 = (int)max(0 , min(smoothGround->GetMaxY(), (int)(fz2 / smoothGround->GetResolution())));
-
-	return;
+	ParseParams(L, caller, factor, x1, z1, x2, z2,
+			smoothGround->GetResolution(), smoothGround->GetMaxX(),
+			smoothGround->GetMaxY());
 }
 
 
@@ -3331,15 +3323,12 @@ int LuaSyncedCtrl::SpawnCEG(lua_State* L)
 	const float rad = luaL_optfloat(L, 8, 0.0f);
 	const float dmg = luaL_optfloat(L, 9, 0.0f);
 	const float dmgMod = 1.0f;
-	if (name.empty()) {
-		return 0;
-	}
 
-	CCustomExplosionGenerator g;
-	g.Load(explGenHandler, name);
-	g.Explosion(pos, dmg, rad, 0x0, dmgMod, 0x0, dir);
+	const unsigned int cegID = gCEG->Load(explGenHandler, name);
+	const bool ret = gCEG->Explosion(cegID, pos, dmg, rad, NULL, dmgMod, NULL, dir);
 
-	return 0;
+	lua_pushboolean(L, ret);
+	return 1;
 }
 
 /******************************************************************************/

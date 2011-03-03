@@ -31,17 +31,14 @@ public:
 	virtual void SetWantedMaxSpeed(float speed);
 	virtual void LeaveTransport(void);
 
-	virtual void Update() = 0;
+	virtual bool Update() = 0;
 	virtual void SlowUpdate();
-
-	int forceTurn;
-	int forceTurnTo;
 
 	CUnit* owner;
 
 	float3 goalPos;
-	float3 oldPos;             // owner position at last Update(); only used by GMT
-	float3 oldSlowUpdatePos;   // owner position at last SlowUpdate(); only used by GMT
+	float3 oldPos;             // owner position at last Update()
+	float3 oldSlowUpdatePos;   // owner position at last SlowUpdate()
 
 	float maxSpeed;
 	float maxWantedSpeed;

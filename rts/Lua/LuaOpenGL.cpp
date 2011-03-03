@@ -802,7 +802,7 @@ void LuaOpenGL::ResetDrawInMiniMap()
 void LuaOpenGL::SetupWorldLighting()
 {
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-	glLightfv(GL_LIGHT1, GL_POSITION, mapInfo->light.sunDir);
+	glLightfv(GL_LIGHT1, GL_POSITION, globalRendering->sunDir);
 	glEnable(GL_LIGHT1);
 }
 
@@ -882,7 +882,7 @@ void LuaOpenGL::SetupScreenLighting()
 	// sun light -- needs the camera transformation
 	glPushMatrix();
 	glLoadMatrixd(camera->GetViewMat());
-	glLightfv(GL_LIGHT1, GL_POSITION, mapInfo->light.sunDir);
+	glLightfv(GL_LIGHT1, GL_POSITION, globalRendering->sunDir);
 
 	const float sunFactor = 1.0f;
 	const float sf = sunFactor;
@@ -1085,9 +1085,6 @@ int LuaOpenGL::GetString(lua_State* L)
 int LuaOpenGL::ConfigScreen(lua_State* L)
 {
 //	CheckDrawingEnabled(L, __FUNCTION__);
-	if (!CLuaHandle::GetActiveHandle()->GetUserMode()) {
-		return 0;
-	}
 	const int args = lua_gettop(L); // number of arguments
 	if ((args != 2) || !lua_isnumber(L, 1) || !lua_isnumber(L, 2)) {
 		luaL_error(L, "Incorrect arguments to gl.ConfigScreen()");
@@ -1112,9 +1109,6 @@ int LuaOpenGL::SlaveMiniMap(lua_State* L)
 		return 0;
 	}
 //	CheckDrawingEnabled(L, __FUNCTION__);
-	if (!CLuaHandle::GetActiveHandle()->GetUserMode()) {
-		return 0;
-	}
 	const int args = lua_gettop(L); // number of arguments
 	if ((args != 1) || !lua_isboolean(L, 1)) {
 		luaL_error(L, "Incorrect arguments to gl.SlaveMiniMap()");
@@ -1130,9 +1124,6 @@ int LuaOpenGL::SlaveMiniMap(lua_State* L)
 int LuaOpenGL::ConfigMiniMap(lua_State* L)
 {
 	if (!minimap) {
-		return 0;
-	}
-	if (!CLuaHandle::GetActiveHandle()->GetUserMode()) {
 		return 0;
 	}
 	const int args = lua_gettop(L); // number of arguments
@@ -1154,9 +1145,6 @@ int LuaOpenGL::DrawMiniMap(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
 	if (!minimap) {
-		return 0;
-	}
-	if (!CLuaHandle::GetActiveHandle()->GetUserMode()) {
 		return 0;
 	}
 	if (drawMode != DRAW_SCREEN) {
@@ -1357,15 +1345,14 @@ int LuaOpenGL::Unit(lua_State* L)
 		useLOD = false;
 	}
 	else {
-		unsigned int lod;
+		unsigned int lod = 0;
 		if (!lua_isnumber(L, 3)) {
 			const LuaMatType matType =
 				(water->drawReflection) ? LUAMAT_OPAQUE_REFLECT : LUAMAT_OPAQUE;
-			lod = unit->CalcLOD(unit->luaMats[matType].GetLastLOD());
+			lod = unitDrawer->CalcUnitLOD(unit, unit->luaMats[matType].GetLastLOD());
 		} else {
 			int tmpLod = lua_toint(L, 3);
 			if (tmpLod < 0) {
-				lod = 0;
 				useLOD = false;
 			} else {
 				lod = std::min(unit->lodCount - 1, (unsigned int)tmpLod);
@@ -1423,7 +1410,7 @@ int LuaOpenGL::UnitRaw(lua_State* L)
 		if (!lua_isnumber(L, 3)) {
 			const LuaMatType matType =
 				(water->drawReflection) ? LUAMAT_OPAQUE_REFLECT : LUAMAT_OPAQUE;
-			lod = unit->CalcLOD(unit->luaMats[matType].GetLastLOD());
+			lod = unitDrawer->CalcUnitLOD(unit, unit->luaMats[matType].GetLastLOD());
 		} else {
 			int tmpLod = lua_toint(L, 3);
 			if (tmpLod < 0) {
@@ -1499,7 +1486,8 @@ int LuaOpenGL::UnitMultMatrix(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	unitDrawer->ApplyUnitTransformMatrix(unit);
+
+	glMultMatrixf(unit->GetTransformMatrix());
 	return 0;
 }
 
@@ -1518,7 +1506,7 @@ int LuaOpenGL::UnitPiece(lua_State* L)
 	}
 	LocalModelPiece* localPiece = localModel->pieces[piece];
 
-	glCallList(localPiece->displist);
+	glCallList(localPiece->dispListID);
 
 	return 0;
 }
@@ -1638,7 +1626,7 @@ int LuaOpenGL::FeatureShape(lua_State* L)
 	if (fd == NULL) {
 		return 0;
 	}
-	const S3DModel* model = LoadModel(fd);
+	const S3DModel* model = fd->LoadModel();
 	if (model == NULL) {
 		return 0;
 	}
@@ -3343,7 +3331,7 @@ static bool ParseUnitTexture(const string& texture)
 		if (fd == NULL) {
 			return false;
 		}
-		model = LoadModel(fd);
+		model = fd->LoadModel();
 	} else {
 		const UnitDef* ud = unitDefHandler->GetUnitDefByID(id);
 		if (ud == NULL) {
@@ -4417,7 +4405,7 @@ int LuaOpenGL::LoadMatrix(lua_State* L)
 	}
 	else {
 		for (int i = 1; i <= 16; i++) {
-			matrix[i] = (GLfloat)luaL_checknumber(L, i);
+			matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
 		}
 	}
 	glLoadMatrixf(matrix);
@@ -4448,7 +4436,7 @@ int LuaOpenGL::MultMatrix(lua_State* L)
 	}
 	else {
 		for (int i = 1; i <= 16; i++) {
-			matrix[i] = (GLfloat)luaL_checknumber(L, i);
+			matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
 		}
 	}
 	glMultMatrixf(matrix);
@@ -5037,17 +5025,17 @@ int LuaOpenGL::GetSun(lua_State* L)
 {
 	const int args = lua_gettop(L); // number of arguments
 	if (args == 0) {
-		lua_pushnumber(L, mapInfo->light.sunDir[0]);
-		lua_pushnumber(L, mapInfo->light.sunDir[1]);
-		lua_pushnumber(L, mapInfo->light.sunDir[2]);
+		lua_pushnumber(L, globalRendering->sunDir[0]);
+		lua_pushnumber(L, globalRendering->sunDir[1]);
+		lua_pushnumber(L, globalRendering->sunDir[2]);
 		return 3;
 	}
 
 	const string param = luaL_checkstring(L, 1);
 	if (param == "pos") {
-		lua_pushnumber(L, mapInfo->light.sunDir[0]);
-		lua_pushnumber(L, mapInfo->light.sunDir[1]);
-		lua_pushnumber(L, mapInfo->light.sunDir[2]);
+		lua_pushnumber(L, globalRendering->sunDir[0]);
+		lua_pushnumber(L, globalRendering->sunDir[1]);
+		lua_pushnumber(L, globalRendering->sunDir[2]);
 		return 3;
 	}
 
@@ -5058,9 +5046,9 @@ int LuaOpenGL::GetSun(lua_State* L)
 
 	if (param == "shadowDensity") {
 		if (!unitMode) {
-			lua_pushnumber(L, mapInfo->light.groundShadowDensity);
+			lua_pushnumber(L, globalRendering->groundShadowDensity);
 		} else {
-			lua_pushnumber(L, unitDrawer->unitShadowDensity);
+			lua_pushnumber(L, globalRendering->unitShadowDensity);
 		}
 		return 1;
 	}

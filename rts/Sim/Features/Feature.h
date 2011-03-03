@@ -20,7 +20,6 @@ struct FeatureDef;
 class CUnit;
 struct DamageArray;
 class CFireProjectile;
-struct CollisionVolume;
 
 
 
@@ -37,7 +36,7 @@ public:
 	 * This will add this to the FeatureHandler.
 	 */
 	void Initialize(const float3& pos, const FeatureDef* def, short int heading, int facing,
-		int team, int allyteam, std::string fromUnit, const float3& speed = ZeroVector, int smokeTime = 0);
+		int team, int allyteam, const UnitDef* udef, const float3& speed = ZeroVector, int smokeTime = 0);
 	int GetBlockingMapID() const { return id + (10 * uh->MaxUnits()); }
 
 	/**
@@ -45,8 +44,8 @@ public:
 	 * @return true if reclaimed
 	 */
 	bool AddBuildPower(float amount, CUnit* builder);
-	void DoDamage(const DamageArray& damages, CUnit* attacker, const float3& impulse);
-	void Kill(float3& impulse);
+	void DoDamage(const DamageArray& damages, const float3& impulse);
+	void Kill(const float3& impulse);
 	void ForcedMove(const float3& newPos, bool snapToGround = true);
 	void ForcedSpin(const float3& newDir);
 	virtual bool Update(void);
@@ -78,7 +77,7 @@ public:
 		}
 	}
 
-	std::string createdFromUnit;
+public:
 	/**
 	 * This flag is used to stop a potential exploit involving tripping
 	 * a unit back and forth across a chunk boundary to get unlimited resources.
@@ -99,8 +98,9 @@ public:
 	int lastReclaim;
 
 	const FeatureDef* def;
+	const UnitDef* udef; /// type of unit this feature should be resurrected to
+
 	std::string defName;
-	CollisionVolume* collisionVolume;
 
 	CMatrix44f transMatrix;
 

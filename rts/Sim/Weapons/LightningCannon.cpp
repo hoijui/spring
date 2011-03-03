@@ -71,10 +71,10 @@ bool CLightningCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit
 	if (avoidFeature && helper->LineFeatureCol(weaponMuzzlePos, dir, length)) {
 		return false;
 	}
-	if (avoidFriendly && helper->TestAllyCone(weaponMuzzlePos, dir, length, (accuracy + sprayAngle), owner->allyteam, owner)) {
+	if (avoidFriendly && helper->TestCone(weaponMuzzlePos, dir, length, (accuracy + sprayAngle), owner, CGameHelper::TEST_ALLIED)) {
 		return false;
 	}
-	if (avoidNeutral && helper->TestNeutralCone(weaponMuzzlePos, dir, length, (accuracy + sprayAngle), owner)) {
+	if (avoidNeutral && helper->TestCone(weaponMuzzlePos, dir, length, (accuracy + sprayAngle), owner, CGameHelper::TEST_NEUTRAL)) {
 		return false;
 	}
 
@@ -95,11 +95,17 @@ void CLightningCannon::FireImpl()
 		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight);
 	dir.Normalize();
 
-	const CUnit* cu = 0;
-	const CFeature* cf = 0;
-	float r = helper->TraceRay(weaponMuzzlePos, dir, range, 0, (const CUnit*)owner, cu, collisionFlags, &cf);
-	CUnit* u = (cu == NULL) ? NULL : uh->units[cu->id];
-	CFeature* f = cf ? featureHandler->GetFeature(cf->id) : 0;
+	CUnit* u = NULL;
+	CFeature* f = NULL;
+	float r = 0.0f;
+
+	{
+		const CUnit* cu = NULL;
+		const CFeature* cf = NULL;
+		r = helper->TraceRay(weaponMuzzlePos, dir, range, 0, (const CUnit*)owner, cu, collisionFlags, &cf);
+		u = const_cast<CUnit*>(cu);
+		f = const_cast<CFeature*>(cf);
+	}
 
 
 	float3 newDir;
@@ -115,7 +121,7 @@ void CLightningCannon::FireImpl()
 
 	if (u) {
 		if (u->unitDef->usePieceCollisionVolumes) {
-			u->SetLastAttackedPiece(u->localmodel->pieces[0], gs->frameNum);
+			u->SetLastAttackedPiece(u->localmodel->GetRoot(), gs->frameNum);
 		}
 	}
 

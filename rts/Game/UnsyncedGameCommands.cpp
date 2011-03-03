@@ -35,10 +35,11 @@
 #include "Rendering/InMapDraw.h"
 #include "Rendering/Screenshot.h"
 #include "Rendering/ShadowHandler.h"
+#include "Rendering/UnitDrawer.h"
 #include "Rendering/VerticalSync.h"
 #include "Lua/LuaOpenGL.h"
 #include "Sim/Misc/TeamHandler.h"
-#include "Sim/Units/COB/UnitScript.h"
+#include "Sim/Units/Scripts/UnitScript.h"
 #include "Sim/Units/Groups/GroupHandler.h"
 #include "Sim/Misc/SmoothHeightMesh.h"
 #include "UI/CommandColors.h"
@@ -58,11 +59,10 @@
 #include "System/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/NetProtocol.h"
-#include "System/SpringApp.h"
+#include "System/Input/KeyInput.h"
 #include "System/FileSystem/SimpleParser.h"
 #include "System/Sound/ISound.h"
-#include "System/Sound/IEffectChannel.h"
-#include "System/Sound/IMusicChannel.h"
+#include "System/Sound/SoundChannels.h"
 
 static std::vector<std::string> _local_strSpaceTokenize(const std::string& text) {
 
@@ -119,7 +119,7 @@ bool CGame::ActionPressed(const Action& action,
 			logOutput.Print("Change your configuration and restart to use them");
 			return true;
 		}
-		else if (!shadowHandler->canUseShadows) {
+		else if (!shadowHandler->shadowsSupported) {
 			logOutput.Print("Your hardware/driver setup does not support shadows");
 			return true;
 		}
@@ -141,31 +141,44 @@ bool CGame::ActionPressed(const Action& action,
 		shadowHandler = new CShadowHandler();
 	}
 	else if (cmd == "water") {
-		static char rmodes[5][32] = {"basic", "reflective", "dynamic", "reflective&refractive", "bumpmapped"};
-		int next = 0;
+		int nextWaterRendererMode = 0;
 
 		if (!action.extra.empty()) {
-			next = std::max(0, atoi(action.extra.c_str()) % 5);
+			nextWaterRendererMode = std::max(0, atoi(action.extra.c_str()) % CBaseWater::NUM_WATER_RENDERERS);
 		} else {
-			const int current = configHandler->Get("ReflectiveWater", 1);
-			next = (std::max(0, current) + 1) % 5;
+			nextWaterRendererMode = -1;
 		}
-		configHandler->Set("ReflectiveWater", next);
-		logOutput.Print("Set water rendering mode to %i (%s)", next, rmodes[next]);
-		water = CBaseWater::GetWater(water);
+
+		CBaseWater::PushWaterMode(nextWaterRendererMode);
 	}
-	else if (cmd == "advshading") {
-		static bool canUse = unitDrawer->advShading;
-		if (canUse) {
+
+	else if (cmd == "advmodelshading") {
+		static bool canUseShaders = unitDrawer->advShading;
+
+		if (canUseShaders) {
 			if (!action.extra.empty()) {
 				unitDrawer->advShading = !!atoi(action.extra.c_str());
 			} else {
 				unitDrawer->advShading = !unitDrawer->advShading;
 			}
-			logOutput.Print("Advanced shading %s",
-			                unitDrawer->advShading ? "enabled" : "disabled");
+
+			logOutput.Print("model shaders %sabled", (unitDrawer->advShading? "en": "dis"));
 		}
 	}
+	else if (cmd == "advmapshading") {
+		static bool canUseShaders = gd->advShading;
+
+		if (canUseShaders) {
+			if (!action.extra.empty()) {
+				gd->advShading = !!atoi(action.extra.c_str());
+			} else {
+				gd->advShading = !gd->advShading;
+			}
+
+			logOutput.Print("map shaders %sabled", (gd->advShading? "en": "dis"));
+		}
+	}
+
 	else if (cmd == "say") {
 		SendNetChat(action.extra);
 	}
@@ -288,11 +301,11 @@ bool CGame::ActionPressed(const Action& action,
 		const bool cheating           = gs->cheatEnabled;
 		const bool hasArgs            = (action.extra.size() > 0);
 		const std::vector<std::string> &args = _local_strSpaceTokenize(action.extra);
-		size_t skirmishAIId           = 0; // will only be used if !badArgs
 		const bool singlePlayer       = (playerHandler->ActivePlayers() <= 1);
 		const std::string actionName  = cmd.substr(2);
 
 		if (hasArgs) {
+			size_t skirmishAIId           = 0; // will only be used if !badArgs
 			bool share = false;
 			int teamToKillId         = -1;
 			int teamToReceiveUnitsId = -1;
@@ -612,7 +625,7 @@ bool CGame::ActionPressed(const Action& action,
 	else if (((cmd == "chat")     || (cmd == "chatall") ||
 	         (cmd == "chatally") || (cmd == "chatspec")) &&
 	         // if chat is bound to enter and we're waiting for user to press enter to start game, ignore.
-				  (ks.Key() != SDLK_RETURN || playing || !keys[SDLK_LCTRL] )) {
+				  (ks.Key() != SDLK_RETURN || playing || !keyInput->IsKeyPressed(SDLK_LCTRL))) {
 
 		if (cmd == "chatall")  { userInputPrefix = ""; }
 		if (cmd == "chatally") { userInputPrefix = "a:"; }
@@ -728,6 +741,13 @@ bool CGame::ActionPressed(const Action& action,
 			sky->dynamicSky = !sky->dynamicSky;
 		} else {
 			sky->dynamicSky = !!atoi(action.extra.c_str());
+		}
+	}
+	else if (cmd == "dynamicsun") {
+		if (action.extra.empty()) {
+			globalRendering->dynamicSun = !globalRendering->dynamicSun;
+		} else {
+			globalRendering->dynamicSun = !!atoi(action.extra.c_str());
 		}
 	}
 #ifdef USE_GML
@@ -897,9 +917,10 @@ bool CGame::ActionPressed(const Action& action,
 	else if (cmd == "controlunit") {
 		if (!gu->spectating) {
 			Command c;
-			c.id=CMD_STOP;
-			c.options=0;
-			selectedUnits.GiveCommand(c,false);		//force it to update selection and clear order que
+			c.id = CMD_STOP;
+			c.options = 0;
+			// force it to update selection and clear order queue
+			selectedUnits.GiveCommand(c, false);
 			net->Send(CBaseNetProtocol::Get().SendDirectControl(gu->myPlayerNum));
 		}
 	}
@@ -913,11 +934,11 @@ bool CGame::ActionPressed(const Action& action,
 		gd->ToggleRadarAndJammer();
 	}
 	else if (cmd == "showmetalmap") {
-		gd->SetMetalTexture(readmap->metalMap->metalMap,&readmap->metalMap->extractionMap.front(),readmap->metalMap->metalPal,false);
+		gd->SetMetalTexture(readmap->metalMap);
 	}
 
-	else if (cmd == "showpathsquares") {
-		gd->TogglePathSquaresTexture();
+	else if (cmd == "showpathtraversability") {
+		gd->TogglePathTraversabilityTexture();
 	}
 	else if (cmd == "showpathheat") {
 		if (gs->cheatEnabled) {
@@ -950,7 +971,7 @@ bool CGame::ActionPressed(const Action& action,
 	}
 	else if (cmd == "quitforce" || cmd == "quit") {
 		logOutput.Print("User exited");
-		globalQuit = true;
+		gu->globalQuit = true;
 	}
 	else if (cmd == "incguiopacity") {
 		CInputReceiver::guiAlpha = std::min(CInputReceiver::guiAlpha+0.1f,1.0f);
@@ -1177,11 +1198,14 @@ bool CGame::ActionPressed(const Action& action,
 	else if (cmd == "allmapmarks") {
 		if (gs->cheatEnabled) {
 			if (action.extra.empty()) {
-				inMapDrawer->ToggleAllVisible();
+				inMapDrawer->ToggleAllMarksVisible();
 			} else {
-				inMapDrawer->SetAllVisible(!!atoi(action.extra.c_str()));
+				inMapDrawer->SetAllMarksVisible(!!atoi(action.extra.c_str()));
 			}
 		}
+	}
+	else if (cmd == "clearmapmarks") {
+		inMapDrawer->ClearMarks();
 	}
 	else if (cmd == "noluadraw") {
 		if (action.extra.empty()) {

@@ -102,11 +102,7 @@ bool CVFSHandler::RemoveArchive(const std::string& arName)
 	for (std::map<std::string, FileData>::iterator f = files.begin(); f != files.end();) {
 		if (f->second.ar == ar) {
 			logOutput.Print(LOG_VFS_DETAIL, "%s (removing)", f->first.c_str());
-#ifdef _MSC_VER
-			f = files.erase(f);
-#else
-			files.erase(f++);
-#endif
+			f = set_erase(files, f);
 		}
 		else
 			 ++f;
@@ -190,7 +186,7 @@ std::vector<std::string> CVFSHandler::GetFilesInDir(const std::string& rawDir)
 				logOutput.Print(LOG_VFS_DETAIL, "%s", name.c_str());
 			}
 		}
-		filesStart++;
+		++filesStart;
 	}
 
 	return ret;
@@ -214,7 +210,7 @@ std::vector<std::string> CVFSHandler::GetDirsInDir(const std::string& rawDir)
 		std::string::size_type dirLast = (dir.length() - 1);
 		if (dir[dirLast] != '/') {
 			dir += "/";
-			dirLast++;
+			++dirLast;
 		}
 		// limit the iterator range
 		std::string dirEnd = dir;
@@ -236,7 +232,7 @@ std::vector<std::string> CVFSHandler::GetDirsInDir(const std::string& rawDir)
 				dirs.insert(name.substr(0, slash + 1));
 			}
 		}
-		filesStart++;
+		++filesStart;
 	}
 
 	for (std::set<std::string>::const_iterator it = dirs.begin(); it != dirs.end(); ++it) {

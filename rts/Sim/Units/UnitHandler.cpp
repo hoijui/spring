@@ -8,9 +8,9 @@
 #include "Unit.h"
 #include "UnitDefHandler.h"
 #include "UnitLoader.h"
+#include "CommandAI/Command.h"
 #include "CommandAI/BuilderCAI.h"
 #include "Game/GameSetup.h"
-#include "Game/SelectedUnits.h"
 #include "Lua/LuaUnsyncedCtrl.h"
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
@@ -22,7 +22,7 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/MoveTypes/MoveType.h"
-#include "CommandAI/Command.h"
+#include "System/EventHandler.h"
 #include "System/EventBatchHandler.h"
 #include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
@@ -33,7 +33,6 @@
 #include "System/creg/STL_Deque.h"
 #include "System/creg/STL_List.h"
 #include "System/creg/STL_Set.h"
-#include "EventHandler.h"
 using std::min;
 using std::max;
 
@@ -167,7 +166,7 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 	for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
 		if (*usi == delUnit) {
 			if (slowUpdateIterator != activeUnits.end() && *usi == *slowUpdateIterator) {
-				slowUpdateIterator++;
+				++slowUpdateIterator;
 			}
 			delTeam = delUnit->team;
 			delType = delUnit->unitDef->id;
@@ -228,8 +227,14 @@ void CUnitHandler::Update()
 		SCOPED_TIMER("Unit Movetype update");
 		std::list<CUnit*>::iterator usi;
 		for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
-			(*usi)->moveType->Update();
-			GML_GET_TICKS((*usi)->lastUnitUpdate);
+			CUnit* unit = *usi;
+			AMoveType* moveType = unit->moveType;
+
+			if (moveType->Update()) {
+				eventHandler.UnitMoved(unit);
+			}
+
+			GML_GET_TICKS(unit->lastUnitUpdate);
 		}
 	}
 
@@ -237,20 +242,31 @@ void CUnitHandler::Update()
 		SCOPED_TIMER("Unit update");
 		std::list<CUnit*>::iterator usi;
 		for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
-			(*usi)->Update();
+			CUnit* unit = *usi;
+
+			if (unit->deathScriptFinished) {
+				// there are many ways to fiddle with "deathScriptFinished", so a unit may
+				// arrive here without having been properly killed (and isDead still false),
+				// which can result in MT deadlocking -- FIXME verify this
+				// (KU returns early if isDead)
+				unit->KillUnit(false, true, NULL);
+
+				DeleteUnit(unit);
+			} else {
+				unit->Update();
+			}
 		}
 	}
 
 	{
 		SCOPED_TIMER("Unit slow update");
-		if (!(gs->frameNum & (UNIT_SLOWUPDATE_RATE-1))) {
+		if (!(gs->frameNum & (UNIT_SLOWUPDATE_RATE - 1))) {
 			slowUpdateIterator = activeUnits.begin();
 		}
 
-		int numToUpdate = activeUnits.size() / UNIT_SLOWUPDATE_RATE + 1;
-		for (; slowUpdateIterator != activeUnits.end() && numToUpdate != 0; ++ slowUpdateIterator) {
-			(*slowUpdateIterator)->SlowUpdate();
-			numToUpdate--;
+		int n = (activeUnits.size() / UNIT_SLOWUPDATE_RATE) + 1;
+		for (; slowUpdateIterator != activeUnits.end() && n != 0; ++ slowUpdateIterator) {
+			(*slowUpdateIterator)->SlowUpdate(); n--;
 		}
 	} // for timer destruction
 }
@@ -420,9 +436,9 @@ int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFe
 		}
 	}
 
-	const float groundheight = ground->GetHeight2(pos.x, pos.z);
+	const float groundHeight = ground->GetHeightReal(pos.x, pos.z);
 
-	if (!unitdef->floater || groundheight > 0.0f) {
+	if (!unitdef->floater || groundHeight > 0.0f) {
 		// if we are capable of floating, only test local
 		// height difference if terrain is above sea-level
 		const float* heightmap = readmap->GetHeightmap();
@@ -436,8 +452,8 @@ int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFe
 		if (pos.y < orgh - hdif && pos.y < h - hdif) { return 0; }
 	}
 
-	if(!unitdef->IsTerrainHeightOK(groundheight))
-		return 0;
+	if (!unitdef->IsAllowedTerrainHeight(groundHeight))
+		ret = 0;
 
 	return ret;
 }

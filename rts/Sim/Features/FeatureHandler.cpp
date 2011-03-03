@@ -70,32 +70,21 @@ CFeatureHandler::CFeatureHandler()
 	}
 }
 
-
 CFeatureHandler::~CFeatureHandler()
 {
 	for (CFeatureSet::iterator fi = activeFeatures.begin(); fi != activeFeatures.end(); ++fi) {
-		// unsavory, but better than a memleak
-		FeatureDef* fd = (FeatureDef*) (*fi)->def;
-
-		delete fd->collisionVolume;
-		fd->collisionVolume = NULL;
 		delete *fi;
+	}
+
+	for (std::map<std::string, const FeatureDef*>::iterator it = featureDefs.begin(); it != featureDefs.end(); ++it) {
+		delete it->second;
 	}
 
 	activeFeatures.clear();
 	features.clear();
-
-	while (!featureDefs.empty()) {
-		map<string, const FeatureDef*>::iterator fi = featureDefs.begin();
-
-		FeatureDef* fd = (FeatureDef*) fi->second;
-
-		delete fd->collisionVolume;
-		fd->collisionVolume = NULL;
-		delete fi->second;
-		featureDefs.erase(fi);
-	}
+	featureDefs.clear();
 }
+
 
 
 void CFeatureHandler::AddFeatureDef(const string& name, FeatureDef* fd)
@@ -263,9 +252,9 @@ void CFeatureHandler::LoadFeaturesFromMap(bool onlyCreateDefs)
 				fd->xsize = 0;
 				fd->zsize = 0;
 				fd->myName = name;
-				fd->mass = 100000;
+				fd->mass = CSolidObject::DEFAULT_MASS;
 				// geothermals have no collision volume at all
-				fd->collisionVolume = 0;
+				fd->collisionVolume = NULL;
 				AddFeatureDef(name, fd);
 			}
 			else {
@@ -289,11 +278,11 @@ void CFeatureHandler::LoadFeaturesFromMap(bool onlyCreateDefs)
 				continue;
 			}
 
-			const float ypos = ground->GetHeight2(mfi[a].pos.x, mfi[a].pos.z);
+			const float ypos = ground->GetHeightReal(mfi[a].pos.x, mfi[a].pos.z);
 			(new CFeature)->Initialize(
 				float3(mfi[a].pos.x, ypos, mfi[a].pos.z),
 				def->second, (short int) mfi[a].rotation,
-				0, -1, -1, ""
+				0, -1, -1, NULL
 			);
 		}
 
@@ -343,7 +332,7 @@ CFeature* CFeatureHandler::GetFeature(int id)
 }
 
 CFeature* CFeatureHandler::CreateWreckage(const float3& pos, const string& name,
-	float rot, int facing, int iter, int team, int allyteam, bool emitSmoke, string fromUnit,
+	float rot, int facing, int iter, int team, int allyteam, bool emitSmoke, const UnitDef* udef,
 	const float3& speed)
 {
 	const FeatureDef* fd;
@@ -355,17 +344,19 @@ CFeature* CFeatureHandler::CreateWreckage(const float3& pos, const string& name,
 		fd = GetFeatureDef(*defname);
 		if (!fd) return NULL;
 		defname = &(fd->deathFeature);
-	}while (--i > 0);
+	} while (--i > 0);
 
 	if (luaRules && !luaRules->AllowFeatureCreation(fd, team, pos))
 		return NULL;
 
 	if (!fd->modelname.empty()) {
-		if (fd->resurrectable==0 || (iter>1 && fd->resurrectable<0))
-			fromUnit = "";
-
 		CFeature* f = new CFeature;
-		f->Initialize(pos, fd, (short int) rot, facing, team, allyteam, fromUnit, speed, emitSmoke ? fd->smokeTime : 0);
+
+		if (fd->resurrectable == 0 || (iter > 1 && fd->resurrectable < 0)) {
+			f->Initialize(pos, fd, (short int) rot, facing, team, allyteam, NULL, speed, emitSmoke ? fd->smokeTime : 0);
+		} else {
+			f->Initialize(pos, fd, (short int) rot, facing, team, allyteam, udef, speed, emitSmoke ? fd->smokeTime : 0);
+		}
 
 		return f;
 	}
@@ -458,10 +449,10 @@ void CFeatureHandler::TerrainChanged(int x1, int y1, int x2, int y2)
 		for (fi = features.begin(); fi != features.end(); ++fi) {
 			CFeature* feature = *fi;
 			float3& fpos = feature->pos;
-			float gh = ground->GetHeight2(fpos.x, fpos.z);
+			float gh = ground->GetHeightReal(fpos.x, fpos.z);
 			float wh = gh;
 			if(feature->def->floating)
-				wh = ground->GetHeight(fpos.x, fpos.z);
+				wh = ground->GetHeightAboveWater(fpos.x, fpos.z);
 			if (fpos.y > wh || fpos.y < gh) {
 				feature->finalHeight = wh;
 				feature->reachedFinalPos = false;

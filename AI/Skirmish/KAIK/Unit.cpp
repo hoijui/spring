@@ -86,9 +86,7 @@ bool CUNIT::CanAttack(int otherUnit) const {
 	if (ud_mine != NULL && ud_other != NULL) {
 		assert(otherUnit != 0);
 
-		// float dps = this->ai->ut->GetDPSvsUnit(ud_mine, ud_other);
-		float dps = ai->ut->unitTypes[ud_mine->id].DPSvsUnit[ud_other->id];
-		return (dps > 5.0f);
+		return (ai->ut->unitTypes[ud_mine->id].DPSvsUnit[ud_other->id] > 5.0f);
 	}
 
 	// might be a false negative
@@ -164,11 +162,6 @@ int CUNIT::GetBestBuildFacing(const float3& pos) const {
 bool CUNIT::Build_ClosestSite(const UnitDef* def, const float3& bpos, int separation, float radius) {
 	const int buildFacing = GetBestBuildFacing(bpos);
 	const float3 cpos = ai->cb->ClosestBuildSite(def, bpos, radius, separation, buildFacing);
-
-	// L(ai, "[CUNIT::Build_ClosestSite()] builder: " << uid << ", def: " << def);
-	// L(ai, "\tbpos: <" << bpos.x << ", " << bpos.y << ", " << bpos.z << ">");
-	// L(ai, "\tcpos: <" << cpos.x << ", " << cpos.y << ", " << cpos.z << ">");
-	// L(ai, "\n");
 
 	if (cpos.x != -1.0f) {
 		Build(cpos, def, buildFacing);

@@ -332,7 +332,7 @@ void CDynWater::Draw()
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,6, 0.05f, 1-0.05f, 0, 0);
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,7, 0.2f, 0, 0, 0);
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,8, 0.5f, 0.6f, 0.8f, 0);
-	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,9, mapInfo->light.sunDir.x, mapInfo->light.sunDir.y, mapInfo->light.sunDir.z, 0);
+	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,9, globalRendering->sunDir.x, globalRendering->sunDir.y, globalRendering->sunDir.z, 0);
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,10, mapInfo->light.groundSunColor.x, mapInfo->light.groundSunColor.y, mapInfo->light.groundSunColor.z, 0);
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,11, mapInfo->light.groundAmbientColor.x, mapInfo->light.groundAmbientColor.y, mapInfo->light.groundAmbientColor.z, 0);
 	glProgramEnvParameter4fARB(GL_FRAGMENT_PROGRAM_ARB,12, refractRight.x,refractRight.y,refractRight.z,0);
@@ -370,8 +370,6 @@ void CDynWater::Draw()
 
 void CDynWater::UpdateWater(CGame* game)
 {
-	DeleteOldWater(this);
-
 	if ((!mapInfo->water.forceRendering && readmap->currMinHeight > 1.0f) || mapInfo->map.voidWater)
 		return;
 
@@ -449,24 +447,26 @@ void CDynWater::DrawReflection(CGame* game)
 
 	sky->Draw();
 
+	static const double plane[4] = {0.0, 1.0, 0.0, 1.0};
+	static const double plane2[4] = {0.0, -1.0, 0, 1.0};
+	const bool shadowsLoaded = shadowHandler->shadowsLoaded;
+
 	glEnable(GL_CLIP_PLANE2);
-	double plane2[4]={0,-1,0,1.0f};
-	glClipPlane(GL_CLIP_PLANE2 ,plane2);
-	drawReflection=true;
-	bool drawShadows=shadowHandler->drawShadows;
-	shadowHandler->drawShadows=false;
+	glClipPlane(GL_CLIP_PLANE2, plane2);
+
+	drawReflection = true;
+	shadowHandler->shadowsLoaded = false;
 
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 		gd->SetupReflDrawPass();
 		gd->Draw(true, false);
 		gd->SetupBaseDrawPass();
 
-	double plane[4]={0,1,0,1.0f};
 	glClipPlane(GL_CLIP_PLANE2 ,plane);
 
 	gd->Draw(true);
 
-	shadowHandler->drawShadows=drawShadows;
+	shadowHandler->shadowsLoaded = shadowsLoaded;
 
 	unitDrawer->Draw(true);
 	featureDrawer->Draw();
@@ -792,13 +792,13 @@ void CDynWater::DrawHeightTex(void)
 
 void CDynWater::AddFrustumRestraint(float3 side)
 {
-	fline temp;
 	float3 up(0,1,0);
 
 	float3 b=up.cross(side);		//get vector for collision between frustum and horizontal plane
 	if(fabs(b.z)<0.0001f)
 		b.z=0.0001f;
 	{
+		fline temp;
 		temp.dir=b.x/b.z;				//set direction to that
 		float3 c=b.cross(side);			//get vector from camera to collision line
 		float3 colpoint;				//a point on the collision line
@@ -830,7 +830,6 @@ void CDynWater::UpdateCamRestraints(void)
 	AddFrustumRestraint(cam2->leftside);
 
 	//Add restraint for maximum view distance
-	fline temp;
 	float3 up(0,1,0);
 	float3 side=cam2->forward;
 	float3 camHorizontal=cam2->forward;
@@ -838,6 +837,7 @@ void CDynWater::UpdateCamRestraints(void)
 	camHorizontal.ANormalize();
 	float3 b=up.cross(camHorizontal);			//get vector for collision between frustum and horizontal plane
 	if(fabs(b.z)>0.0001f){
+		fline temp;
 		temp.dir=b.x/b.z;				//set direction to that
 		float3 c=b.cross(camHorizontal);			//get vector from camera to collision line
 		float3 colpoint;				//a point on the collision line
@@ -913,7 +913,7 @@ void CDynWater::DrawWaterSurface(void)
 			int xe=xend;
 			int xtest,xtest2;
 			std::vector<fline>::iterator fli;
-			for(fli=left.begin();fli!=left.end();fli++){
+			for(fli=left.begin();fli!=left.end();++fli){
 				float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
 				xtest = ((int)xtf) / lod * lod - lod;
 				xtest2 = ((int)(xtf + fli->dir * lod)) / lod * lod - lod;
@@ -922,7 +922,7 @@ void CDynWater::DrawWaterSurface(void)
 				if(xtest>xs)
 					xs=xtest;
 			}
-			for(fli=right.begin();fli!=right.end();fli++){
+			for(fli=right.begin();fli!=right.end();++fli){
 				float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
 				xtest = ((int)xtf) / lod * lod - lod;
 				xtest2 = ((int)(xtf + fli->dir * lod)) / lod * lod - lod;

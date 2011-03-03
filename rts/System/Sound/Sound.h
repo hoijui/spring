@@ -15,7 +15,7 @@
 
 #include "float3.h"
 
-class SoundSource;
+class CSoundSource;
 class SoundBuffer;
 class SoundItem;
 
@@ -30,7 +30,7 @@ public:
 	virtual bool HasSoundItem(const std::string& name);
 	virtual size_t GetSoundId(const std::string& name, bool hardFail = true);
 
-	virtual SoundSource* GetNextBestSource(bool lock = true);
+	virtual CSoundSource* GetNextBestSource(bool lock = true);
 
 	virtual void UpdateListener(const float3& campos, const float3& camdir, const float3& camup, float lastFrameTime);
 	virtual void NewFrame();
@@ -47,21 +47,27 @@ public:
 	virtual void PrintDebugInfo();
 	virtual bool LoadSoundDefs(const std::string& fileName);
 
+	static float GetElmoInMeters() {
+		return 1.f/8; //SQUARE_SIZE; //! 8 elmos = 1m
+	}
+
+private:
+	typedef std::map<std::string, std::string> soundItemDef;
+	typedef std::map<std::string, soundItemDef> soundItemDefMap;
+
 private:
 	void StartThread(int maxSounds);
 	void Update();
 
-	typedef std::map<std::string, std::string> soundItemDef;
-	typedef std::map<std::string, soundItemDef> soundItemDefMap;
-
 	size_t MakeItemFromDef(const soundItemDef& itemDef);
 
-	friend class EffectChannel;
 	// this is used by EffectChannel in AudioChannel.cpp
 	virtual void PlaySample(size_t id, const float3 &p, const float3& velocity, float volume, bool relative);
+	friend class EffectChannel;
 
 	size_t LoadSoundBuffer(const std::string& filename, bool hardFail);
 
+private:
 	float masterVolume;
 	bool mute;
 	/// we do not play if minimized / iconified
@@ -77,7 +83,7 @@ private:
 	float3 myPos;
 	float3 prevVelocity;
 
-	typedef boost::ptr_vector<SoundSource> sourceVecT;
+	typedef boost::ptr_vector<CSoundSource> sourceVecT;
 	sourceVecT sources;
 
 	unsigned numEmptyPlayRequests;

@@ -18,14 +18,14 @@
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/MoveTypes/AAirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/WeaponProjectile.h"
-#include "Sim/Units/COB/CobInstance.h"
+#include "Sim/Units/Scripts/CobInstance.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/Unit.h"
 #include "System/EventHandler.h"
 #include "System/float3.h"
 #include "System/myMath.h"
 #include "System/Sync/SyncTracer.h"
-#include "System/Sound/IEffectChannel.h"
+#include "System/Sound/SoundChannels.h"
 
 CR_BIND_DERIVED(CWeapon, CObject, (NULL));
 
@@ -316,8 +316,8 @@ void CWeapon::Update()
 	}
 
 	if ((salvoLeft == 0)
-	    && (!owner->directControl || owner->directControl->mouse1
-	                              || owner->directControl->mouse2)
+	    && (owner->fpsControlPlayer == NULL || owner->fpsControlPlayer->fpsController.mouse1
+	                                        || owner->fpsControlPlayer->fpsController.mouse2)
 	    && (targetType != Target_None)
 	    && angleGood
 	    && subClassReady
@@ -465,7 +465,7 @@ bool CWeapon::AttackGround(float3 pos, bool userTarget)
 		owner->updir    * relWeaponMuzzlePos.y +
 		owner->rightdir * relWeaponMuzzlePos.x;
 
-	if (weaponMuzzlePos.y < ground->GetHeight2(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
+	if (weaponMuzzlePos.y < ground->GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
 		// hope that we are underground because we are a popup weapon and will come above ground later
 		weaponMuzzlePos = owner->pos + UpVector * 10;
 	}
@@ -502,7 +502,7 @@ bool CWeapon::AttackUnit(CUnit* unit, bool userTarget)
 		owner->updir    * relWeaponMuzzlePos.y +
 		owner->rightdir * relWeaponMuzzlePos.x;
 
-	if (weaponMuzzlePos.y < ground->GetHeight2(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
+	if (weaponMuzzlePos.y < ground->GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
 		// hope that we are underground because we are a popup weapon and will come above ground later
 		weaponMuzzlePos = owner->pos + UpVector * 10;
 	}
@@ -563,9 +563,9 @@ inline bool CWeapon::AllowWeaponTargetCheck() const
 		return true;
 	}
 
-	if (weaponDef->noAutoTarget) { return false; }
-	if (owner->fireState < 2)    { return false; }
-	if (haveUserTarget)          { return false; }
+	if (weaponDef->noAutoTarget)                 { return false; }
+	if (owner->fireState < FIRESTATE_FIREATWILL) { return false; }
+	if (haveUserTarget)                          { return false; }
 
 	if (targetType == Target_None) { return true; }
 	if (avoidTarget)             { return true; }
@@ -630,7 +630,7 @@ void CWeapon::SlowUpdate(bool noAutoTargetOverride)
 
 	relWeaponPos = owner->script->GetPiecePos(weaponPiece);
 
-	if (weaponMuzzlePos.y < ground->GetHeight2(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
+	if (weaponMuzzlePos.y < ground->GetHeightReal(weaponMuzzlePos.x, weaponMuzzlePos.z)) {
 		// hope that we are underground because we are a popup weapon and will come above ground later
 		weaponMuzzlePos = owner->pos + UpVector * 10;
 	}
@@ -651,7 +651,7 @@ void CWeapon::SlowUpdate(bool noAutoTargetOverride)
 		if (!haveUserTarget) {
 			// stop firing at neutral targets (unless in FAW mode)
 			// note: HoldFire sets targetUnit to NULL, so recheck
-			if (targetUnit != NULL && targetUnit->neutral && owner->fireState < 3)
+			if (targetUnit != NULL && targetUnit->neutral && owner->fireState <= FIRESTATE_FIREATWILL)
 				HoldFire();
 
 			// stop firing at allied targets
@@ -703,7 +703,7 @@ void CWeapon::SlowUpdate(bool noAutoTargetOverride)
 		for (std::multimap<float, CUnit*>::const_iterator ti = targets.begin(); ti != targets.end(); ++ti) {
 			CUnit* nextTarget = ti->second;
 
-			if (nextTarget->neutral && (owner->fireState < 3)) {
+			if (nextTarget->neutral && (owner->fireState <= FIRESTATE_FIREATWILL)) {
 				continue;
 			}
 			if (targetUnit && (nextTarget->category & badTargetCategory)) {
@@ -754,7 +754,7 @@ void CWeapon::SlowUpdate(bool noAutoTargetOverride)
 void CWeapon::DependentDied(CObject *o)
 {
 	if (o == targetUnit) {
-		targetUnit = 0;
+		targetUnit = NULL;
 		if (targetType == Target_Unit) {
 			targetType = Target_None;
 			haveUserTarget = false;
@@ -764,8 +764,9 @@ void CWeapon::DependentDied(CObject *o)
 		incoming.remove((CWeaponProjectile*) o);
 	}
 
-	if (o == interceptTarget)
-		interceptTarget = 0;
+	if (o == interceptTarget) {
+		interceptTarget = NULL;
+	}
 }
 
 bool CWeapon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)

@@ -47,6 +47,7 @@
 #include "Rendering/Env/BaseTreeDrawer.h"
 #include "Rendering/Env/BaseWater.h"
 #include "Rendering/Env/CubeMapHandler.h"
+#include "Rendering/DebugColVolDrawer.h"
 #include "Rendering/FarTextureHandler.h"
 #include "Rendering/glFont.h"
 #include "Rendering/Screenshot.h"
@@ -95,17 +96,19 @@
 #include "Sim/Misc/SmoothHeightMesh.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/Wind.h"
+#include "Sim/Misc/ResourceHandler.h"
 #include "Sim/MoveTypes/MoveInfo.h"
+#include "Sim/MoveTypes/GroundMoveType.h"
 #include "Sim/Path/IPathManager.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
-#include "Sim/Units/COB/CobEngine.h"
-#include "Sim/Units/COB/UnitScriptEngine.h"
+#include "Sim/Units/Scripts/CobEngine.h"
+#include "Sim/Units/Scripts/UnitScriptEngine.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Units/Groups/GroupHandler.h"
-#include "Sim/MoveTypes/MoveType.h"
-#include "Sim/Projectiles/ExplosionGenerator.h"
+#include "Sim/Units/UnitLoader.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "UI/CommandColors.h"
@@ -132,6 +135,8 @@
 #include "System/FPUCheck.h"
 #include "System/NetProtocol.h"
 #include "System/SpringApp.h"
+#include "System/Util.h"
+#include "System/Input/KeyInput.h"
 #include "System/FileSystem/ArchiveScanner.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/FileSystem/VFSHandler.h"
@@ -141,8 +146,7 @@
 #include "System/Net/PackPacket.h"
 #include "System/Platform/CrashHandler.h"
 #include "System/Sound/ISound.h"
-#include "System/Sound/IEffectChannel.h"
-#include "System/Sound/IMusicChannel.h"
+#include "System/Sound/SoundChannels.h"
 #include "System/Sync/SyncedPrimitiveIO.h"
 #include "System/Sync/SyncTracer.h"
 
@@ -154,9 +158,6 @@
 #include "lib/gml/gmlsrv.h"
 extern gmlClientServer<void, int,CUnit*> *gmlProcessor;
 #endif
-
-extern boost::uint8_t *keys;
-extern volatile bool globalQuit;
 
 CGame* game = NULL;
 
@@ -284,6 +285,9 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	CLuaHandle::SetModUICtrl(!!configHandler->Get("LuaModUICtrl", 1));
 
 	modInfo.Init(modName.c_str());
+	if (!mapInfo) {
+		mapInfo = new CMapInfo(gameSetup->MapFile(), gameSetup->mapName);
+	}
 
 	if (!sideParser.Load()) {
 		throw content_error(sideParser.GetErrorLog());
@@ -292,107 +296,111 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 
 CGame::~CGame()
 {
-	CLoadScreen::DeleteInstance();
-	SafeDelete(guihandler);
-
-	if (videoCapturing->IsCapturing()) {
-		videoCapturing->StopCapturing();
-	}
-	IVideoCapturing::FreeInstance();
-
 #ifdef TRACE_SYNC
-	tracefile << "End game\n";
+	tracefile << "[" << __FUNCTION__ << "]";
 #endif
+
+	CLoadScreen::DeleteInstance();
+	IVideoCapturing::FreeInstance();
+	ISound::Shutdown();
 
 	CLuaGaia::FreeHandler();
 	CLuaRules::FreeHandler();
 	LuaOpenGL::Free();
 	heightMapTexture.Kill();
-	SafeDelete(gameServer);
-
-	eoh->PreDestroy();
+	CColorMap::DeleteColormaps();
 	CEngineOutHandler::Destroy();
+	CResourceHandler::FreeInstance();
 
-	for (std::vector<CGroupHandler*>::iterator git = grouphandlers.begin(); git != grouphandlers.end(); ++git) {
-		delete *git;
-	}
-	grouphandlers.clear();
+	SafeDelete(guihandler);
+	SafeDelete(minimap);
+	SafeDelete(resourceBar);
+	SafeDelete(tooltip); // CTooltipConsole*
+	SafeDelete(infoConsole);
+	SafeDelete(consoleHistory);
+	SafeDelete(wordCompletion);
+	SafeDelete(keyBindings);
+	SafeDelete(keyCodes);
+	SafeDelete(selectionKeys); // CSelectionKeyHandler*
+	SafeDelete(luaInputReceiver);
+	SafeDelete(mouse); // CMouseHandler*
 
 	SafeDelete(water);
 	SafeDelete(sky);
-	SafeDelete(resourceBar);
-	SafeDelete(featureDrawer);
-	SafeDelete(unitDrawer);
-	SafeDelete(modelDrawer);
-	SafeDelete(projectileDrawer);
-	SafeDelete(geometricObjects);
-	SafeDelete(featureHandler);
 	SafeDelete(treeDrawer);
 	SafeDelete(pathDrawer);
-	SafeDelete(uh);
-	SafeDelete(ph);
+	SafeDelete(modelDrawer);
+	SafeDelete(shadowHandler);
+	SafeDelete(camHandler);
+	SafeDelete(camera);
+	SafeDelete(cam2);
+	SafeDelete(icon::iconHandler);
+	SafeDelete(inMapDrawer);
+	SafeDelete(geometricObjects);
+	SafeDelete(farTextureHandler);
+	SafeDelete(texturehandler3DO);
+	SafeDelete(texturehandlerS3O);
+
+	SafeDelete(featureDrawer);
+	SafeDelete(featureHandler); // depends on unitHandler (via ~CFeature)
+	SafeDelete(unitDrawer); // depends on unitHandler, cubeMapHandler, groundDecals
+	SafeDelete(uh); // CUnitHandler*, depends on modelParser (via ~CUnit)
+	SafeDelete(projectileDrawer);
+	SafeDelete(ph); // CProjectileHandler*
+
+	SafeDelete(cubeMapHandler);
 	SafeDelete(groundDecals);
-	SafeDelete(minimap);
+	SafeDelete(modelParser);
+
+	SafeDelete(unitLoader);
 	SafeDelete(pathManager);
 	SafeDelete(ground);
 	SafeDelete(smoothGround);
-	SafeDelete(luaInputReceiver);
-	SafeDelete(inMapDrawer);
-	SafeDelete(net);
+	SafeDelete(groundBlockingObjectMap);
 	SafeDelete(radarhandler);
 	SafeDelete(loshandler);
 	SafeDelete(mapDamage);
 	SafeDelete(qf);
-	SafeDelete(tooltip);
-	SafeDelete(keyBindings);
-	SafeDelete(keyCodes);
-	ISound::Shutdown();
-	SafeDelete(selectionKeys);
-	SafeDelete(mouse);
-	SafeDelete(camHandler);
-	SafeDelete(helper);
-	SafeDelete(shadowHandler);
 	SafeDelete(moveinfo);
 	SafeDelete(unitDefHandler);
 	SafeDelete(weaponDefHandler);
 	SafeDelete(damageArrayHandler);
+	SafeDelete(explGenHandler);
+	SafeDelete(gCEG);
+	SafeDelete(helper);
+	SafeDelete((mapInfo = const_cast<CMapInfo*>(mapInfo)));
+
+	CGroundMoveType::DeleteLineTable();
+	CCategoryHandler::RemoveInstance();
+
+	for (unsigned int i = 0; i < grouphandlers.size(); i++) {
+		SafeDelete(grouphandlers[i]);
+	}
+	grouphandlers.clear();
+
+	SafeDelete(saveFile); // ILoadSaveHandler, depends on vfsHandler via ~CArchiveBase
 	SafeDelete(vfsHandler);
 	SafeDelete(archiveScanner);
-	SafeDelete(modelParser);
-	SafeDelete(iconHandler);
-	SafeDelete(farTextureHandler);
-	SafeDelete(texturehandler3DO);
-	SafeDelete(texturehandlerS3O);
-	SafeDelete(camera);
-	SafeDelete(cam2);
-	SafeDelete(infoConsole);
-	SafeDelete(consoleHistory);
-	SafeDelete(wordCompletion);
-	SafeDelete(explGenHandler);
-	SafeDelete(saveFile);
 
-	delete const_cast<CMapInfo*>(mapInfo);
-	mapInfo = NULL;
-	SafeDelete(groundBlockingObjectMap);
+	SafeDelete(gameServer);
+	SafeDelete(net);
 
-	CCategoryHandler::RemoveInstance();
-	CColorMap::DeleteColormaps();
-	SafeDelete(cubeMapHandler);
+	game = NULL;
 }
 
 
 void CGame::LoadGame(const std::string& mapname)
 {
-	if (!globalQuit) LoadDefs();
-	if (!globalQuit) LoadSimulation(mapname);
-	if (!globalQuit) LoadRendering();
-	if (!globalQuit) LoadInterface();
-	if (!globalQuit) LoadLua();
-	if (!globalQuit) LoadFinalize();
+	if (!gu->globalQuit) LoadDefs();
+	if (!gu->globalQuit) LoadSimulation(mapname);
+	if (!gu->globalQuit) LoadRendering();
+	if (!gu->globalQuit) LoadInterface();
+	if (!gu->globalQuit) LoadLua();
+	if (!gu->globalQuit) LoadFinalize();
 
-	if (!globalQuit && saveFile) {
-			loadscreen->SetLoadMessage("Loading game");
-			saveFile->LoadGame();
+	if (!gu->globalQuit && saveFile) {
+		loadscreen->SetLoadMessage("Loading game");
+		saveFile->LoadGame();
 	}
 }
 
@@ -401,7 +409,7 @@ void CGame::LoadDefs()
 {
 	{
 		loadscreen->SetLoadMessage("Loading Radar Icons");
-		iconHandler = new CIconHandler();
+		icon::iconHandler = new icon::CIconHandler();
 	}
 
 	{
@@ -417,7 +425,7 @@ void CGame::LoadDefs()
 
 		// run the parser
 		if (!defsParser->Execute()) {
-			throw content_error(defsParser->GetErrorLog());
+			throw content_error("Defs-Parser: " + defsParser->GetErrorLog());
 		}
 		const LuaTable root = defsParser->GetRoot();
 		if (!root.IsValid()) {
@@ -459,7 +467,6 @@ void CGame::LoadSimulation(const std::string& mapname)
 
 	loadscreen->SetLoadMessage("Parsing Map Information");
 
-	const_cast<CMapInfo*>(mapInfo)->Load();
 	readmap = CReadMap::LoadMap(mapname);
 	groundBlockingObjectMap = new CGroundBlockingObjectMap(gs->mapSquares);
 
@@ -471,6 +478,7 @@ void CGame::LoadSimulation(const std::string& mapname)
 	qf = new CQuadField();
 	damageArrayHandler = new CDamageArrayHandler();
 	explGenHandler = new CExplosionGeneratorHandler();
+	gCEG = new CCustomExplosionGenerator();
 
 	{
 		//! FIXME: these five need to be loaded before featureHandler
@@ -489,6 +497,9 @@ void CGame::LoadSimulation(const std::string& mapname)
 	weaponDefHandler = new CWeaponDefHandler();
 	loadscreen->SetLoadMessage("Loading Unit Definitions");
 	unitDefHandler = new CUnitDefHandler();
+	unitLoader = new CUnitLoader();
+
+	CGroundMoveType::CreateLineTable();
 
 	uh = new CUnitHandler();
 	ph = new CProjectileHandler();
@@ -535,8 +546,11 @@ void CGame::LoadRendering()
 
 	loadscreen->SetLoadMessage("Creating Sky & Water");
 	sky = CBaseSky::GetSky();
-	water = CBaseWater::GetWater(NULL);
+	water = CBaseWater::GetWater(NULL, -1);
+}
 
+void CGame::SetupRenderingParams()
+{
 	glLightfv(GL_LIGHT1, GL_AMBIENT, mapInfo->light.unitAmbientColor);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, mapInfo->light.unitSunColor);
 	glLightfv(GL_LIGHT1, GL_SPECULAR, mapInfo->light.unitAmbientColor);
@@ -683,8 +697,8 @@ void CGame::ResizeEvent()
 		minimap->UpdateGeometry();
 	}
 
-	// Fix water renderer, they depend on screen resolution...
-	water = CBaseWater::GetWater(water);
+	// reload water renderer (it may depend on screen resolution)
+	water = CBaseWater::GetWater(water, water->GetID());
 
 	eventHandler.ViewResize();
 }
@@ -724,8 +738,9 @@ int CGame::KeyPressed(unsigned short k, bool isRepeat)
 			if (action.command == "edit_return") {
 				userWriting=false;
 				writingPos = 0;
+
 				if (k == SDLK_RETURN) {
-					keys[k] = false; //prevent game start when server chats
+					keyInput->SetKeyState(k, 0); //prevent game start when server chats
 				}
 				if (chatting) {
 					string command;
@@ -904,8 +919,6 @@ int CGame::KeyPressed(unsigned short k, bool isRepeat)
 
 int CGame::KeyReleased(unsigned short k)
 {
-	//	keys[k] = false;
-
 	if ((userWriting) && (((k>=' ') && (k<='Z')) || (k==8) || (k==190))) {
 		return 0;
 	}
@@ -1035,13 +1048,15 @@ bool CGame::DrawWorld()
 		if (smoothGround->drawEnabled)
 			smoothGround->DrawWireframe(1);
 		treeDrawer->DrawGrass();
+		gd->DrawTrees();
 	}
 
 	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
 		SCOPED_TIMER("Water");
+
 		water->OcclusionQuery();
 		if (water->drawSolid) {
-			water->UpdateWater(this);
+			water->UpdateBaseWater(this);
 			water->Draw();
 		}
 	}
@@ -1049,23 +1064,21 @@ bool CGame::DrawWorld()
 	selectedUnits.Draw();
 	eventHandler.DrawWorldPreUnit();
 
+	DebugColVolDrawer::Draw();
 	unitDrawer->Draw(false);
 	modelDrawer->Draw();
 	featureDrawer->Draw();
-
-	if (globalRendering->drawGround) {
-		gd->DrawTrees();
-	}
-
 	pathDrawer->Draw();
 
 	//! transparent stuff
 	glEnable(GL_BLEND);
 	glDepthFunc(GL_LEQUAL);
 
-	bool noAdvShading = shadowHandler->drawShadows;
+	const bool noAdvShading = shadowHandler->shadowsLoaded;
 
-	const double plane_below[4] = {0.0f, -1.0f, 0.0f, 0.0f};
+	static const double plane_below[4] = {0.0f, -1.0f, 0.0f, 0.0f};
+	static const double plane_above[4] = {0.0f,  1.0f, 0.0f, 0.0f};
+
 	glClipPlane(GL_CLIP_PLANE3, plane_below);
 	glEnable(GL_CLIP_PLANE3);
 
@@ -1078,13 +1091,13 @@ bool CGame::DrawWorld()
 	//! draw water
 	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
 		SCOPED_TIMER("Water");
+
 		if (!water->drawSolid) {
-			water->UpdateWater(this);
+			water->UpdateBaseWater(this);
 			water->Draw();
 		}
 	}
 
-	const double plane_above[4] = {0.0f, 1.0f, 0.0f, 0.0f};
 	glClipPlane(GL_CLIP_PLANE3, plane_above);
 	glEnable(GL_CLIP_PLANE3);
 
@@ -1115,7 +1128,7 @@ bool CGame::DrawWorld()
 
 	guihandler->DrawMapStuff(0);
 
-	if (globalRendering->drawMapMarks) {
+	if (globalRendering->drawMapMarks && !hideInterface) {
 		inMapDrawer->Draw();
 	}
 
@@ -1168,7 +1181,7 @@ bool CGame::DrawWorld()
 	glLoadIdentity();
 
 	glEnable(GL_BLEND);
-	glDisable(GL_DEPTH_TEST );
+	glDisable(GL_DEPTH_TEST);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	// underwater overlay, part 2
@@ -1257,8 +1270,10 @@ bool CGame::Draw() {
 
 		if (lastSimFrame != gs->frameNum && !skipping) {
 			projectileDrawer->UpdateTextures();
-			water->Update();
 			sky->Update();
+
+			water->Update();
+			globalRendering->Update();
 		}
 	}
 
@@ -1335,15 +1350,17 @@ bool CGame::Draw() {
 	if (doDrawWorld) {
 		{
 			SCOPED_TIMER("Shadows/Reflections");
-			if (shadowHandler->drawShadows &&
-				(gd->drawMode != CBaseGroundDrawer::drawLos)) {
+			if (shadowHandler->shadowsLoaded && (gd->drawMode != CBaseGroundDrawer::drawLos)) {
 				// NOTE: shadows don't work in LOS mode, gain a few fps (until it's fixed)
 				SetDrawMode(gameShadowDraw);
 				shadowHandler->CreateShadows();
 				SetDrawMode(gameNormalDraw);
 			}
 
+			cubeMapHandler->UpdateSpecularTexture();
 			cubeMapHandler->UpdateReflectionTexture();
+			sky->UpdateSkyTexture();
+			readmap->UpdateShadingTexture();
 
 			if (FBO::IsSupported())
 				FBO::Unbind();
@@ -1382,7 +1399,7 @@ bool CGame::Draw() {
 		eventHandler.DrawScreenEffects();
 	}
 
-	hudDrawer->Draw(gu->directControl);
+	hudDrawer->Draw((gu->GetMyPlayer())->fpsController.GetControllee());
 	debugDrawerAI->Draw();
 
 	glEnable(GL_TEXTURE_2D);
@@ -1738,9 +1755,7 @@ void CGame::SimFrame() {
 		m_validateAllAllocUnits();
 #endif
 
-	if (luaUI)    { luaUI->GameFrame(gs->frameNum); }
-	if (luaGaia)  { luaGaia->GameFrame(gs->frameNum); }
-	if (luaRules) { luaRules->GameFrame(gs->frameNum); }
+	eventHandler.GameFrame(gs->frameNum);
 
 	gs->frameNum++;
 
@@ -1755,10 +1770,10 @@ void CGame::SimFrame() {
 		}
 		profiler.Update();
 
-		if (gu->directControl) {
-			(playerHandler->Player(gu->myPlayerNum)->dccs).SendStateUpdate(camMove);
-		}
+		(playerHandler->Player(gu->myPlayerNum)->fpsController).SendStateUpdate(camMove);
+
 		CTeamHighlight::Update(gs->frameNum);
+		globalRendering->UpdateSun();
 	}
 
 	// everything from here is simulation
@@ -1807,17 +1822,17 @@ void CGame::UpdateUI(bool updateCam)
 {
 	if (updateCam) {
 		CPlayer* player = playerHandler->Player(gu->myPlayerNum);
-		DirectControlClientState& dccs = player->dccs;
+		FPSUnitController& fpsCon = player->fpsController;
 
-		if (dccs.oldDCpos != ZeroVector) {
+		if (fpsCon.oldDCpos != ZeroVector) {
 			GML_STDMUTEX_LOCK(pos); // UpdateUI
 
-			camHandler->GetCurrentController().SetPos(dccs.oldDCpos);
-			dccs.oldDCpos = ZeroVector;
+			camHandler->GetCurrentController().SetPos(fpsCon.oldDCpos);
+			fpsCon.oldDCpos = ZeroVector;
 		}
 	}
 
-	if (!gu->directControl) {
+	if (!gu->fpsMode) {
 		float cameraSpeed = 1.0f;
 
 		if (camMove[7]) { cameraSpeed *=  0.1f; }
@@ -1893,12 +1908,10 @@ void CGame::UpdateUI(bool updateCam)
 				userInput = userInput.substr(0, 200);
 				writingPos = (int)userInput.length();
 			}
-			inMapDrawer->SendPoint(inMapDrawer->waitingPoint, userInput, false);
-			inMapDrawer->wantLabel = false;
+			inMapDrawer->SendWaitingInput(userInput);
 			userInput = "";
 			writingPos = 0;
 			ignoreChar = 0;
-			inMapDrawer->keyPressed = false;
 		}
 	}
 }
@@ -1915,7 +1928,7 @@ void CGame::MakeMemDump(void)
 	}
 
 	file << "Frame " << gs->frameNum <<"\n";
-	for (std::list<CUnit*>::iterator usi = uh->activeUnits.begin(); usi != uh->activeUnits.end(); usi++) {
+	for (std::list<CUnit*>::iterator usi = uh->activeUnits.begin(); usi != uh->activeUnits.end(); ++usi) {
 		CUnit* u = *usi;
 		file << "Unit " << u->id << "\n";
 		file << "  xpos " << u->pos.x << " ypos " << u->pos.y << " zpos " << u->pos.z << "\n";
@@ -2177,17 +2190,17 @@ void CGame::ReloadCOB(const string& msg, int player)
 	}
 	const UnitDef* udef = unitDefHandler->GetUnitDefByName(unitName);
 	if (udef==NULL) {
-		logOutput.Print("Unknown unit name");
+		logOutput.Print("Unknown unit name: \"%s\"", unitName.c_str());
 		return;
 	}
 	const CCobFile* oldScript = GCobFileHandler.GetScriptAddr(udef->scriptPath);
 	if (oldScript == NULL) {
-		logOutput.Print("Unknown cob script: %s", udef->scriptPath.c_str());
+		logOutput.Print("Unknown COB script for unit \"%s\": %s", unitName.c_str(), udef->scriptPath.c_str());
 		return;
 	}
 	CCobFile* newScript = GCobFileHandler.ReloadCobFile(udef->scriptPath);
 	if (newScript == NULL) {
-		logOutput.Print("Could not load COB script from: %s", udef->scriptPath.c_str());
+		logOutput.Print("Could not load COB script for unit \"%s\" from: %s", unitName.c_str(), udef->scriptPath.c_str());
 		return;
 	}
 	int count = 0;
@@ -2205,6 +2218,11 @@ void CGame::ReloadCOB(const string& msg, int player)
 	}
 	logOutput.Print("Reloaded cob script for %i units", count);
 }
+
+void CGame::ReloadCEGs(const std::string& tag) {
+	gCEG->RefreshCache(tag);
+}
+
 
 
 void CGame::SelectUnits(const string& line)
@@ -2301,7 +2319,7 @@ void CGame::SelectCycle(const string& command)
 		if (fit == unitIDs.end()) {
 			lastID = *unitIDs.begin();
 		} else {
-			fit++;
+			++fit;
 			if (fit != unitIDs.end()) {
 				lastID = *fit;
 			} else {
@@ -2310,15 +2328,6 @@ void CGame::SelectCycle(const string& command)
 		}
 		selectedUnits.AddUnit(uh->units[lastID]);
 	}
-}
-
-
-static unsigned char GetLuaColor(const LuaTable& tbl, int channel, unsigned char orig)
-{
-	const float fOrig = (float)orig / 255.0f;
-	float luaVal = tbl.GetFloat(channel, fOrig);
-	luaVal = std::max(0.0f, std::min(1.0f, luaVal));
-	return (unsigned char)(luaVal * 255.0f);
 }
 
 
@@ -2331,79 +2340,6 @@ void CGame::ReColorTeams()
 		team->origColor[1] = team->color[1];
 		team->origColor[2] = team->color[2];
 		team->origColor[3] = team->color[3];
-	}
-
-	{
-		// scoped so that 'fh' disappears before luaParser uses the file
-		CFileHandler fh("teamcolors.lua", SPRING_VFS_RAW);
-		if (!fh.FileExists()) {
-			return;
-		}
-	}
-
-	LuaParser luaParser("teamcolors.lua", SPRING_VFS_RAW, SPRING_VFS_RAW_FIRST);
-
-	luaParser.AddInt("myPlayer", gu->myPlayerNum);
-
-	luaParser.AddString("modName",      modInfo.humanName);
-	luaParser.AddString("modShortName", modInfo.shortName);
-	luaParser.AddString("modVersion",   modInfo.version);
-
-	luaParser.AddString("mapName",      mapInfo->map.name);
-	luaParser.AddString("mapHumanName", mapInfo->map.humanName);
-
-	luaParser.GetTable("teams");
-	for(int t = 0; t < teamHandler->ActiveTeams(); ++t) {
-		luaParser.GetTable(t); {
-			const CTeam* team = teamHandler->Team(t);
-			const unsigned char* color = teamHandler->Team(t)->color;
-			luaParser.AddInt("allyTeam", teamHandler->AllyTeam(t));
-			luaParser.AddBool("gaia",    team->gaia);
-			luaParser.AddInt("leader",   team->leader);
-			luaParser.AddString("side",  team->side);
-			luaParser.GetTable("color"); {
-				luaParser.AddFloat(1, float(color[0]) / 255.0f);
-				luaParser.AddFloat(2, float(color[1]) / 255.0f);
-				luaParser.AddFloat(3, float(color[2]) / 255.0f);
-				luaParser.AddFloat(4, float(color[3]) / 255.0f);
-			}
-			luaParser.EndTable(); // color
-		}
-		luaParser.EndTable(); // team#
-	}
-	luaParser.EndTable(); // teams
-
-	luaParser.GetTable("players");
-	for(int p = 0; p < playerHandler->ActivePlayers(); ++p) {
-		luaParser.GetTable(p); {
-			const CPlayer* player = playerHandler->Player(p);
-			luaParser.AddString("name",     player->name);
-			luaParser.AddInt("team",        player->team);
-			luaParser.AddBool("active",     player->active);
-			luaParser.AddBool("spectating", player->spectator);
-		}
-		luaParser.EndTable(); // player#
-	}
-	luaParser.EndTable(); // players
-
-	if (!luaParser.Execute()) {
-		logOutput.Print("teamcolors.lua: luaParser.Execute() failed\n");
-		return;
-	}
-	LuaTable root = luaParser.GetRoot();
-	if (!root.IsValid()) {
-		logOutput.Print("teamcolors.lua: root table is not valid\n");
-	}
-
-	for (int t = 0; t < teamHandler->ActiveTeams(); ++t) {
-		LuaTable teamTable = root.SubTable(t);
-		if (teamTable.IsValid()) {
-			unsigned char* color = teamHandler->Team(t)->color;
-			color[0] = GetLuaColor(teamTable, 1, color[0]);
-			color[1] = GetLuaColor(teamTable, 2, color[1]);
-			color[2] = GetLuaColor(teamTable, 3, color[2]);
-			// do not adjust color[3] -- alpha
-		}
 	}
 }
 

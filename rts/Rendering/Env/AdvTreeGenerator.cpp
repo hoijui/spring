@@ -153,7 +153,7 @@ void CAdvTreeGenerator::Draw() const
 
 void CAdvTreeGenerator::DrawTrunk(const float3& start, const float3& end, const float3& orto1, const float3& orto2, float size)
 {
-	float3 flatSun = mapInfo->light.sunDir;
+	float3 flatSun = globalRendering->sunDir;
 	flatSun.y = 0.0f;
 
 	int numIter=(int)max(3.0f,size*10);
@@ -237,7 +237,7 @@ void CAdvTreeGenerator::CreateLeaves(const float3& start, const float3& dir, flo
 	const float baseRot = fRand(2 * PI);
 	const int numLeaves = (int) length * 10 / MAX_TREE_HEIGHT;
 
-	float3 flatSun = mapInfo->light.sunDir;
+	float3 flatSun = globalRendering->sunDir;
 	flatSun.y = 0;
 
 	for (int a = 0; a < numLeaves + 1; a++) {
@@ -452,68 +452,6 @@ void CAdvTreeGenerator::CreateFarView(unsigned char* mem,int dx,int dy,unsigned 
 	delete[] buf;
 }
 
-void CAdvTreeGenerator::FixAlpha(unsigned char* data)
-{
-	for(int y=0;y<63;++y){
-		for(int x=0;x<512;++x){
-			if(data[((y)*512+x)*4+3]==0){
-				data[((y)*512+x)*4+3]=y*2;
-			} else {
-				data[((y)*512+x)*4+3]=255-y*2;
-			}
-		}
-	}
-	for(int y=0;y<63;++y){
-		for(int x=0;x<512;++x){
-			if(data[((y+64)*512+x)*4+3]==0){
-				data[((y+64)*512+x)*4+3]=y*2;
-			} else {
-				data[((y+64)*512+x)*4+3]=255-y*2;
-			}
-		}
-	}
-	for(int y=0;y<63;++y){
-		for(int x=0;x<512;++x){
-			if(data[((y+128)*512+x)*4+3]==0){
-				data[((y+128)*512+x)*4+3]=y*2;
-			} else {
-				data[((y+128)*512+x)*4+3]=255-y*2;
-			}
-		}
-	}
-}
-
-void CAdvTreeGenerator::FixAlpha2(unsigned char* data)
-{
-	for(int y=0;y<31;++y){
-		for(int x=0;x<256;++x){
-			if(data[((y)*256+x)*4+3]==0){
-				data[((y)*256+x)*4+3]=y*4;
-			} else {
-				data[((y)*256+x)*4+3]=255-y*4;
-			}
-		}
-	}
-	for(int y=0;y<31;++y){
-		for(int x=0;x<256;++x){
-			if(data[((y+32)*256+x)*4+3]==0){
-				data[((y+32)*256+x)*4+3]=y*4;
-			} else {
-				data[((y+32)*256+x)*4+3]=255-y*4;
-			}
-		}
-	}
-	for(int y=0;y<31;++y){
-		for(int x=0;x<256;++x){
-			if(data[((y+64)*256+x)*4+3]==0){
-				data[((y+64)*256+x)*4+3]=y*4;
-			} else {
-				data[((y+64)*256+x)*4+3]=255-y*4;
-			}
-		}
-	}
-}
-
 
 void CAdvTreeGenerator::CreateGranTex(unsigned char* data, int xpos, int ypos, int xsize)
 {
@@ -629,7 +567,7 @@ void CAdvTreeGenerator::DrawPineTrunk(const float3 &start, const float3 &end, fl
 {
 	float3 orto1(1,0,0);
 	float3 orto2(0,0,1);
-	float3 flatSun=mapInfo->light.sunDir;
+	float3 flatSun=globalRendering->sunDir;
 	flatSun.y=0;
 
 	int numIter=8;
@@ -651,7 +589,7 @@ void CAdvTreeGenerator::DrawPineTrunk(const float3 &start, const float3 &end, fl
 
 void CAdvTreeGenerator::DrawPineBranch(const float3 &start, const float3 &dir, float size)
 {
-	float3 flatSun = mapInfo->light.sunDir;
+	float3 flatSun = globalRendering->sunDir;
 	flatSun.y = 0;
 
 	float3 orto1 = dir.cross(UpVector);

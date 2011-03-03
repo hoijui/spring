@@ -44,6 +44,7 @@ class CEventHandler
 		void GameStart();
 		void GameOver( std::vector<unsigned char> winningAllyTeams );
 		void GamePaused(int playerID, bool paused);
+		void GameFrame(int gameFrame);
 
 		void TeamDied(int teamID);
 		void TeamChanged(int teamID);
@@ -93,6 +94,9 @@ class CEventHandler
 		void UnitCloaked(const CUnit* unit);
 		void UnitDecloaked(const CUnit* unit);
 
+		void UnitUnitCollision(const CUnit* collider, const CUnit* collidee);
+		void UnitFeatureCollision(const CUnit* collider, const CFeature* collidee);
+		void UnitMoved(const CUnit* unit);
 		void UnitMoveFailed(const CUnit* unit);
 
 		void FeatureCreated(const CFeature* feature);
@@ -228,6 +232,7 @@ class CEventHandler
 		EventClientList listGameStart;
 		EventClientList listGameOver;
 		EventClientList listGamePaused;
+		EventClientList listGameFrame;
 		EventClientList listTeamDied;
 		EventClientList listTeamChanged;
 		EventClientList listPlayerChanged;
@@ -269,6 +274,9 @@ class CEventHandler
 		EventClientList listRenderUnitCloakChanged;
 		EventClientList listRenderUnitLOSChanged;
 
+		EventClientList listUnitUnitCollision;
+		EventClientList listUnitFeatureCollision;
+		EventClientList listUnitMoved;
 		EventClientList listUnitMoveFailed;
 
 		EventClientList listFeatureCreated;
@@ -352,6 +360,7 @@ inline void CEventHandler::UnitCreated(const CUnit* unit, const CUnit* builder)
 }
 
 
+
 #define UNIT_CALLIN_NO_PARAM(name)                                 \
 	inline void CEventHandler:: name (const CUnit* unit)           \
 	{                                                              \
@@ -367,11 +376,13 @@ inline void CEventHandler::UnitCreated(const CUnit* unit, const CUnit* builder)
 
 UNIT_CALLIN_NO_PARAM(UnitFinished)
 UNIT_CALLIN_NO_PARAM(UnitIdle)
+UNIT_CALLIN_NO_PARAM(UnitMoved)
 UNIT_CALLIN_NO_PARAM(UnitMoveFailed)
 UNIT_CALLIN_NO_PARAM(UnitEnteredWater)
 UNIT_CALLIN_NO_PARAM(UnitEnteredAir)
 UNIT_CALLIN_NO_PARAM(UnitLeftWater)
 UNIT_CALLIN_NO_PARAM(UnitLeftAir)
+
 
 
 #define UNIT_CALLIN_INT_PARAM(name)                                       \
@@ -391,6 +402,7 @@ UNIT_CALLIN_INT_PARAM(Taken)
 UNIT_CALLIN_INT_PARAM(Given)
 
 
+
 #define UNIT_CALLIN_LOS_PARAM(name)                                        \
 	inline void CEventHandler:: Unit ## name (const CUnit* unit, int at)   \
 	{                                                                      \
@@ -408,6 +420,7 @@ UNIT_CALLIN_LOS_PARAM(EnteredRadar)
 UNIT_CALLIN_LOS_PARAM(EnteredLos)
 UNIT_CALLIN_LOS_PARAM(LeftRadar)
 UNIT_CALLIN_LOS_PARAM(LeftLos)
+
 
 
 inline void CEventHandler::UnitFromFactory(const CUnit* unit,
@@ -509,6 +522,34 @@ inline void CEventHandler::UnitDecloaked(const CUnit* unit)
 		if (ec->CanReadAllyTeam(unitAllyTeam)) {
 			ec->UnitDecloaked(unit);
 		} 
+	}
+}
+
+
+
+inline void CEventHandler::UnitUnitCollision(const CUnit* collider, const CUnit* collidee)
+{
+	const int colliderAllyTeam = collider->allyteam;
+	const int clientCount = listUnitUnitCollision.size();
+
+	for (int i = 0; i < clientCount; i++) {
+		CEventClient* ec = listUnitUnitCollision[i];
+		if (ec->CanReadAllyTeam(colliderAllyTeam)) {
+			ec->UnitUnitCollision(collider, collidee);
+		}
+	}
+}
+
+inline void CEventHandler::UnitFeatureCollision(const CUnit* collider, const CFeature* collidee)
+{
+	const int colliderAllyTeam = collider->allyteam;
+	const int clientCount = listUnitFeatureCollision.size();
+
+	for (int i = 0; i < clientCount; i++) {
+		CEventClient* ec = listUnitFeatureCollision[i];
+		if (ec->CanReadAllyTeam(colliderAllyTeam)) {
+			ec->UnitFeatureCollision(collider, collidee);
+		}
 	}
 }
 

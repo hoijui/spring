@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <boost/thread.hpp>
 
+#include "Rendering/GL/myGL.h"
 #include "FileSystem/FileSystem.h"
 #include "FileSystem/FileHandler.h"
 #include "ConfigHandler.h"

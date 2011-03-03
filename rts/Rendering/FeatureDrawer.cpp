@@ -13,8 +13,9 @@
 #include "Rendering/FarTextureHandler.h"
 #include "Rendering/Env/BaseWater.h"
 #include "Rendering/Env/BaseTreeDrawer.h"
-#include "Rendering/GL/VertexArray.h"
+#include "Rendering/GL/glExtra.h"
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GL/VertexArray.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/Shaders/Shader.hpp"
 #include "Rendering/Textures/S3OTextureHandler.h"
@@ -87,7 +88,7 @@ void CFeatureDrawer::RenderFeatureCreated(const CFeature* feature)
 	CFeature* f = const_cast<CFeature*>(feature);
 #if defined(USE_GML) && GML_ENABLE_SIM
 	if(f->model && TEX_TYPE(f) < 0)
-		TEX_TYPE(f) = texturehandlerS3O->LoadS3OTextureNow(f->model->tex1, f->model->tex2);
+		TEX_TYPE(f) = texturehandlerS3O->LoadS3OTextureNow(f->model);
 #endif
 
 	if (f->def->drawType == DRAWTYPE_MODEL) {
@@ -163,7 +164,7 @@ void CFeatureDrawer::UpdateDrawPos(CFeature* f)
 //#else
 	f->drawPos = f->pos + (f->speed * globalRendering->timeOffset);
 //#endif
-	f->drawMidPos = f->drawPos + (f->midPos - f->pos);
+	f->drawMidPos = f->drawPos + f->relMidPos;
 }
 
 
@@ -241,7 +242,7 @@ void CFeatureDrawer::DrawOpaqueFeatures(int modelType)
 			FeatureSet::iterator featureSetItNext(featureSetIt); ++featureSetItNext;
 
 			if (!DrawFeatureNow(*featureSetIt)) {
-				featureSet.erase(*featureSetIt);
+				featureSet.erase(featureSetIt);
 				featureSetIt = featureSetItNext;
 			} else {
 				++featureSetIt;
@@ -302,7 +303,7 @@ void CFeatureDrawer::DrawFeatureStatBars(const CFeature* feature)
 
 bool CFeatureDrawer::DrawFeatureNow(const CFeature* feature)
 {
-	if (!camera->InView(feature->pos, feature->radius * 4.0f)) { return false; }
+	if (!camera->InView(feature->pos, feature->drawRadius)) { return false; }
 	if (!feature->IsInLosForAllyTeam(gu->myAllyTeam) && !gu->spectatingFullView) { return false; }
 
 	glPushMatrix();
@@ -392,7 +393,7 @@ void CFeatureDrawer::DrawFadeFeaturesHelper(int modelType) {
 void CFeatureDrawer::DrawFadeFeaturesSet(std::set<CFeature*>& fadeFeatures, int modelType)
 {
 	for (std::set<CFeature*>::const_iterator fi = fadeFeatures.begin(); fi != fadeFeatures.end(); ) {
-		std::set<CFeature*>::const_iterator fiNext(fi); fiNext++;
+		std::set<CFeature*>::const_iterator fiNext(fi); ++fiNext;
 
 		const float cols[] = {1.0f, 1.0f, 1.0f, (*fi)->tempalpha};
 
@@ -405,10 +406,10 @@ void CFeatureDrawer::DrawFadeFeaturesSet(std::set<CFeature*>& fadeFeatures, int 
 		glColor4fv(cols);
 
 		if (!DrawFeatureNow(*fi)) {
-			fadeFeatures.erase(*fi);
+			fadeFeatures.erase(fi);
 			fi = fiNext;
 		} else {
-			fi++;
+			++fi;
 		}
 	}
 }
@@ -488,8 +489,7 @@ public:
 		for (std::set<CFeature*>::const_iterator fi = dq->features.begin(); fi != dq->features.end(); ++fi) {
 			CFeature* f = (*fi);
 
-			if (f->def->drawType != DRAWTYPE_MODEL)
-				continue;
+			assert(f->def->drawType == DRAWTYPE_MODEL);
 
 			if (gu->spectatingFullView || f->IsInLosForAllyTeam(gu->myAllyTeam)) {
 				if (drawReflection) {
@@ -503,7 +503,7 @@ public:
 							camera->pos * (f->midPos.y / dif) +
 							f->midPos * (-camera->pos.y / dif);
 					}
-					if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z) > f->radius) {
+					if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z) > f->drawRadius) {
 						continue;
 					}
 				}

@@ -40,8 +40,8 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/CommandAI/Command.h"
-#include "Sim/Units/COB/CobInstance.h"
-#include "Sim/Units/COB/LuaUnitScript.h"
+#include "Sim/Units/Scripts/CobInstance.h"
+#include "Sim/Units/Scripts/LuaUnitScript.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "EventHandler.h"
 #include "LogOutput.h"
@@ -54,14 +54,6 @@ static const LuaHashString unsyncedStr("UNSYNCED");
 LuaRulesParams::Params  CLuaHandleSynced::gameParams;
 LuaRulesParams::HashMap CLuaHandleSynced::gameParamsMap;
 
-
-#if (LUA_VERSION_NUM < 500)
-#  define LUA_OPEN_LIB(L, lib) lib(L)
-#else
-#  define LUA_OPEN_LIB(L, lib) \
-     lua_pushcfunction((L), lib); \
-     lua_pcall((L), 0, 0, 0);
-#endif
 
 
 /******************************************************************************/
@@ -687,38 +679,6 @@ string CLuaHandleSynced::GetSyncData()
 	lua_pop(L, 1);
 
 	return syncData;
-}
-
-
-void CLuaHandleSynced::GameFrame(int frameNumber)
-{
-	if (killMe) {
-		string msg = GetName();
-		if (!killMsg.empty()) {
-			msg += ": " + killMsg;
-		}
-		logOutput.Print("Disabled %s\n", msg.c_str());
-		delete this;
-		return;
-	}
-
-	LUA_CALL_IN_CHECK(L);
-	lua_checkstack(L, 4);
-
-	int errfunc = SetupTraceback();
-
-	static const LuaHashString cmdStr("GameFrame");
-	if (!cmdStr.GetGlobalFunc(L)) {
-		if (errfunc) lua_pop(L, 1);
-		return;
-	}
-
-	lua_pushnumber(L, frameNumber); // 6 day roll-over
-
-	// call the routine
-	RunCallInTraceback(cmdStr, 1, 0, errfunc);
-
-	return;
 }
 
 

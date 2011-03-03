@@ -3,11 +3,13 @@
 #ifndef __BASE_GROUND_DRAWER_H__
 #define __BASE_GROUND_DRAWER_H__
 
-#include <vector>
+#include <map>
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GL/LightHandler.h"
 #include "Rendering/GL/PBO.h"
 #include "float3.h"
 
+class CMetalMap;
 class CHeightLinePalette;
 
 class CBaseGroundDrawer
@@ -18,6 +20,15 @@ public:
 		COLOR_G = 1,
 		COLOR_B = 0,
 		COLOR_A = 3,
+	};
+	enum BaseGroundDrawMode {
+		drawNormal,
+		drawLos,
+		drawMetal,
+		drawHeight,
+		drawPathTraversability,
+		drawPathHeat,
+		drawPathCost,
 	};
 
 	CBaseGroundDrawer(void);
@@ -31,44 +42,30 @@ public:
 	virtual void SetupRefrDrawPass(void) {}
 
 	virtual void Update() = 0;
+	virtual void UpdateSunDir() = 0;
 
 	virtual void IncreaseDetail() = 0;
 	virtual void DecreaseDetail() = 0;
 
-#ifdef USE_GML
-	int multiThreadDrawGround;
-	int multiThreadDrawGroundShadow;
-#endif
-
-	enum BaseGroundDrawMode {
-		drawNormal,
-		drawLos,
-		drawMetal,
-		drawHeight,
-		drawPathSquares,
-		drawPathHeat,
-		drawPathCost,
-	};
-
-protected:
 	virtual void SetDrawMode(BaseGroundDrawMode dm) { drawMode = dm; }
+	virtual GL::LightHandler* GetLightHandler() { return NULL; }
 
-public:
-	void DrawTrees(bool drawReflection=false) const;
+	void DrawTrees(bool drawReflection = false) const;
 
 	// Everything that deals with drawing extra textures on top
 	void DisableExtraTexture();
 	void SetHeightTexture();
-	void SetMetalTexture(unsigned char* tex,float* extractMap,unsigned char* pal,bool highRes);
-	void TogglePathSquaresTexture();
+	void SetMetalTexture(const CMetalMap*);
+	void TogglePathTraversabilityTexture();
 	void TogglePathHeatTexture();
 	void TogglePathCostTexture();
 	void ToggleLosTexture();
 	void ToggleRadarAndJammer();
 	bool UpdateExtraTexture();
-	bool DrawExtraTex() const { return drawMode!=drawNormal; };
+	bool DrawExtraTex() const { return drawMode != drawNormal; }
 
 	bool wireframe;
+	bool advShading;
 
 	float LODScaleReflection;
 	float LODScaleRefraction;
@@ -88,7 +85,7 @@ public:
 
 	const unsigned char* extraTex;
 	const unsigned char* extraTexPal;
-	float* extractDepthMap;
+	const float* extractDepthMap;
 
 	float infoTexAlpha;
 
@@ -101,8 +98,12 @@ public:
 	bool highResLosTex;
 	int extraTextureUpdateRate;
 
+#ifdef USE_GML
+	int multiThreadDrawGround;
+	int multiThreadDrawGroundShadow;
+#endif
+
 	CHeightLinePalette* heightLinePal;
 };
 
 #endif // __BASE_GROUND_DRAWER__
-

@@ -14,8 +14,7 @@ class CScriptMoveType : public AMoveType
 		virtual ~CScriptMoveType(void);
 
 	public:
-		void Update();
-		void SlowUpdate();
+		bool Update();
 		void ForceUpdates();
 
 		void SetPhysics(const float3& pos, const float3& vel, const float3& rot);
@@ -29,19 +28,17 @@ class CScriptMoveType : public AMoveType
 		void SetNoBlocking(bool state);
 		
 	public: // null'ed virtuals
-		void StartMoving(float3, float goalRadius) {};
-		void StartMoving(float3, float goalRadius, float speed) {};
-		void KeepPointingTo(float3, float distance, bool aggressive) {};
-		void KeepPointingTo(CUnit* unit, float distance, bool aggressive) {};
-		void StopMoving() {};
-		void Idle(unsigned int frames) {};
-		void Idle() {};
-		void DeIdle() {};
-		void ImpulseAdded() {};
-		void SetGoal(float3 pos) {};
-		void SetMaxSpeed(float speed) {};
-		void SetWantedMaxSpeed(float speed) {};
-		void LeaveTransport(void) {};
+		void StartMoving(float3, float goalRadius) {}
+		void StartMoving(float3, float goalRadius, float speed) {}
+		void KeepPointingTo(float3, float distance, bool aggressive) {}
+		void KeepPointingTo(CUnit* unit, float distance, bool aggressive) {}
+		void StopMoving() {}
+
+		void ImpulseAdded() {}
+		void SetGoal(float3 pos) {}
+		void SetMaxSpeed(float speed) {}
+		void SetWantedMaxSpeed(float speed) {}
+		void LeaveTransport(void) {}
 
 	protected:
 		void CalcDirections();
@@ -85,17 +82,8 @@ class CScriptMoveType : public AMoveType
 		bool slopeStop;
 		bool collideStop;
 
-		bool leaveTracks;
-
 	protected:
-		bool hasDecal;
-		bool isBuilding;
-
 		float3 rotOffset;
-
-		int lastTrackUpdate;
-		float3 oldPos;
-		float3 oldSlowUpdatePos;
 
 		int scriptNotify;
 };

@@ -21,11 +21,11 @@
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "Rendering/InMapDraw.h"
 #include "Lua/LuaRules.h"
-#include "Sim/Misc/TeamHandler.h"
-#include "Sim/Path/IPathManager.h"
 #include "UI/GameSetupDrawer.h"
 #include "UI/LuaUI.h"
 #include "UI/MouseHandler.h"
+#include "Sim/Misc/TeamHandler.h"
+#include "Sim/Path/IPathManager.h"
 #include "System/EventHandler.h"
 #include "System/FPUCheck.h"
 #include "System/myMath.h"
@@ -176,16 +176,11 @@ void CGame::ClientReadNet()
 					logOutput.Print("Got invalid player num %i in pause msg",player);
 					break;
 				}
-				if (!skipping) {
-					gs->paused=!!inbuf[2];
-					if(gs->paused){
-						logOutput.Print("%s paused the game",playerHandler->Player(player)->name.c_str());
-					} else {
-						logOutput.Print("%s unpaused the game",playerHandler->Player(player)->name.c_str());
-					}
-					eventHandler.GamePaused(player, gs->paused);
-					lastframe = SDL_GetTicks();
-				}
+				gs->paused=!!inbuf[2];
+				logOutput.Print(gs->paused ? "%s paused the game" : "%s unpaused the game" ,
+											playerHandler->Player(player)->name.c_str());
+				eventHandler.GamePaused(player, gs->paused);
+				lastframe = SDL_GetTicks();
 				AddTraffic(player, packetCode, dataLength);
 				break;
 			}
@@ -424,13 +419,11 @@ void CGame::ClientReadNet()
 						short int unitid;
 						pckt >> unitid;
 
-						if(unitid < 0 || static_cast<size_t>(unitid) >= uh->MaxUnits())
+						if (uh->GetUnit(unitid) == NULL)
 							throw netcode::UnpackPacketException("Invalid unit ID");
 
-						if ((uh->units[unitid] &&
-							(uh->units[unitid]->team == playerHandler->Player(player)->team)) ||
-							gs->godMode) {
-								selected.push_back(unitid);
+						if ((uh->GetUnit(unitid)->team == playerHandler->Player(player)->team) || gs->godMode) {
+							selected.push_back(unitid);
 						}
 					}
 					selectedUnits.NetSelect(selected, player);
@@ -648,10 +641,12 @@ void CGame::ClientReadNet()
 				if (shareUnits) {
 					vector<int>& netSelUnits = selectedUnits.netSelected[player];
 					vector<int>::const_iterator ui;
-					for (ui = netSelUnits.begin(); ui != netSelUnits.end(); ++ui){
-						CUnit* unit = uh->units[*ui];
+
+					for (ui = netSelUnits.begin(); ui != netSelUnits.end(); ++ui) {
+						CUnit* unit = uh->GetUnit(*ui);
+
 						if (unit && unit->team == teamID1 && !unit->beingBuilt) {
-							if (!unit->directControl)
+							if (unit->fpsControlPlayer == NULL)
 								unit->ChangeTeam(teamID2, CUnit::ChangeGiven);
 						}
 					}
@@ -756,7 +751,7 @@ void CGame::ClientReadNet()
 									// no controllers left in team
 									//team.active = false;
 									team->leader = -1;
-								} else if (teamPlayers.size() == 0) {
+								} else if (teamPlayers.empty()) {
 									// no human player left in team
 									team->leader = skirmishAIHandler.GetSkirmishAI(teamAIs[0])->hostPlayer;
 								} else {
@@ -796,6 +791,10 @@ void CGame::ClientReadNet()
 						eventHandler.PlayerChanged(player);
 						break;
 					}
+					case TEAMMSG_TEAM_DIED: {
+						// silently drop since we can calculate this ourself, altho it's useful info to store in replays
+						break;
+					}
 					default: {
 						logOutput.Print("Unknown action in NETMSG_TEAM (%i) from player %i", action, player);
 					}
@@ -803,7 +802,12 @@ void CGame::ClientReadNet()
 				AddTraffic(player, packetCode, dataLength);
 				break;
 			}
-
+			case NETMSG_GAMEOVER: {
+				const unsigned char player = inbuf[1];
+				// silently drop since we can calculate this ourself, altho it's useful info to store in replays
+				AddTraffic(player, packetCode, dataLength);
+				break;
+			}
 			case NETMSG_TEAMSTAT: { /* LadderBot (dedicated client) only */ } break;
 			case NETMSG_REQUEST_TEAMSTAT: { /* LadderBot (dedicated client) only */ } break;
 
@@ -832,8 +836,9 @@ void CGame::ClientReadNet()
 						} else {
 							// we will end up here for local AIs defined mid-game,
 							// eg. with /aicontrol
+							const std::string aiName = aiData.name + " "; // aiData would be invalid after the next line
 							skirmishAIHandler.AddSkirmishAI(aiData, skirmishAIId);
-							wordCompletion->AddWord(aiData.name + " ", false, false, false);
+							wordCompletion->AddWord(aiName, false, false, false);
 						}
 					} else {
 						SkirmishAIData aiData;
@@ -901,7 +906,15 @@ void CGame::ClientReadNet()
 						logOutput.Print("Skirmish AI \"%s\" (ID:%i), which controlled team %i is now dead", aiInstanceName.c_str(), skirmishAIId, aiTeamId);
 					}
 				} else if (newState == SKIRMAISTATE_ALIVE) {
-					logOutput.Print("Skirmish AI %s (ID:%i) took over control of team %i", aiData->name.c_str(), skirmishAIId, aiTeamId);
+					if (isLocal) {
+						// short-name and version of the AI is unsynced data
+						// -> only available on the AI host
+						logOutput.Print("Skirmish AI \"%s\" (ID:%i, Short-Name:\"%s\", Version:\"%s\") took over control of team %i",
+								aiData->name.c_str(), skirmishAIId, aiData->shortName.c_str(), aiData->version.c_str(), aiTeamId);
+					} else {
+						logOutput.Print("Skirmish AI \"%s\" (ID:%i) took over control of team %i",
+								aiData->name.c_str(), skirmishAIId, aiTeamId);
+					}
 				}
 				break;
 			}
@@ -975,45 +988,8 @@ void CGame::ClientReadNet()
 					break;
 				}
 
-				CUnit* ctrlUnit = (sender->dccs).playerControlledUnit;
-				if (ctrlUnit) {
-					// player released control
-					sender->StopControllingUnit();
-				} else {
-					// player took control
-					if (
-						!selectedUnits.netSelected[player].empty() &&
-						uh->units[selectedUnits.netSelected[player][0]] != NULL &&
-						!uh->units[selectedUnits.netSelected[player][0]]->weapons.empty()
-					) {
-						CUnit* unit = uh->units[selectedUnits.netSelected[player][0]];
+				sender->StartControllingUnit();
 
-						if (unit->directControl && unit->directControl->myController) {
-							if (player == gu->myPlayerNum) {
-								logOutput.Print(
-									"player %d is already controlling unit %d, try later",
-									unit->directControl->myController->playerNum, unit->id
-								);
-							}
-						}
-						else if (!luaRules || luaRules->AllowDirectUnitControl(player, unit)) {
-							unit->directControl = &sender->myControl;
-							(sender->dccs).playerControlledUnit = unit;
-
-							if (player == gu->myPlayerNum) {
-								gu->directControl = unit;
-								mouse->wasLocked = mouse->locked;
-								if (!mouse->locked) {
-									mouse->locked = true;
-									mouse->HideMouse();
-								}
-								camHandler->PushMode();
-								camHandler->SetCameraMode(0);
-								selectedUnits.ClearSelected();
-							}
-						}
-					}
-				}
 				AddTraffic(player, packetCode, dataLength);
 				break;
 			}
@@ -1025,25 +1001,8 @@ void CGame::ClientReadNet()
 					break;
 				}
 
-				DirectControlStruct* dc = &playerHandler->Player(player)->myControl;
-				DirectControlClientState& dccs = playerHandler->Player(player)->dccs;
-				CUnit* unit = dccs.playerControlledUnit;
-
-				dc->forward    = !!(inbuf[2] & (1 << 0));
-				dc->back       = !!(inbuf[2] & (1 << 1));
-				dc->left       = !!(inbuf[2] & (1 << 2));
-				dc->right      = !!(inbuf[2] & (1 << 3));
-				dc->mouse1     = !!(inbuf[2] & (1 << 4));
-				bool newMouse2 = !!(inbuf[2] & (1 << 5));
-
-				if (!dc->mouse2 && newMouse2 && unit) {
-					unit->AttackUnit(0, true);
-				}
-				dc->mouse2 = newMouse2;
-
-				short int h = *((short int*) &inbuf[3]);
-				short int p = *((short int*) &inbuf[5]);
-				dc->viewDir = GetVectorFromHAndPExact(h, p);
+				CPlayer* sender = playerHandler->Player(player);
+				sender->fpsController.RecvStateUpdate(inbuf);
 
 				AddTraffic(player, packetCode, dataLength);
 				break;
@@ -1099,3 +1058,4 @@ void CGame::ClientReadNet()
 
 	return;
 }
+

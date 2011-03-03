@@ -2,6 +2,7 @@
 
 #include "StdAfx.h"
 #include "mmgr.h"
+#include <cfloat>
 
 #include "ShadowHandler.h"
 #include "Game/Camera.h"
@@ -25,11 +26,11 @@
 #include "Rendering/Env/BaseTreeDrawer.h"
 
 #define DEFAULT_SHADOWMAPSIZE 2048
+#define SHADOWMATRIX_NONLINEAR 0
 
 CShadowHandler* shadowHandler = 0;
 
-bool CShadowHandler::canUseShadows = false;
-bool CShadowHandler::useFPShadows  = false;
+bool CShadowHandler::shadowsSupported = false;
 bool CShadowHandler::firstInstance = true;
 
 
@@ -38,13 +39,21 @@ CShadowHandler::CShadowHandler(void)
 	const bool tmpFirstInstance = firstInstance;
 	firstInstance = false;
 
-	drawShadows   = false;
-	inShadowPass  = false;
+	shadowsLoaded = false;
+	inShadowPass = false;
 	shadowTexture = 0;
 	dummyColorTexture = 0;
 	drawTerrainShadow = true;
+	p17 = 0.0f;
+	p18 = 0.0f;
+	xmid = 0;
+	ymid = 0;
+	x1 = 0.0f;
+	y1 = 0.0f;
+	x2 = 0.0f;
+	y2 = 0.0f;
 
-	if (!tmpFirstInstance && !canUseShadows) {
+	if (!tmpFirstInstance && !shadowsSupported) {
 		return;
 	}
 
@@ -83,7 +92,6 @@ CShadowHandler::CShadowHandler(void)
 		//      2. (!GLEW_ARB_shadow_ambient && GLEW_ARB_shadow)
 		// but the non-FP result isn't nice anyway so just always
 		// use the program if we are guaranteed of shadow support
-		useFPShadows = true;
 
 		if (!GLEW_ARB_shadow_ambient) {
 			// can't use arbitrary texvals in case the depth comparison op fails (only 0)
@@ -96,7 +104,7 @@ CShadowHandler::CShadowHandler(void)
 	}
 
 	if (tmpFirstInstance) {
-		canUseShadows = true;
+		shadowsSupported = true;
 	}
 
 	if (configValue == 0) {
@@ -105,7 +113,7 @@ CShadowHandler::CShadowHandler(void)
 		shadowTexture = 0;
 		glDeleteTextures(1, &dummyColorTexture);
 		dummyColorTexture = 0;
-		return; // drawShadows is still false
+		return; // shadowsLoaded is still false
 	}
 
 	LoadShadowGenShaderProgs();
@@ -113,7 +121,7 @@ CShadowHandler::CShadowHandler(void)
 
 CShadowHandler::~CShadowHandler(void)
 {
-	if (drawShadows) {
+	if (shadowsLoaded) {
 		glDeleteTextures(1, &shadowTexture);
 		glDeleteTextures(1, &dummyColorTexture);
 	}
@@ -126,6 +134,7 @@ CShadowHandler::~CShadowHandler(void)
 
 void CShadowHandler::LoadShadowGenShaderProgs()
 {
+	#define sh shaderHandler
 	shadowGenProgs.resize(SHADOWGEN_PROGRAM_LAST);
 
 	static const std::string shadowGenProgNames[SHADOWGEN_PROGRAM_LAST] = {
@@ -150,12 +159,17 @@ void CShadowHandler::LoadShadowGenShaderProgs()
 		"#define SHADOWGEN_PROGRAM_PROJECTILE\n",
 	};
 
-	CShaderHandler* sh = shaderHandler;
+	static const std::string extraDef =
+	#if (SHADOWMATRIX_NONLINEAR == 1)
+		"#define SHADOWMATRIX_NONLINEAR 0\n";
+	#else
+		"#define SHADOWMATRIX_NONLINEAR 1\n";
+	#endif
 
 	if (globalRendering->haveGLSL) {
 		for (int i = 0; i < SHADOWGEN_PROGRAM_LAST; i++) {
 			Shader::IProgramObject* po = sh->CreateProgramObject("[ShadowHandler]", shadowGenProgHandles[i] + "GLSL", false);
-			Shader::IShaderObject* so = sh->CreateShaderObject("GLSL/ShadowGenVertProg.glsl", shadowGenProgDefines[i], GL_VERTEX_SHADER);
+			Shader::IShaderObject* so = sh->CreateShaderObject("GLSL/ShadowGenVertProg.glsl", shadowGenProgDefines[i] + extraDef, GL_VERTEX_SHADER);
 
 			po->AttachShaderObject(so);
 			po->Link();
@@ -179,7 +193,8 @@ void CShadowHandler::LoadShadowGenShaderProgs()
 		}
 	}
 
-	drawShadows = true;
+	shadowsLoaded = true;
+	#undef sh
 }
 
 
@@ -190,7 +205,7 @@ bool CShadowHandler::InitDepthTarget()
 	// it turns the shadow render buffer in a buffer with color
 	bool useColorTexture = false;
 	if (!fb.IsValid()) {
-		logOutput.Print("framebuffer not valid!");
+		logOutput.Print("Warning: ShadowHandler: framebuffer not valid!");
 		return false;
 	}
 	glGenTextures(1,&shadowTexture);
@@ -262,13 +277,18 @@ void CShadowHandler::DrawShadowPasses(void)
 
 void CShadowHandler::SetShadowMapSizeFactors()
 {
-	if (shadowMapSize == 2048) {
+	#if (SHADOWMATRIX_NONLINEAR == 1)
+	if (shadowMapSize >= 2048) {
 		p17 =  0.01f;
 		p18 = -0.1f;
 	} else {
 		p17 =  0.0025f;
 		p18 = -0.05f;
 	}
+	#else
+	p17 =  FLT_MAX;
+	p18 =  1.0f;
+	#endif
 }
 
 void CShadowHandler::CreateShadows(void)
@@ -300,8 +320,8 @@ void CShadowHandler::CreateShadows(void)
 	glLoadIdentity();
 
 
-	cross1 = (mapInfo->light.sunDir.cross(UpVector)).ANormalize();
-	cross2 = cross1.cross(mapInfo->light.sunDir);
+	cross1 = (globalRendering->sunDir.cross(UpVector)).ANormalize();
+	cross2 = cross1.cross(globalRendering->sunDir);
 	centerPos = camera->pos;
 
 	//! derive the size of the shadow-map from the
@@ -315,8 +335,13 @@ void CShadowHandler::CreateShadows(void)
 	const float maxLengthX = (x2 - x1) * 1.5f;
 	const float maxLengthY = (y2 - y1) * 1.5f;
 
+	#if (SHADOWMATRIX_NONLINEAR == 1)
 	xmid = 1.0f - (sqrt(fabs(x2)) / (sqrt(fabs(x2)) + sqrt(fabs(x1))));
 	ymid = 1.0f - (sqrt(fabs(y2)) / (sqrt(fabs(y2)) + sqrt(fabs(y1))));
+	#else
+	xmid = 0.5f;
+	ymid = 0.5f;
+	#endif
 
 	shadowMatrix[ 0] =   cross1.x / maxLengthX;
 	shadowMatrix[ 4] =   cross1.y / maxLengthX;
@@ -326,10 +351,10 @@ void CShadowHandler::CreateShadows(void)
 	shadowMatrix[ 5] =   cross2.y / maxLengthY;
 	shadowMatrix[ 9] =   cross2.z / maxLengthY;
 	shadowMatrix[13] = -(cross2.dot(centerPos)) / maxLengthY;
-	shadowMatrix[ 2] = -mapInfo->light.sunDir.x / maxLength;
-	shadowMatrix[ 6] = -mapInfo->light.sunDir.y / maxLength;
-	shadowMatrix[10] = -mapInfo->light.sunDir.z / maxLength;
-	shadowMatrix[14] = ((centerPos.x * mapInfo->light.sunDir.x + centerPos.z * mapInfo->light.sunDir.z) / maxLength) + 0.5f;
+	shadowMatrix[ 2] = -globalRendering->sunDir.x / maxLength;
+	shadowMatrix[ 6] = -globalRendering->sunDir.y / maxLength;
+	shadowMatrix[10] = -globalRendering->sunDir.z / maxLength;
+	shadowMatrix[14] = ((centerPos.x * globalRendering->sunDir.x + centerPos.z * globalRendering->sunDir.z) / maxLength) + 0.5f;
 
 	glLoadMatrixf(shadowMatrix.m);
 
@@ -353,9 +378,11 @@ void CShadowHandler::CreateShadows(void)
 	float3 oldup = camera->up;
 	camera->right = cross1;
 	camera->up = cross2;
-	camera->pos2 = camera->pos + mapInfo->light.sunDir * 8000;
+	camera->pos2 = camera->pos + globalRendering->sunDir * 8000;
 
-	DrawShadowPasses();
+
+	if(globalRendering->sunIntensity > 0)
+		DrawShadowPasses();
 
 	camera->up = oldup;
 	camera->pos2 = camera->pos;
@@ -382,8 +409,8 @@ void CShadowHandler::CalcMinMaxView(void)
 	GetFrustumSide(cam2->leftside, false);
 
 	std::vector<fline>::iterator fli,fli2;
-	for (fli = left.begin(); fli != left.end(); fli++) {
-		for (fli2 = left.begin(); fli2 != left.end(); fli2++) {
+	for (fli = left.begin(); fli != left.end(); ++fli) {
+		for (fli2 = left.begin(); fli2 != left.end(); ++fli2) {
 			if (fli == fli2)
 				continue;
 			if (fli->dir - fli2->dir == 0.0f)
@@ -419,7 +446,7 @@ void CShadowHandler::CalcMinMaxView(void)
 
 	if (!left.empty()) {
 		std::vector<fline>::iterator fli;
-		for (fli = left.begin(); fli != left.end(); fli++) {
+		for (fli = left.begin(); fli != left.end(); ++fli) {
 			if (fli->minz < fli->maxz) {
 				float3 p[5];
 				p[0] = float3(fli->base + fli->dir * fli->minz, 0.0, fli->minz);
@@ -456,7 +483,6 @@ void CShadowHandler::CalcMinMaxView(void)
 //maybe standardize all these things in one place sometime (and maybe one day i should try to understand how i made them work)
 void CShadowHandler::GetFrustumSide(float3& side, bool upside)
 {
-	fline temp;
 
 	// get vector for collision between frustum and horizontal plane
 	float3 b = UpVector.cross(side);
@@ -464,6 +490,7 @@ void CShadowHandler::GetFrustumSide(float3& side, bool upside)
 	if (fabs(b.z) < 0.0001f)
 		b.z = 0.00011f;
 	if (fabs(b.z) > 0.0001f) {
+		fline temp;
 		temp.dir=b.x/b.z;				//set direction to that
 		float3 c=b.cross(side);			//get vector from camera to collision line
 		c.ANormalize();

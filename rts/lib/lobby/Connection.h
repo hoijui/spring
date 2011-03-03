@@ -7,9 +7,18 @@
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <string>
+#include <list>
 
 struct ClientStatus
 {
+	ClientStatus()
+	: ingame(false)
+	, away(false)
+	, rank(0)
+	, moderator(false)
+	, bot(false)
+	{}
+	
 	bool ingame;
 	bool away;
 	int rank;

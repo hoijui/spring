@@ -3,6 +3,7 @@
 #include "StdAfx.h"
 #include "Picture.h"
 
+#include "Rendering/GL/myGL.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "LogOutput.h"
 
@@ -11,6 +12,7 @@ namespace agui
 
 Picture::Picture(GuiElement* parent) : GuiElement(parent)
 {
+	texture=0;
 }
 
 Picture::~Picture()

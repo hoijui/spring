@@ -44,7 +44,7 @@ public:
 	 *		name of the corresponding map.
 	 *		Ex. PE-name "pe" + Mapname "Desert" => "Desert.pe"
 	 */
-	CPathEstimator(CPathFinder* pathFinder, unsigned int BLOCK_SIZE, unsigned int moveMathOpt, const std::string& cacheFileName, const std::string& map);
+	CPathEstimator(CPathFinder* pathFinder, unsigned int BLOCK_SIZE, const std::string& cacheFileName, const std::string& map);
 	~CPathEstimator();
 
 #if !defined(USE_MMGR)
@@ -101,9 +101,6 @@ public:
 	 */
 	void Update();
 
-	/// find the best block to use for this pos
-	float3 FindBestBlockCenter(const MoveData*, const float3&, bool);
-
 	/// Return a checksum that can be used to check if every player has the same path data
 	boost::uint32_t GetPathChecksum() const { return pathChecksum; }
 
@@ -129,7 +126,7 @@ private:
 
 	struct SingleBlock {
 		int2 block;
-		MoveData* moveData;
+		const MoveData* moveData;
 	};
 
 
@@ -161,8 +158,6 @@ private:
 	static const int PATH_DIRECTION_VERTICES = PATH_DIRECTIONS / 2;
 	int2 directionVector[PATH_DIRECTIONS];
 	int directionVertex[PATH_DIRECTIONS];
-
-	unsigned int moveMathOptions;
 
 	float3 start;
 	int2 startBlock, goalBlock;

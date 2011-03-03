@@ -131,7 +131,7 @@ endif (WIN32)
 FIND_PACKAGE(Boost 1.35.0 COMPONENTS thread regex program_options system signals REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
 
-FIND_PACKAGE(Devil REQUIRED)
+FIND_PACKAGE(DevIL REQUIRED)
 
 ### mingwlibs
 if     (MINGW)
@@ -233,9 +233,6 @@ endif (NOT "${AI_TYPES}" STREQUAL "NONE")
 
 # additional tools
 Add_Subdirectory(tools)
-
-# required for man pages (optional) and base files (mandatory)
-FIND_PACKAGE(7zip REQUIRED)
 
 # man pages
 Add_Subdirectory(doc)

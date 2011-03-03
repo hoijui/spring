@@ -46,8 +46,6 @@ class CLuaUI : public CLuaHandle
 		bool HasCallIn(const string& name);
 		bool UnsyncedUpdateCallIn(const string& name);
 
-		void GameFrame(int frameNum);
-
 		void Shutdown();
 
 		bool HasLayoutButtons();
@@ -65,8 +63,6 @@ class CLuaUI : public CLuaHandle
 		                   string& menuName);
 
 		bool ConfigCommand(const string& command);
-
-		bool AddConsoleLines();
 
 		void ShockFront(float power, const float3& pos, float areaOfEffect);
 

@@ -11,7 +11,6 @@
 #include "S3OTextureHandler.h"
 #include "FileSystem/FileHandler.h"
 #include "FileSystem/SimpleParser.h"
-#include "LogOutput.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/Models/3DModel.h"
@@ -19,12 +18,10 @@
 #include "TAPalette.h"
 #include "System/Util.h"
 #include "System/Exceptions.h"
+#include "System/LogOutput.h"
 
-//////////////////////////////////////////////////////////////////////
-// Construction/Destruction
-//////////////////////////////////////////////////////////////////////
 
-CS3OTextureHandler* texturehandlerS3O = 0;
+CS3OTextureHandler* texturehandlerS3O = NULL;
 
 CS3OTextureHandler::CS3OTextureHandler()
 {
@@ -34,7 +31,7 @@ CS3OTextureHandler::CS3OTextureHandler()
 
 CS3OTextureHandler::~CS3OTextureHandler()
 {
-	while(s3oTextures.size()>1){
+	while (s3oTextures.size() > 1){
 		glDeleteTextures (1, &s3oTextures.back().tex1);
 		glDeleteTextures (1, &s3oTextures.back().tex2);
 		s3oTextures.pop_back();
@@ -43,56 +40,67 @@ CS3OTextureHandler::~CS3OTextureHandler()
 
 void CS3OTextureHandler::LoadS3OTexture(S3DModel* model) {
 #if defined(USE_GML) && GML_ENABLE_SIM
-	model->textureType=-1;
+	model->textureType = -1;
 #else
-	model->textureType=LoadS3OTextureNow(model->tex1, model->tex2);
+	model->textureType = LoadS3OTextureNow(model);
 #endif
 }
 
 void CS3OTextureHandler::Update() {
 }
 
-int CS3OTextureHandler::LoadS3OTextureNow(const std::string& tex1, const std::string& tex2)
+int CS3OTextureHandler::LoadS3OTextureNow(const S3DModel* model)
 {
 	GML_STDMUTEX_LOCK(model); // LoadS3OTextureNow
 
-	string totalName=tex1+tex2;
+	const string totalName = model->tex1 + model->tex2;
 
-	if(s3oTextureNames.find(totalName)!=s3oTextureNames.end()){
+	if (s3oTextureNames.find(totalName) != s3oTextureNames.end()) {
 		return s3oTextureNames[totalName];
 	}
-	int newNum=s3oTextures.size();
+
+	CBitmap tex1bm;
+	CBitmap tex2bm;
 	S3oTex tex;
-	tex.num=newNum;
 
-	CBitmap bm;
-	if (!bm.Load(string("unittextures/"+tex1)))
-		throw content_error("Could not load S3O texture from file unittextures/" + tex1);
-	tex.tex1 = bm.CreateTexture(true);
-	tex.tex1SizeX = bm.xsize;
-	tex.tex1SizeY = bm.ysize;
-	tex.tex2=0;
-	tex.tex2SizeX = 0;
-	tex.tex2SizeY = 0;
-	//if(unitDrawer->advShading)
-	{
-		CBitmap bm;
-		// No error checking here... other code relies on an empty texture
-		// being generated if it couldn't be loaded.
-		// Also many map features specify a tex2 but don't ship it with the map,
-		// so throwing here would cause maps to break.
-		if(!bm.Load(string("unittextures/"+tex2))) {
-			bm.Alloc(1,1);
-			bm.mem[3] = 255;//file not found, set alpha to white so unit is visible
-		}
-		tex.tex2 = bm.CreateTexture(true);
-		tex.tex2SizeX = bm.xsize;
-		tex.tex2SizeY = bm.ysize;
+	if (!tex1bm.Load(std::string("unittextures/" + model->tex1))) {
+		logOutput.Print("[%s] could not load texture \"%s\" from model \"%s\"", __FUNCTION__, model->tex1.c_str(), model->name.c_str());
+
+		// file not found (or headless build), set single pixel to red so unit is visible
+		tex1bm.channels = 4;
+		tex1bm.Alloc(1, 1);
+		tex1bm.mem[0] = 255;
+		tex1bm.mem[1] =   0;
+		tex1bm.mem[2] =   0;
+		tex1bm.mem[3] = 255;
 	}
-	s3oTextures.push_back(tex);
-	s3oTextureNames[totalName]=newNum;
 
-	return newNum;
+	tex.num       = s3oTextures.size();
+	tex.tex1      = tex1bm.CreateTexture(true);
+	tex.tex1SizeX = tex1bm.xsize;
+	tex.tex1SizeY = tex1bm.ysize;
+
+	// No error checking here... other code relies on an empty texture
+	// being generated if it couldn't be loaded.
+	// Also many map features specify a tex2 but don't ship it with the map,
+	// so throwing here would cause maps to break.
+	if (!tex2bm.Load(std::string("unittextures/" + model->tex2))) {
+		tex2bm.channels = 4;
+		tex2bm.Alloc(1, 1);
+		tex2bm.mem[0] =   0; // self-illum
+		tex2bm.mem[1] =   0; // spec+refl
+		tex2bm.mem[2] =   0; // unused
+		tex2bm.mem[3] = 255; // team-color
+	}
+
+	tex.tex2      = tex2bm.CreateTexture(true);
+	tex.tex2SizeX = tex2bm.xsize;
+	tex.tex2SizeY = tex2bm.ysize;
+
+	s3oTextures.push_back(tex);
+	s3oTextureNames[totalName] = tex.num;
+
+	return tex.num;
 }
 
 void CS3OTextureHandler::SetS3oTexture(int num)

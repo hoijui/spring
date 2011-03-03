@@ -13,6 +13,7 @@
 #include "Matrix44f.h"
 #include "Vec2.h"
 
+class CPlayer;
 class CCommandAI;
 class CGroup;
 class CLoadSaveInterface;
@@ -27,8 +28,6 @@ struct LocalModel;
 struct LocalModelPiece;
 struct UnitDef;
 struct UnitTrackStruct;
-struct CollisionVolume;
-struct DirectControlStruct;
 
 class CTransportUnit;
 
@@ -70,23 +69,28 @@ public:
 	CUnit();
 	virtual ~CUnit();
 
-	virtual void UnitInit(const UnitDef* def, int team, const float3& position);
+	virtual void PreInit(const UnitDef* def, int team, int facing, const float3& position, bool build);
+	virtual void PostInit(const CUnit* builder);
 
-	bool AttackGround(const float3& pos, bool dgun);
-	bool AttackUnit(CUnit* unit, bool dgun);
+	virtual void SlowUpdate();
+	virtual void SlowUpdateWeapons();
+	virtual void Update();
 
 	virtual void DoDamage(const DamageArray& damages, CUnit* attacker,
 	                      const float3& impulse, int weaponId = -1);
 	virtual void DoWaterDamage();
-	virtual void Kill(float3& impulse);
-	virtual void FinishedBuilding(void);
+	virtual void Kill(const float3& impulse);
+	virtual void FinishedBuilding();
+
+	bool AttackGround(const float3& pos, bool wantDGun, bool fpsMode = false);
+	bool AttackUnit(CUnit* unit, bool wantDGun, bool fpsMode = false);
 
 	int GetBlockingMapID() const { return id; }
 
-	void ChangeLos(int l, int airlos);
+	void ChangeLos(int losRad, int airRad);
 	void ChangeSensorRadius(int* valuePtr, int newValue);
 	/// negative amount=reclaim, return= true -> build power was successfully applied
-	bool AddBuildPower(float amount,CUnit* builder);
+	bool AddBuildPower(float amount, CUnit* builder);
 	/// turn the unit on
 	void Activate();
 	/// turn the unit off
@@ -94,20 +98,9 @@ public:
 
 	void ForcedMove(const float3& newPos);
 	void ForcedSpin(const float3& newDir);
-	void SetFront(const SyncedFloat3& newDir);
-	void SetUp(const SyncedFloat3& newDir);
-	void SetRight(const SyncedFloat3& newDir);
+	void SetDirectionFromHeading();
 	void EnableScriptMoveType();
 	void DisableScriptMoveType();
-
-	///// order unit to move to position
-	//void SetGoal(float3 pos);
-
-	virtual void SlowUpdate();
-	virtual void SlowUpdateWeapons();
-	virtual void Update();
-
-	void SetDirectionFromHeading();
 
 	void ApplyTransformMatrix() const;
 	CMatrix44f GetTransformMatrix(const bool synced = false, const bool error = false) const;
@@ -119,8 +112,21 @@ public:
 	}
 
 	void DependentDied(CObject* o);
+	enum DependenceType {
+		DEPENDENCE_ATTACKER,
+		DEPENDENCE_BUILD,
+		DEPENDENCE_BUILDER,
+		DEPENDENCE_CAPTURE,
+		DEPENDENCE_RECLAIM, 
+		DEPENDENCE_RESURRECT,
+		DEPENDENCE_TARGET,
+		DEPENDENCE_TERRAFORM,
+		DEPENDENCE_TRANSPORTEE,
+		DEPENDENCE_TRANSPORTER
+	};
+	virtual void DeleteDeathDependence(CObject* o, DependenceType dep);
+
 	void SetUserTarget(CUnit* target);
-	virtual void Init(const CUnit* builder);
 	bool SetGroup(CGroup* group);
 
 	bool AllowedReclaim(CUnit* builder) const;
@@ -152,7 +158,7 @@ public:
 	void SlowUpdateCloak(bool);
 	void ScriptDecloak(bool);
 
-	enum ChangeType{
+	enum ChangeType {
 		ChangeGiven,
 		ChangeCaptured
 	};
@@ -160,8 +166,7 @@ public:
 	virtual void StopAttackingAllyTeam(int ally);
 
 	const UnitDef* unitDef;
-	CollisionVolume* collisionVolume;
-	std::string unitDefName;
+	int unitDefID;
 
 	/**
 	 * @brief mod controlled parameters
@@ -172,10 +177,7 @@ public:
 	 * Parameters may or may not have a name.
 	 */
 	LuaRulesParams::Params  modParams;
-	LuaRulesParams::HashMap modParamsMap; /// name map for mod parameters
-
-	/// tells the units main function to the ai, eg "builder"
-	int aihint;
+	LuaRulesParams::HashMap modParamsMap; ///< name map for mod parameters
 
 	/// the forward direction of the unit
 	SyncedFloat3 frontdir;
@@ -183,8 +185,6 @@ public:
 	SyncedFloat3 updir;
 	/// if the updir is straight up or align to the ground vector
 	bool upright;
-	/// = (midPos - pos)
-	SyncedFloat3 relMidPos;
 
 	float3 deathSpeed;
 
@@ -208,7 +208,8 @@ public:
 
 	/**
 	 * neutral allegiance, will not be automatically
-	 * fired upon unless the fireState is set to >= 3
+	 * fired upon unless the fireState is set to >
+	 * FIRESTATE_FIREATWILL
 	 */
 	bool neutral;
 
@@ -219,7 +220,7 @@ public:
 	/// How much reapir power has been added to this recently
 	float repairAmount;
 	/// transport that the unit is currently in
-	CTransportUnit *transporter;
+	CTransportUnit* transporter;
 	/// unit is about to be picked up by a transport
 	bool toBeTransported;
 	/// 0.0-1.0
@@ -241,8 +242,11 @@ public:
 	bool stunned;
 	/// tells weapons that support it to try to use a high trajectory
 	bool useHighTrajectory;
-	/// used by landed aircrafts for now
+
+	/// used by landed gunships to block weapon updates
 	bool dontUseWeapons;
+	/// temp variable that can be set when building etc to stop units to turn away to fire
+	bool dontFire;
 
 	/// the script has finished exectuting the killed function and the unit can be deleted
 	bool deathScriptFinished;
@@ -250,7 +254,8 @@ public:
 	int delayedWreckLevel;
 
 	/// how long the unit has been inactive
-	int restTime;
+	unsigned int restTime;
+	unsigned int outOfMapTime;
 
 	std::vector<CWeapon*> weapons;
 	/// Our shield weapon, or NULL, if we have none
@@ -277,7 +282,6 @@ public:
 
 	/// used to see if something has operated on the unit before
 	int tempNum;
-	int lastSlowUpdate;
 
 	int mapSquare;
 
@@ -303,9 +307,13 @@ public:
 	AMoveType* prevMoveType;
 	bool usingScriptMoveType;
 
+	CPlayer* fpsControlPlayer;
 	CCommandAI* commandAI;
 	/// if the unit is part of an group (hotkey group)
 	CGroup* group;
+
+	LocalModel* localmodel;
+	CUnitScript* script;
 
 	// only when the unit is active
 	float condUseMetal;
@@ -368,17 +376,13 @@ public:
 	/// number of shots due to the latest command
 	int commandShotCount;
 
-	/// 0=hold fire,1=return,2=fire at will
 	int fireState;
-	/// temp variable that can be set when building etc to stop units to turn away to fire
-	bool dontFire;
-	/// 0=hold pos,1=maneuvre,2=roam
 	int moveState;
 
 	/// if the unit is in it's 'on'-state
 	bool activated;
 
-	inline CTransportUnit *GetTransporter() const {
+	inline CTransportUnit* GetTransporter() const {
 #if defined(USE_GML) && GML_ENABLE_SIM
 		// transporter may suddenly be changed to NULL by sim
 		return *(CTransportUnit * volatile *)&transporter;
@@ -386,15 +390,6 @@ public:
 		return transporter;
 #endif
 	}
-
-#if defined(USE_GML) && GML_ENABLE_SIM
-	unsigned lastUnitUpdate;
-#endif
-
-	LocalModel* localmodel;
-	CUnitScript* script;
-
-	std::string tooltip;
 
 	bool crashing;
 	/// prevent damage from hitting an already dead unit (causing multi wreck etc)
@@ -429,6 +424,7 @@ public:
 	/// multiply all damage the unit take with this
 	float curArmorMultiple;
 
+	std::string tooltip;
 	std::string wreckName;
 
 	/// used for innacuracy with radars etc
@@ -456,7 +452,6 @@ public:
 	int curTerrainType;
 
 	int selfDCountdown;
-	DirectControlStruct* directControl;
 
 	UnitTrackStruct* myTrack;
 
@@ -465,62 +460,63 @@ public:
 
 	float currentFuel;
 
-	// 4 unsynced vars
-	bool luaDraw;
-	bool noDraw;
-	bool noSelect;
-	bool noMinimap;
-
-	bool isIcon;
-	float iconRadius;
-
 	/// max speed of the unit
 	float maxSpeed;
 	/// max reverse speed (used only by ground units for now)
 	float maxReverseSpeed;
 
-	// unsynced calls
-	void SetLODCount(unsigned int count);
-	unsigned int CalcLOD(unsigned int lastLOD) const;
-	unsigned int CalcShadowLOD(unsigned int lastLOD) const;
-	// unsynced data
-	unsigned int lodCount;
-	unsigned int currentLOD;
-	/// length-per-pixel
-	vector<float> lodLengths;
-	LuaUnitMaterial luaMats[LUAMAT_TYPE_COUNT];
-
 	/// minimum alpha value for a texel to be drawn
 	float alphaThreshold;
 	/// the damage value passed to CEGs spawned by this unit's script
 	int cegDamage;
+
+
+	// unsynced vars
+	bool luaDraw;
+	bool noDraw;
+	bool noSelect;
+	bool noMinimap;
+	bool leaveTracks;
+
+	bool isIcon;
+	float iconRadius;
+
+	unsigned int lodCount;
+	unsigned int currentLOD;
+
+	/// length-per-pixel
+	std::vector<float> lodLengths;
+	LuaUnitMaterial luaMats[LUAMAT_TYPE_COUNT];
+
 #ifdef USE_GML
 	/// last draw frame
 	int lastDrawFrame;
 #endif
+#if defined(USE_GML) && GML_ENABLE_SIM
+	unsigned lastUnitUpdate;
+#endif
+
+
 protected:
 	void ChangeTeamReset();
 	void UpdateResources();
 	void UpdateLosStatus(int allyTeam);
 
 public:
-	virtual void KillUnit(bool SelfDestruct,bool reclaimed, CUnit *attacker, bool showDeathSequence = true);
+	virtual void KillUnit(bool SelfDestruct, bool reclaimed, CUnit* attacker, bool showDeathSequence = true);
 	virtual void LoadSave(CLoadSaveInterface* file, bool loading);
 	virtual void IncomingMissile(CMissileProjectile* missile);
-	void TempHoldFire(void);
-	void ReleaseTempHoldFire(void);
-	/// start this unit in freefall from parent unit
-	void Drop(float3 parentPos,float3 parentDir,CUnit* parent);
+	void TempHoldFire();
+	void ReleaseTempHoldFire();
+	/// start this unit in free fall from parent unit
+	void Drop(const float3& parentPos, const float3& parentDir, CUnit* parent);
 	void PostLoad();
-	static void hitByWeaponIdCallback(int retCode, void *p1, void *p2);
 
 public:
-	static void SetLODFactor(float);
-
 	static void  SetExpMultiplier(float value) { expMultiplier = value; }
 	static float GetExpMultiplier()     { return expMultiplier; }
 	static void  SetExpPowerScale(float value) { expPowerScale = value; }
-	static float GetExpPowerScale()    { return expPowerScale; }
+	static float GetExpPowerScale()     { return expPowerScale; }
 	static void  SetExpHealthScale(float value) { expHealthScale = value; }
 	static float GetExpHealthScale()     { return expHealthScale; }
 	static void  SetExpReloadScale(float value) { expReloadScale = value; }
@@ -529,8 +525,6 @@ public:
 	static float GetExpGrade()     { return expGrade; }
 
 private:
-	static float lodFactor; // unsynced
-
 	static float expMultiplier;
 	static float expPowerScale;
 	static float expHealthScale;
@@ -538,9 +532,6 @@ private:
 	static float expGrade;
 
 	static float empDecline;
-
-public:
-	void LogMessage(const char*, ...);
 };
 
 #endif // UNIT_H

@@ -394,7 +394,7 @@ void CMobileCAI::SlowUpdate()
 	// to the current command  (and ignore them when it's their turn)
 	if (commandQue.size() >= 2 && !slowGuard) {
 		CCommandQueue::iterator it = commandQue.begin();
-		it++;
+		++it;
 		const Command& c = *it;
 		if ((c.id == CMD_SET_WANTED_MAX_SPEED) && (c.params.size() >= 1)) {
 			const float defMaxSpeed = owner->maxSpeed;
@@ -580,7 +580,7 @@ void CMobileCAI::ExecuteFight(Command &c)
 		SetGoal(pos, owner->pos);
 	}
 
-	if (owner->unitDef->canAttack && owner->fireState >= 2 && !owner->weapons.empty()) {
+	if (owner->unitDef->canAttack && owner->fireState >= FIRESTATE_FIREATWILL && !owner->weapons.empty()) {
 		const float3 curPosOnLine = ClosestPointOnLine(commandPos1, commandPos2, owner->pos);
 		const float searchRadius = owner->maxRange + 100 * owner->moveState * owner->moveState;
 		CUnit* enemy = helper->GetClosestValidTarget(curPosOnLine, searchRadius, owner->allyteam, this);
@@ -612,7 +612,7 @@ bool CMobileCAI::IsValidTarget(const CUnit* enemy) const {
 		&& !(owner->unitDef->noChaseCategory & enemy->category)
 		&& !enemy->neutral
 		// on "Hold pos", a target can not be valid if there exists no line of fire to it.
-		&& (owner->moveState || owner->weapons.empty() ||
+		&& (owner->moveState > MOVESTATE_HOLDPOS || owner->weapons.empty() ||
 				owner->weapons.front()->TryTargetRotate(const_cast<CUnit*>(enemy), false));
 }
 
@@ -624,45 +624,48 @@ void CMobileCAI::ExecuteGuard(Command &c)
 	assert(owner->unitDef->canGuard);
 	assert(!c.params.empty());
 
-	CUnit* guarded = uh->GetUnit(c.params[0]);
+	const CUnit* guardee = uh->GetUnit(c.params[0]);
 
-	if (guarded != NULL && UpdateTargetLostTimer(guarded->id)) {
-		if (owner->unitDef->canAttack && guarded->lastAttack + 40 < gs->frameNum
-				&& IsValidTarget(guarded->lastAttacker))
-		{
-			StopSlowGuard();
-			Command nc;
+	if (guardee == NULL) { FinishCommand(); return; }
+	if (UpdateTargetLostTimer(guardee->id) == 0) { FinishCommand(); return; }
+	if (guardee->outOfMapTime > (GAME_SPEED * 5)) { FinishCommand(); return; }
+
+	const bool pushAttackCommand =
+		owner->unitDef->canAttack &&
+		(guardee->lastAttack + 40 < gs->frameNum) &&
+		IsValidTarget(guardee->lastAttacker);
+
+	if (pushAttackCommand) {
+		Command nc;
 			nc.id = CMD_ATTACK;
-			nc.params.push_back(guarded->lastAttacker->id);
+			nc.params.push_back(guardee->lastAttacker->id);
 			nc.options = c.options;
-			commandQue.push_front(nc);
-			SlowUpdate();
-			return;
-		} else {
-			//float3 dif = guarded->speed * guarded->frontdir;
-			float3 dif = guarded->pos - owner->pos;
-			dif.Normalize();
-			float3 goal = guarded->pos - dif * (guarded->radius + owner->radius + 64);
-			if((goalPos - goal).SqLength2D() > 1600
-					|| (goalPos - owner->pos).SqLength2D()
-						< (owner->maxSpeed*30 + 1 + SQUARE_SIZE*2)
-						 * (owner->maxSpeed*30 + 1 + SQUARE_SIZE*2)){
-				SetGoal(goal, owner->pos);
-			}
-			if((goal - owner->pos).SqLength2D() < 6400) {
-				StartSlowGuard(guarded->maxSpeed);
-				if((goal-owner->pos).SqLength2D() < 1800){
-					StopMove();
-					NonMoving();
-				}
-			} else {
-				StopSlowGuard();
-			}
-		}
+		commandQue.push_front(nc);
+
+		StopSlowGuard();
+		SlowUpdate();
 	} else {
-		FinishCommand();
+		const float3 dif = (guardee->pos - owner->pos).Normalize();
+		const float3 goal = guardee->pos - dif * (guardee->radius + owner->radius + 64.0f);
+		const bool resetGoal =
+			((goalPos - goal).SqLength2D() > 1600.0f) ||
+			(goalPos - owner->pos).SqLength2D() < Square(owner->maxSpeed * GAME_SPEED + 1 + SQUARE_SIZE * 2);
+
+		if (resetGoal) {
+			SetGoal(goal, owner->pos);
+		}
+
+		if ((goal - owner->pos).SqLength2D() < 6400.0f) {
+			StartSlowGuard(guardee->maxSpeed);
+
+			if ((goal - owner->pos).SqLength2D() < 1800.0f) {
+				StopMove();
+				NonMoving();
+			}
+		} else {
+			StopSlowGuard();
+		}
 	}
-	return;
 }
 
 /**
@@ -693,7 +696,7 @@ void CMobileCAI::ExecuteAttack(Command &c)
 	assert(owner->unitDef->canAttack);
 
 	// limit how far away we fly
-	if (tempOrder && (owner->moveState < 2) && orderTarget
+	if (tempOrder && (owner->moveState < MOVESTATE_ROAM) && orderTarget
 			&& LinePointDist(ClosestPointOnLine(commandPos1, commandPos2, owner->pos),
 					commandPos2, orderTarget->pos)
 			> (500 * owner->moveState + owner->maxRange)) {
@@ -786,7 +789,7 @@ void CMobileCAI::ExecuteAttack(Command &c)
 		// also make sure that we're not locked in close-in/in-range state loop
 		// due to rotates invoked by in-range or out-of-range states
 		if (b2) {
-			if (!(tempOrder && owner->moveState == 0)
+			if (!(tempOrder && owner->moveState == MOVESTATE_HOLDPOS)
 				&& (diffLength2d * 1.4f > owner->maxRange
 					- orderTarget->speed.SqLength()
 							/ owner->unitDef->maxAcc)
@@ -808,7 +811,7 @@ void CMobileCAI::ExecuteAttack(Command &c)
 
 		// if we're on hold pos in a temporary order, then none of the close-in
 		// code below should run, and the attack command is cancelled.
-		else if (tempOrder && owner->moveState == 0) {
+		else if (tempOrder && owner->moveState == MOVESTATE_HOLDPOS) {
 			StopMove();
 			FinishCommand();
 			return;
@@ -1088,7 +1091,7 @@ void CMobileCAI::FinishCommand(void)
 
 void CMobileCAI::IdleCheck(void)
 {
-	if(owner->unitDef->canAttack && owner->fireState
+	if (owner->unitDef->canAttack && owner->fireState > FIRESTATE_HOLDFIRE
 			&& !owner->weapons.empty() && owner->haveTarget) {
 		if(!owner->userTarget) {
 			owner->haveTarget = false;
@@ -1106,7 +1109,7 @@ void CMobileCAI::IdleCheck(void)
 			return;
 		}
 	}
-	if(owner->unitDef->canAttack && owner->fireState
+	if (owner->unitDef->canAttack && owner->fireState > FIRESTATE_HOLDFIRE
 				&& !owner->weapons.empty() && !owner->haveTarget) {
 		if(owner->lastAttacker && owner->lastAttack + 200 > gs->frameNum
 				&& !(owner->unitDef->noChaseCategory & owner->lastAttacker->category)){
@@ -1127,7 +1130,7 @@ void CMobileCAI::IdleCheck(void)
 		}
 	}
 	if (owner->unitDef->canAttack && (gs->frameNum >= lastIdleCheck + 10)
-			&& owner->fireState >= 2 && !owner->weapons.empty() && !owner->haveTarget)
+			&& owner->fireState >= FIRESTATE_FIREATWILL && !owner->weapons.empty() && !owner->haveTarget)
 	{
 		const float searchRadius = owner->maxRange + 150 * owner->moveState * owner->moveState;
 		CUnit* enemy = helper->GetClosestValidTarget(owner->pos, searchRadius, owner->allyteam, this);
@@ -1165,8 +1168,8 @@ void CMobileCAI::IdleCheck(void)
 	}
 }
 
-void CMobileCAI::StopSlowGuard(){
-	if(slowGuard){
+void CMobileCAI::StopSlowGuard() {
+	if (slowGuard) {
 		slowGuard = false;
 		if (owner->maxSpeed)
 			owner->moveType->SetMaxSpeed(owner->maxSpeed);
@@ -1174,13 +1177,13 @@ void CMobileCAI::StopSlowGuard(){
 }
 
 void CMobileCAI::StartSlowGuard(float speed){
-	if(!slowGuard){
+	if (!slowGuard) {
 		slowGuard = true;
-		//speed /= 30;
-		if(owner->maxSpeed >= speed){
-			if(!commandQue.empty()){
+
+		if (owner->maxSpeed >= speed) {
+			if (!commandQue.empty()) {
 				Command currCommand = commandQue.front();
-				if(commandQue.size() <= 1
+				if (commandQue.size() <= 1
 						|| commandQue[1].id != CMD_SET_WANTED_MAX_SPEED
 						|| commandQue[1].params[0] > speed){
 					if (speed > 0)
@@ -1195,12 +1198,10 @@ void CMobileCAI::StartSlowGuard(float speed){
 void CMobileCAI::CalculateCancelDistance()
 {
 	// calculate a rough turn radius
-	// heading is a short, so has 65536 values
-	// t = 65536/turnRate gives number of frames required for a full circle
-	// speed * t / (2*pi) gives turn radius
-	float tmp = (owner->unitDef->speed / GAME_SPEED)
-		* SHORTINT_MAXVALUE / (owner->unitDef->turnRate > 0 ? owner->unitDef->turnRate : 1)
-		/ (2 * PI) + 2*SQUARE_SIZE;
+	const float turnFrames = SPRING_CIRCLE_DIVS / std::max(owner->unitDef->turnRate, 1.0f);
+	const float turnRadius = ((owner->unitDef->speed / GAME_SPEED) * turnFrames) / (PI + PI);
+	const float tmp = turnRadius + (SQUARE_SIZE << 1);
+
 	// clamp it a bit because the units don't have to turn at max speed
-	cancelDistance = std::min(std::max(tmp*tmp, 1024.f), 2048.f);
+	cancelDistance = std::min(std::max(tmp * tmp, 1024.f), 2048.f);
 }

@@ -38,6 +38,7 @@ CEventHandler::CEventHandler()
 	SETUP_EVENT(GameStart,     MANAGED_BIT);
 	SETUP_EVENT(GameOver,      MANAGED_BIT);
 	SETUP_EVENT(GamePaused,    MANAGED_BIT);
+	SETUP_EVENT(GameFrame,     MANAGED_BIT);
 	SETUP_EVENT(TeamDied,      MANAGED_BIT);
 	SETUP_EVENT(TeamChanged,   MANAGED_BIT);
 	SETUP_EVENT(PlayerChanged, MANAGED_BIT);
@@ -73,7 +74,10 @@ CEventHandler::CEventHandler()
 	SETUP_EVENT(UnitCloaked,    MANAGED_BIT);
 	SETUP_EVENT(UnitDecloaked,  MANAGED_BIT);
 
-	SETUP_EVENT(UnitMoveFailed, MANAGED_BIT);
+	SETUP_EVENT(UnitUnitCollision,    MANAGED_BIT);
+	SETUP_EVENT(UnitFeatureCollision, MANAGED_BIT);
+	SETUP_EVENT(UnitMoved,            MANAGED_BIT);
+	SETUP_EVENT(UnitMoveFailed,       MANAGED_BIT);
 
 	SETUP_EVENT(FeatureCreated,   MANAGED_BIT);
 	SETUP_EVENT(FeatureDestroyed, MANAGED_BIT);
@@ -357,6 +361,16 @@ void CEventHandler::GamePaused(int playerID, bool paused)
 }
 
 
+void CEventHandler::GameFrame(int gameFrame)
+{
+	const int count = listGameFrame.size();
+	for (int i = 0; i < count; i++) {
+		CEventClient* ec = listGameFrame[i];
+		ec->GameFrame(gameFrame);
+	}
+}
+
+
 void CEventHandler::TeamDied(int teamID)
 {
 	const int count = listTeamDied.size();
@@ -459,7 +473,7 @@ void CEventHandler::ViewResize()
 
 
 #define DRAW_CALLIN(name)                         \
-  void CEventHandler:: Draw ## name ()        \
+  void CEventHandler:: Draw ## name ()            \
   {                                               \
     GML_DRAW_CALLIN_SELECTOR()                    \
     const int count = listDraw ## name.size();    \
@@ -476,7 +490,7 @@ void CEventHandler::ViewResize()
                                                   \
     for (int i = 1; i < count; i++) {             \
       LuaOpenGL::ResetDraw ## name ();            \
-      CEventClient* ec = listDraw ## name [i];      \
+      CEventClient* ec = listDraw ## name [i];    \
       ec-> Draw ## name ();                       \
     }                                             \
                                                   \

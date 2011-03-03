@@ -11,6 +11,7 @@
 
 class CUnit;
 struct DamageArray;
+struct CollisionVolume;
 
 
 class CSolidObject: public CWorldObject {
@@ -22,7 +23,6 @@ public:
 		Floating,
 		Hovering,
 		Flying,
-		Submarine
 	};
 
 	CSolidObject();
@@ -30,12 +30,16 @@ public:
 
 	virtual bool AddBuildPower(float amount, CUnit* builder);
 
-	virtual void DoDamage(const DamageArray& damages, CUnit* attacker, const float3& impulse) {};
-	virtual void Kill(float3& impulse) {};
+	virtual void DoDamage(const DamageArray& damages, CUnit* attacker, const float3& impulse) {}
+	virtual void Kill(const float3& impulse) {}
 	virtual int GetBlockingMapID() const { return -1; }
 
 	void Block();
 	void UnBlock();
+
+public:
+	// Collision properties
+	CollisionVolume* collisionVolume;
 
 	// Static properties
 	float mass;									///< the physical mass of this object
@@ -66,8 +70,9 @@ public:
 	MoveData* mobility;							///< holds information about the mobility and movedata of this object (0 means object can not move on its own)
 
 	// Positional properties
-	SyncedFloat3 midPos;						///< This is the calculated center position of the model (pos is usually at the very bottom of the model). Used as mass center.
-	int2 mapPos;								///< Current position on GroundBlockingMap.
+	SyncedFloat3 relMidPos;   ///< = (midPos - pos)
+	SyncedFloat3 midPos;      ///< This is the calculated center position of the model (pos is usually at the very bottom of the model). Used as mass center.
+	int2 mapPos;              ///< Current position on GroundBlockingMap.
 
 	// Unsynced positional properties
 	float3 drawPos;
@@ -78,6 +83,8 @@ public:
 
 	int2 GetMapPos();
 	int2 GetMapPos(const float3& position);
+
+	static const float DEFAULT_MASS;
 };
 
 #endif

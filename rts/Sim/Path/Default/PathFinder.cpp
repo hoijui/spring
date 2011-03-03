@@ -66,89 +66,6 @@ CPathFinder::~CPathFinder()
 }
 
 
-/**
- * Search with several start positions
- */
-IPath::SearchResult CPathFinder::GetPath(
-	const MoveData& moveData,
-	const std::vector<float3>& startPos,
-	const CPathFinderDef& pfDef,
-	IPath::Path& path,
-	int ownerId,
-	bool synced
-) {
-	// Clear the given path.
-	path.path.clear();
-	path.squares.clear();
-	path.pathCost = PATHCOST_INFINITY;
-
-	// Store som basic data.
-	maxSquaresToBeSearched = MAX_SEARCHED_NODES_PF - 8U;
-	testMobile = false;
-	exactPath = true;
-	needPath = true;
-
-	// If exact path is reqired and the goal is blocked, then no search is needed.
-	if (exactPath && pfDef.GoalIsBlocked(moveData, (CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN)))
-		return IPath::CantGetCloser;
-
-	// If the starting position is a goal position, then no search need to be performed.
-	if (pfDef.IsGoal(startxSqr, startzSqr))
-		return IPath::CantGetCloser;
-
-	// Clearing the system from last search.
-	ResetSearch();
-
-	openSquareBuffer.SetSize(0);
-
-	for (std::vector<float3>::const_iterator si = startPos.begin(); si != startPos.end(); ++si) {
-		start = *si;
-		startxSqr = (int(start.x) / SQUARE_SIZE) | 1;
-		startzSqr = (int(start.z) / SQUARE_SIZE) | 1;
-		startSquare = startxSqr + startzSqr * gs->mapx;
-		goalSquare = startSquare;
-
-		squareStates[startSquare].nodeMask = (PATHOPT_START | PATHOPT_OPEN);
-		squareStates[startSquare].fCost = 0.0f;
-		squareStates[startSquare].gCost = 0.0f;
-		dirtySquares.push_back(startSquare);
-
-		if (openSquareBuffer.GetSize() >= MAX_SEARCHED_NODES_PF) {
-			continue;
-		}
-
-		PathNode* os = openSquareBuffer.GetNode(openSquareBuffer.GetSize());
-			os->fCost     = 0.0f;
-			os->gCost     = 0.0f;
-			os->nodePos.x = startxSqr;
-			os->nodePos.y = startzSqr;
-			os->nodeNum   = startSquare;
-		openSquareBuffer.SetSize(openSquareBuffer.GetSize() + 1);
-		openSquares.push(os);
-	}
-
-	// note: DoSearch, not InitSearch
-	IPath::SearchResult result = DoSearch(moveData, pfDef, ownerId, synced);
-
-	// Respond to the success of the search.
-	if (result == IPath::Ok) {
-		FinishSearch(moveData, path);
-		if (PATHDEBUG) {
-			LogObject() << "Path found.\n";
-			LogObject() << "Nodes tested: " << testedNodes << "\n";
-			LogObject() << "Open squares: " << openSquareBuffer.GetSize() << "\n";
-			LogObject() << "Path nodes: " << path.path.size() << "\n";
-			LogObject() << "Path cost: " << path.pathCost << "\n";
-		}
-	} else {
-		if (PATHDEBUG) {
-			LogObject() << "No path found!\n";
-			LogObject() << "Nodes tested: " << testedNodes << "\n";
-			LogObject() << "Open squares: " << openSquareBuffer.GetSize() << "\n";
-		}
-	}
-	return result;
-}
 
 IPath::SearchResult CPathFinder::GetPath(
 	const MoveData& moveData,
@@ -213,7 +130,7 @@ IPath::SearchResult CPathFinder::GetPath(
 // set up the starting point of the search
 IPath::SearchResult CPathFinder::InitSearch(const MoveData& moveData, const CPathFinderDef& pfDef, int ownerId, bool synced) {
 	// If exact path is reqired and the goal is blocked, then no search is needed.
-	if (exactPath && pfDef.GoalIsBlocked(moveData, (CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN)))
+	if (exactPath && pfDef.GoalIsBlocked(moveData, CMoveMath::BLOCK_STRUCTURE))
 		return IPath::CantGetCloser;
 
 	// Clamp the start position
@@ -357,8 +274,8 @@ bool CPathFinder::TestSquare(
 		return false;
 	}
 
-	const int blockStatus = moveData.moveMath->IsBlocked2(moveData, square.x, square.y);
-	int blockBits = (CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN);
+	const int blockStatus = moveData.moveMath->IsBlocked(moveData, square.x, square.y);
+	unsigned int blockBits = CMoveMath::BLOCK_STRUCTURE;
 
 	// Check if square are out of constraints or blocked by something.
 	// Doesn't need to be done on open squares, as those are already tested.
@@ -371,7 +288,7 @@ bool CPathFinder::TestSquare(
 	}
 
 	// Evaluate this square.
-	float squareSpeedMod = moveData.moveMath->SpeedMod(moveData, square.x, square.y);
+	float squareSpeedMod = moveData.moveMath->GetPosSpeedMod(moveData, square.x, square.y);
 	blockBits = (CMoveMath::BLOCK_MOBILE | CMoveMath::BLOCK_MOVING | CMoveMath::BLOCK_MOBILE_BUSY);
 
 	if (squareSpeedMod == 0) {

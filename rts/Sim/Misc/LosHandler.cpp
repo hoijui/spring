@@ -15,8 +15,8 @@
 #include "Map/ReadMap.h"
 #include "System/LogOutput.h"
 #include "System/TimeProfiler.h"
-#include "creg/STL_Deque.h"
-#include "creg/STL_List.h"
+#include "System/creg/STL_Deque.h"
+#include "System/creg/STL_List.h"
 
 using std::min;
 using std::max;
@@ -111,16 +111,22 @@ CLosHandler::~CLosHandler()
 
 void CLosHandler::MoveUnit(CUnit* unit, bool redoCurrent)
 {
-	SCOPED_TIMER("LOS");
+	SCOPED_TIMER("LOSHandler::MoveUnit");
 
+	// NOTE: under normal circumstances, this only gets called if a unit
+	// has moved to a new map square since its last SlowUpdate cycle, so
+	// any units that changed position between enabling and disabling of
+	// globalLOS and *stopped* will continue to provide LOS at their old
+	// square *after* it is disabled (until they are moved again)
+	if (gs->globalLOS) { return; }
 	if (unit->losRadius <= 0 && unit->airLosRadius <= 0) {
 		return;
 	}
 
+	unit->lastLosUpdate = gs->frameNum;
+
 	const float3& losPos = unit->pos;
 	const int allyteam = unit->allyteam;
-
-	unit->lastLosUpdate = gs->frameNum;
 
 	const int baseX = max(0, min(losSizeX - 1, int(losPos.x * invLosDiv)));
 	const int baseY = max(0, min(losSizeY - 1, int(losPos.z * invLosDiv)));
@@ -241,8 +247,9 @@ void CLosHandler::FreeInstance(LosInstance* instance)
 
 int CLosHandler::GetHashNum(CUnit* unit)
 {
-	unsigned int t = unit->mapSquare * unit->losRadius + unit->allyteam;
-	t ^= *(unsigned int*) &unit->losHeight;
+	const unsigned int t =
+		(unit->mapSquare * unit->losRadius + unit->allyteam) ^
+		(*(unsigned int*) &unit->losHeight);
 	//! hash-value range is [0, LOSHANDLER_MAGIC_PRIME - 1]
 	return (t % LOSHANDLER_MAGIC_PRIME);
 }

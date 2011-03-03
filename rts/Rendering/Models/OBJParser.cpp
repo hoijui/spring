@@ -46,8 +46,7 @@ S3DModel* COBJParser::Load(const std::string& modelFileName)
 		model->name = modelFileName;
 		model->type = MODELTYPE_OBJ;
 		model->textureType = 0;
-		model->numobjects = 0;
-		model->rootobject = NULL;
+		model->numPieces = 0;
 		model->radius = modelTable.GetFloat("radius", 0.0f);
 		model->height = modelTable.GetFloat("height", 0.0f);
 		model->relMidPos = modelTable.GetFloat3("midpos", ZeroVector);
@@ -63,7 +62,7 @@ S3DModel* COBJParser::Load(const std::string& modelFileName)
 	modelFile.LoadStringData(modelData);
 
 	if (ParseModelData(model, modelData, modelTable)) {
-		assert(model->numobjects == modelTable.GetInt("numpieces", 0));
+		assert(model->numPieces == modelTable.GetInt("numpieces", 0));
 		return model;
 	} else {
 		delete model;
@@ -169,7 +168,7 @@ bool COBJParser::ParseModelData(S3DModel* model, const std::string& modelData, c
 					piece->name = pieceName;
 					pieceMap[pieceName] = piece;
 
-					model->numobjects += 1;
+					model->numPieces += 1;
 				} break;
 
 				case 'v': {
@@ -334,7 +333,7 @@ bool COBJParser::BuildModelPieceTree(
 
 		if (rootPieceIt != pieceMap.end()) {
 			rootPiece = rootPieceIt->second;
-			model->rootobject = rootPiece;
+			model->SetRootPiece(rootPiece);
 
 			BuildModelPieceTreeRec(model, rootPiece, pieceMap, rootPieceTable, globalVertexOffsets, localPieceOffsets);
 			return true;
@@ -348,7 +347,7 @@ bool COBJParser::BuildModelPieceTree(
 
 		if (rootPieceIt != pieceMap.end()) {
 			rootPiece = rootPieceIt->second;
-			model->rootobject = rootPiece;
+			model->SetRootPiece(rootPiece);
 
 			BuildModelPieceTreeRec(model, rootPiece, pieceMap, rootPieceTable, globalVertexOffsets, localPieceOffsets);
 			return true;
@@ -435,7 +434,7 @@ void COBJParser::BuildModelPieceTreeRec(
 		(piece->maxs - (localPieceOffsets? piece->goffset: piece->offset)) +
 		(piece->mins - (localPieceOffsets? piece->goffset: piece->offset));
 
-	piece->colvol = new CollisionVolume("box", cvScales, cvOffset * 0.5f, CollisionVolume::COLVOL_HITTEST_CONT);
+	piece->SetCollisionVolume(new CollisionVolume("box", cvScales, cvOffset * 0.5f, CollisionVolume::COLVOL_HITTEST_CONT));
 
 
 	std::vector<int> childPieceNumbers;

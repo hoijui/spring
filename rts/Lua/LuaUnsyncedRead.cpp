@@ -7,11 +7,10 @@
 #include <set>
 #include <list>
 #include <cctype>
-using namespace std;
 
-#include "SDL_timer.h"
-#include "SDL_keysym.h"
-#include "SDL_mouse.h"
+#include <SDL_timer.h>
+#include <SDL_keysym.h>
+#include <SDL_mouse.h>
 
 #include "mmgr.h"
 
@@ -54,14 +53,14 @@ using namespace std;
 #include "Sim/Units/UnitTypes/TransportUnit.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Groups/GroupHandler.h"
-#include "NetProtocol.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/VFSHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "Sound/IMusicChannel.h"
+#include "System/NetProtocol.h"
+#include "System/Input/KeyInput.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/VFSHandler.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/Sound/SoundChannels.h"
 
-
-extern boost::uint8_t *keys;
+using namespace std;
 
 const int CMD_INDEX_OFFSET = 1; // starting index for command descriptions
 
@@ -996,7 +995,7 @@ int LuaUnsyncedRead::GetSelectedUnitsSorted(lua_State* L)
 
 	lua_newtable(L);
 	map<int, vector<CUnit*> >::const_iterator mit;
-	for (mit = unitDefMap.begin(); mit != unitDefMap.end(); mit++) {
+	for (mit = unitDefMap.begin(); mit != unitDefMap.end(); ++mit) {
 		lua_pushnumber(L, mit->first); // push the UnitDef index
 		lua_newtable(L); {
 			const vector<CUnit*>& v = mit->second;
@@ -1037,7 +1036,7 @@ int LuaUnsyncedRead::GetSelectedUnitsCounts(lua_State* L)
 
 	lua_newtable(L);
 	map<int, int>::const_iterator mit;
-	for (mit = countMap.begin(); mit != countMap.end(); mit++) {
+	for (mit = countMap.begin(); mit != countMap.end(); ++mit) {
 		lua_pushnumber(L, mit->first);  // push the UnitDef index
 		lua_pushnumber(L, mit->second); // push the UnitDef unit count
 		lua_rawset(L, -3);
@@ -1075,7 +1074,7 @@ int LuaUnsyncedRead::HaveShadows(lua_State* L)
 	if (shadowHandler == NULL) {
 		return 0;
 	}
-	lua_pushboolean(L, shadowHandler->drawShadows);
+	lua_pushboolean(L, shadowHandler->shadowsLoaded);
 	return 1;
 }
 
@@ -1097,15 +1096,10 @@ int LuaUnsyncedRead::GetWaterMode(lua_State* L)
 	if (water == NULL) {
 		return 0;
 	}
+
 	const int mode = water->GetID();
-	const char* modeName;
-	switch (mode) {
-		case 0:  { modeName = "basic";      break; }
-		case 1:  { modeName = "reflective"; break; }
-		case 2:  { modeName = "dynamic";    break; }
-		case 3:  { modeName = "refractive"; break; }
-		default: { modeName = "unknown";    break; }
-	}
+	const char* modeName = water->GetName();
+
 	lua_pushnumber(L, mode);
 	lua_pushstring(L, modeName);
 	return 2;
@@ -1117,13 +1111,13 @@ int LuaUnsyncedRead::GetMapDrawMode(lua_State* L)
 	CheckNoArgs(L, __FUNCTION__);
 	const CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 	switch (gd->drawMode) {
-		case CBaseGroundDrawer::drawNormal:      { HSTR_PUSH(L, "normal"     ); break; }
-		case CBaseGroundDrawer::drawHeight:      { HSTR_PUSH(L, "height"     ); break; }
-		case CBaseGroundDrawer::drawMetal:       { HSTR_PUSH(L, "metal"      ); break; }
-		case CBaseGroundDrawer::drawLos:         { HSTR_PUSH(L, "los"        ); break; }
-		case CBaseGroundDrawer::drawPathSquares: { HSTR_PUSH(L, "pathSquares"); break; }
-		case CBaseGroundDrawer::drawPathHeat:    { HSTR_PUSH(L, "pathHeat"   ); break; }
-		case CBaseGroundDrawer::drawPathCost:    { HSTR_PUSH(L, "pathCost"   ); break; }
+		case CBaseGroundDrawer::drawNormal:             { HSTR_PUSH(L, "normal"            ); break; }
+		case CBaseGroundDrawer::drawHeight:             { HSTR_PUSH(L, "height"            ); break; }
+		case CBaseGroundDrawer::drawMetal:              { HSTR_PUSH(L, "metal"             ); break; }
+		case CBaseGroundDrawer::drawLos:                { HSTR_PUSH(L, "los"               ); break; }
+		case CBaseGroundDrawer::drawPathTraversability: { HSTR_PUSH(L, "pathTraversability"); break; }
+		case CBaseGroundDrawer::drawPathHeat:           { HSTR_PUSH(L, "pathHeat"          ); break; }
+		case CBaseGroundDrawer::drawPathCost:           { HSTR_PUSH(L, "pathCost"          ); break; }
 	}
 	return 1;
 }
@@ -1245,6 +1239,7 @@ int LuaUnsyncedRead::TraceScreenRay(lua_State* L)
 	const int my = luaL_checkint(L, 2);
 	const bool onlyCoords = (lua_isboolean(L, 3) && lua_toboolean(L, 3));
 	const bool useMiniMap = (lua_isboolean(L, 4) && lua_toboolean(L, 4));
+	const bool includeSky = (lua_isboolean(L, 5) && lua_toboolean(L, 5));
 
 	const int wx = mx + globalRendering->viewPosX;
 	const int wy = globalRendering->viewSizeY - 1 - my - globalRendering->viewPosY;
@@ -1265,7 +1260,7 @@ int LuaUnsyncedRead::TraceScreenRay(lua_State* L)
 					return 2;
 				}
 			}
-			const float posY = ground->GetHeight2(pos.x, pos.z);
+			const float posY = ground->GetHeightReal(pos.x, pos.z);
 			lua_pushstring(L, "ground");
 			lua_newtable(L);
 			lua_pushnumber(L, 1); lua_pushnumber(L, pos.x); lua_rawset(L, -3);
@@ -1295,31 +1290,36 @@ int LuaUnsyncedRead::TraceScreenRay(lua_State* L)
 
 	const float badRange = (range - 300.0f);
 	if ((udist > badRange) && (fdist > badRange) && (unit == NULL)) {
-		return 0;
-	}
-
-	if (!onlyCoords) {
-		if (udist > fdist) {
-			unit = NULL;
+		if (includeSky) {
+			lua_pushstring(L, "sky");
 		} else {
-			feature = NULL;
+			return 0;
+		}
+	} else {
+		if (!onlyCoords) {
+			if (udist > fdist) {
+				unit = NULL;
+			} else {
+				feature = NULL;
+			}
+	
+			if (unit != NULL) {
+				lua_pushstring(L, "unit");
+				lua_pushnumber(L, unit->id);
+				return 2;
+			}
+	
+			if (feature != NULL) {
+				lua_pushstring(L, "feature");
+				lua_pushnumber(L, feature->id);
+				return 2;
+			}
 		}
 
-		if (unit != NULL) {
-			lua_pushstring(L, "unit");
-			lua_pushnumber(L, unit->id);
-			return 2;
-		}
-
-		if (feature != NULL) {
-			lua_pushstring(L, "feature");
-			lua_pushnumber(L, feature->id);
-			return 2;
-		}
+		lua_pushstring(L, "ground");
 	}
 
 	const float3 groundPos = pos + (dir * udist);
-	lua_pushstring(L, "ground");
 	lua_newtable(L);
 	lua_pushnumber(L, 1); lua_pushnumber(L, groundPos.x); lua_rawset(L, -3);
 	lua_pushnumber(L, 2); lua_pushnumber(L, groundPos.y); lua_rawset(L, -3);
@@ -1734,7 +1734,7 @@ int LuaUnsyncedRead::GetKeyState(lua_State* L)
 	if ((key < 0) || (key >= SDLK_LAST)) {
 		lua_pushboolean(L, 0);
 	} else {
-		lua_pushboolean(L, keys[key]);
+		lua_pushboolean(L, keyInput->GetKeyState(key));
 	}
 	return 1;
 }
@@ -1743,10 +1743,10 @@ int LuaUnsyncedRead::GetKeyState(lua_State* L)
 int LuaUnsyncedRead::GetModKeyState(lua_State* L)
 {
 	CheckNoArgs(L, __FUNCTION__);
-	lua_pushboolean(L, keys[SDLK_LALT]);
-	lua_pushboolean(L, keys[SDLK_LCTRL]);
-	lua_pushboolean(L, keys[SDLK_LMETA]);
-	lua_pushboolean(L, keys[SDLK_LSHIFT]);
+	lua_pushboolean(L, keyInput->GetKeyState(SDLK_LALT));
+	lua_pushboolean(L, keyInput->GetKeyState(SDLK_LCTRL));
+	lua_pushboolean(L, keyInput->GetKeyState(SDLK_LMETA));
+	lua_pushboolean(L, keyInput->GetKeyState(SDLK_LSHIFT));
 	return 4;
 }
 
@@ -1757,7 +1757,7 @@ int LuaUnsyncedRead::GetPressedKeys(lua_State* L)
 	lua_newtable(L);
 	int count = 0;
 	for (int i = 0; i < SDLK_LAST; i++) {
-		if (keys[i]) {
+		if (keyInput->GetKeyState(i)) {
 			lua_pushnumber(L, i);
 			lua_pushboolean(L, 1);
 			lua_rawset(L, -3);
@@ -2047,7 +2047,7 @@ int LuaUnsyncedRead::GetGroupUnitsSorted(lua_State* L)
 
 	lua_newtable(L);
 	map<int, vector<CUnit*> >::const_iterator mit;
-	for (mit = unitDefMap.begin(); mit != unitDefMap.end(); mit++) {
+	for (mit = unitDefMap.begin(); mit != unitDefMap.end(); ++mit) {
 		lua_pushnumber(L, mit->first); // push the UnitDef index
 		lua_newtable(L); {
 			const vector<CUnit*>& v = mit->second;
@@ -2094,7 +2094,7 @@ int LuaUnsyncedRead::GetGroupUnitsCounts(lua_State* L)
 
 	lua_newtable(L);
 	map<int, int>::const_iterator mit;
-	for (mit = countMap.begin(); mit != countMap.end(); mit++) {
+	for (mit = countMap.begin(); mit != countMap.end(); ++mit) {
 		lua_pushnumber(L, mit->first);  // push the UnitDef index
 		lua_pushnumber(L, mit->second); // push the UnitDef unit count
 		lua_rawset(L, -3);

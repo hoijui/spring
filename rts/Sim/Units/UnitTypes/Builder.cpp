@@ -21,7 +21,7 @@
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Projectiles/Unsynced/GfxProjectile.h"
-#include "Sim/Units/COB/CobInstance.h"
+#include "Sim/Units/Scripts/CobInstance.h"
 #include "Sim/Units/CommandAI/BuilderCAI.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/UnitDefHandler.h"
@@ -29,8 +29,10 @@
 #include "Sim/Units/UnitLoader.h"
 #include "System/GlobalUnsynced.h"
 #include "System/EventHandler.h"
-#include "System/Sound/IEffectChannel.h"
+#include "System/Sound/SoundChannels.h"
 #include "System/mmgr.h"
+
+#define PLAY_SOUNDS 1
 
 using std::min;
 using std::max;
@@ -112,7 +114,7 @@ void CBuilder::PostLoad()
 }
 
 
-void CBuilder::UnitInit(const UnitDef* def, int team, const float3& position)
+void CBuilder::PreInit(const UnitDef* def, int team, int facing, const float3& position, bool build)
 {
 	range3D = def->buildRange3D;
 	buildDistance = def->buildDistance;
@@ -126,7 +128,7 @@ void CBuilder::UnitInit(const UnitDef* def, int team, const float3& position)
 	captureSpeed   = scale * def->captureSpeed;
 	terraformSpeed = scale * def->terraformSpeed;
 
-	CUnit::UnitInit(def, team, position);
+	CUnit::PreInit(def, team, facing, position, build);
 }
 
 
@@ -257,7 +259,7 @@ void CBuilder::Update()
 				helpTerraform->terraformHelp += terraformSpeed;
 				CreateNanoParticle(helpTerraform->terraformCenter,helpTerraform->terraformRadius*0.5f,false);
 			} else {
-				DeleteDeathDependence(helpTerraform);
+				DeleteDeathDependence(helpTerraform, DEPENDENCE_TERRAFORM);
 				helpTerraform=0;
 				StopBuild(true);
 			}
@@ -299,8 +301,9 @@ void CBuilder::Update()
 			}
 		}
 		else if(curResurrect && f3SqDist(curResurrect->pos, pos)<Square(buildDistance+curResurrect->radius) && inBuildStance){
-			const UnitDef* ud=unitDefHandler->GetUnitDefByName(curResurrect->createdFromUnit);
-			if(ud){
+			const UnitDef* ud = curResurrect->udef;
+
+			if (ud) {
 				if ((modInfo.reclaimMethod != 1) && (curResurrect->reclaimLeft < 1)) {
 					// This corpse has been reclaimed a little, need to restore the resources
 					// before we can let the player resurrect it.
@@ -312,15 +315,17 @@ void CBuilder::Update()
 						curResurrect->resurrectProgress+=resurrectSpeed/ud->buildTime;
 						CreateNanoParticle(curResurrect->midPos,curResurrect->radius*0.7f,gs->randInt()&1);
 					}
-					if(curResurrect->resurrectProgress>1){		//resurrect finished
+					if (curResurrect->resurrectProgress > 1) {
+						// resurrect finished
 						curResurrect->UnBlock();
-						CUnit* u = unitLoader.LoadUnit(curResurrect->createdFromUnit, curResurrect->pos,
+						CUnit* u = unitLoader->LoadUnit(ud, curResurrect->pos,
 													team, false, curResurrect->buildFacing, this);
+
 						if (!this->unitDef->canBeAssisted) {
 							u->soloBuilder = this;
 							u->AddDeathDependence(this);
 						}
-						u->health*=0.05f;
+						u->health *= 0.05f;
 
 						CBuilderCAI *cai = (CBuilderCAI *)commandAI;
 						for (CUnitSet::iterator it = cai->resurrecters.begin(); it != cai->resurrecters.end(); ++it) {
@@ -444,13 +449,13 @@ void CBuilder::SetReclaimTarget(CSolidObject* target)
 
 void CBuilder::SetResurrectTarget(CFeature* target)
 {
-	if(curResurrect==target || target->createdFromUnit=="")
+	if (curResurrect == target || target->udef == NULL)
 		return;
 
 	StopBuild(false);
 	TempHoldFire();
 
-	curResurrect=target;
+	curResurrect = target;
 	AddDeathDependence(curResurrect);
 
 	SetBuildStanceToward(target->pos);
@@ -505,15 +510,15 @@ void CBuilder::StartRestore(float3 centerPos, float radius)
 void CBuilder::StopBuild(bool callScript)
 {
 	if(curBuild)
-		DeleteDeathDependence(curBuild);
+		DeleteDeathDependence(curBuild, DEPENDENCE_BUILD);
 	if(curReclaim)
-		DeleteDeathDependence(curReclaim);
+		DeleteDeathDependence(curReclaim, DEPENDENCE_RECLAIM);
 	if(helpTerraform)
-		DeleteDeathDependence(helpTerraform);
+		DeleteDeathDependence(helpTerraform, DEPENDENCE_TERRAFORM);
 	if(curResurrect)
-		DeleteDeathDependence(curResurrect);
+		DeleteDeathDependence(curResurrect, DEPENDENCE_RESURRECT);
 	if(curCapture)
-		DeleteDeathDependence(curCapture);
+		DeleteDeathDependence(curCapture, DEPENDENCE_CAPTURE);
 	curBuild=0;
 	curReclaim=0;
 	helpTerraform=0;
@@ -527,7 +532,7 @@ void CBuilder::StopBuild(bool callScript)
 }
 
 
-bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature)
+bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature, bool& waitstance)
 {
 	StopBuild(false);
 
@@ -572,11 +577,16 @@ bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature)
 	const UnitDef* unitDef = buildInfo.def;
 	SetBuildStanceToward(buildInfo.pos);
 
-	CUnit* b = unitLoader.LoadUnit(buildInfo.def, buildInfo.pos, team,
+	if (!inBuildStance) {
+		waitstance = true;
+		return false;
+	}
+
+	CUnit* b = unitLoader->LoadUnit(buildInfo.def, buildInfo.pos, team,
 	                               true, buildInfo.buildFacing, this);
 
 	// floating structures don't terraform the seabed
-	const float groundheight = ground->GetHeight2(b->pos.x, b->pos.z);
+	const float groundheight = ground->GetHeightReal(b->pos.x, b->pos.z);
 	const bool onWater = (unitDef->floater && groundheight <= 0.0f);
 
 	if (mapDamage->disabled || !unitDef->levelGround || onWater ||
@@ -686,12 +696,14 @@ void CBuilder::SetBuildStanceToward(float3 pos)
 		script->StartBuilding(ClampRad(h - heading * TAANG2RAD), p - pitch);
 	}
 
-	int soundIdx = unitDef->sounds.build.getRandomIdx();
+	#if (PLAY_SOUNDS == 1)
+	const int soundIdx = unitDef->sounds.build.getRandomIdx();
 	if (soundIdx >= 0) {
 		Channels::UnitReply.PlaySample(
 			unitDef->sounds.build.getID(soundIdx), pos,
 			unitDef->sounds.build.getVolume(soundIdx));
 	}
+	#endif
 }
 
 
@@ -740,4 +752,33 @@ void CBuilder::CreateNanoParticle(float3 goal, float radius, bool inverse)
 			new CGfxProjectile(weaponPos, (dif + error) * 3, int(l / 3), color);
 		}
 	}
+}
+
+
+void CBuilder::DeleteDeathDependence(CObject* o, DependenceType dep) {
+	switch(dep) {
+		case DEPENDENCE_ATTACKER:
+		case DEPENDENCE_BUILDER:
+		case DEPENDENCE_TARGET:
+		case DEPENDENCE_TRANSPORTEE:
+		case DEPENDENCE_TRANSPORTER:
+			if(o == curBuild || o == curCapture || o == curReclaim || o == curResurrect || o == helpTerraform) return;
+			break;
+		case DEPENDENCE_BUILD:
+			if(o == curCapture || o == curReclaim || o == helpTerraform) return;
+			break;
+		case DEPENDENCE_CAPTURE:
+			if(o == curBuild || o == curReclaim || o == helpTerraform) return;
+			break;
+		case DEPENDENCE_RECLAIM:
+			if(o == curBuild || o == curCapture || o == curResurrect || o == helpTerraform) return;
+			break;
+		case DEPENDENCE_RESURRECT:
+			if(o == curReclaim) return;
+			break;
+		case DEPENDENCE_TERRAFORM:
+			if(o == curBuild || o == curCapture || o == curReclaim) return;
+			break;
+	}
+	CUnit::DeleteDeathDependence(o, dep);
 }

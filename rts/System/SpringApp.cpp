@@ -1,11 +1,9 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "StdAfx.h"
-#include "Rendering/GL/myGL.h"
 
 #include <iostream>
 
-#include <signal.h>
 #include <SDL.h>
 #if !defined(HEADLESS)
 	#include <SDL_syswm.h>
@@ -13,22 +11,22 @@
 
 #include "mmgr.h"
 
+#include "Rendering/GL/myGL.h"
 #include "SpringApp.h"
-
-#undef KeyPress
-#undef KeyRelease
 
 #include "aGui/Gui.h"
 #include "ExternalAI/IAILibraryManager.h"
-#include "Game/GameVersion.h"
-#include "Game/GameSetup.h"
 #include "Game/ClientSetup.h"
+#include "Game/GameServer.h"
+#include "Game/GameSetup.h"
+#include "Game/GameVersion.h"
 #include "Game/GameController.h"
-#include "Game/PreGame.h"
 #include "Game/Game.h"
+#include "Game/PreGame.h"
 #include "Game/LoadScreen.h"
 #include "Game/UI/KeyBindings.h"
 #include "Game/UI/MouseHandler.h"
+#include "Input/KeyInput.h"
 #include "Input/MouseInput.h"
 #include "Input/InputHandler.h"
 #include "Input/Joystick.h"
@@ -38,6 +36,7 @@
 #include "Rendering/glFont.h"
 #include "Rendering/GLContext.h"
 #include "Rendering/VerticalSync.h"
+#include "Rendering/WindowManagerHelper.h"
 #include "Rendering/Textures/TAPalette.h"
 #include "Rendering/Textures/NamedTextures.h"
 #include "Rendering/Textures/TextureAtlas.h"
@@ -51,6 +50,7 @@
 #include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/myMath.h"
+#include "System/OffscreenGLContext.h"
 #include "System/TimeProfiler.h"
 #include "System/Util.h"
 #include "System/FileSystem/FileSystemHandler.h"
@@ -60,6 +60,7 @@
 #include "System/Platform/errorhandler.h"
 #include "System/Platform/CrashHandler.h"
 #include "System/Platform/Threading.h"
+#include "System/Platform/Watchdog.h"
 #include "System/Sound/ISound.h"
 
 #include "mmgr.h"
@@ -74,6 +75,9 @@
 	#include "Platform/Linux/myX11.h"
 #endif
 
+#undef KeyPress
+#undef KeyRelease
+
 #ifdef USE_GML
 	#include "lib/gml/gmlsrv.h"
 	extern gmlClientServer<void, int,CUnit*> *gmlProcessor;
@@ -81,13 +85,9 @@
 
 using std::string;
 
-volatile bool globalQuit = false;
-
-CGameController* activeController = NULL;
 ClientSetup* startsetup = NULL;
 
-boost::uint8_t* keys = 0;
-boost::uint16_t currentUnicode = 0;
+COffscreenGLContext* SpringApp::ogc = NULL;
 
 /**
  * @brief xres default
@@ -116,6 +116,7 @@ SpringApp::SpringApp()
 	depthBufferBits = 24;
 	windowState = 0;
 	windowPosX = windowPosY = 0;
+	ogc = NULL;
 }
 
 /**
@@ -124,9 +125,8 @@ SpringApp::SpringApp()
 SpringApp::~SpringApp()
 {
 	delete cmdline;
-	delete[] keys;
 
-	creg::System::FreeClasses ();
+	creg::System::FreeClasses();
 }
 
 /**
@@ -135,6 +135,14 @@ SpringApp::~SpringApp()
  */
 bool SpringApp::Initialize()
 {
+#if !(defined(WIN32) || defined(__APPLE__) || defined(HEADLESS))
+	//! this MUST run before any other X11 call (esp. those by SDL!)
+	if (!XInitThreads()) {
+		LogObject() << "Xlib not thread safe";
+		return false;
+	}
+#endif
+
 #if defined(_WIN32) && defined(__GNUC__)
 	// load QTCreator's gdb helper dll; a variant of this should also work on other OSes
 	{
@@ -178,7 +186,8 @@ bool SpringApp::Initialize()
 		return false;
 	}
 
-	mouseInput = IMouseInput::Get();
+	mouseInput = IMouseInput::GetInstance();
+	keyInput = KeyInput::GetInstance();
 
 	// Global structures
 	gs = new CGlobalSynced();
@@ -193,14 +202,7 @@ bool SpringApp::Initialize()
 	agui::InitGui();
 	palette.Init();
 
-	// Initialize keyboard
-	SDL_EnableUNICODE(1);
-	SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
-	SDL_SetModState(KMOD_NONE);
-
 	input.AddHandler(boost::bind(&SpringApp::MainEventHandler, this, _1));
-	keys = new boost::uint8_t[SDLK_LAST];
-	memset(keys,0,sizeof(boost::uint8_t)*SDLK_LAST);
 
 	LoadFonts();
 
@@ -209,7 +211,6 @@ bool SpringApp::Initialize()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	SDL_GL_SwapBuffers();
 
-	gu->PostInit();
 	globalRendering->PostInit();
 
 	// Initialize named texture handler
@@ -218,10 +219,14 @@ bool SpringApp::Initialize()
 	// Initialize Lua GL
 	LuaOpenGL::Init();
 
+	// Sound
+	ISound::Initialize();
+	InitJoystick();
 
 	SetProcessAffinity(configHandler->Get("SetCoreAffinity", 0));
 
-	InitJoystick();
+	Watchdog::Install();
+
 	// Create CGameSetup and CPreGame objects
 	Startup();
 
@@ -246,10 +251,10 @@ void SpringApp::SetProcessAffinity(int affinity) const {
 		//! Set the affinity
 		HANDLE thread = GetCurrentThread();
 		DWORD_PTR result = 0;
-		if (affinity==1) {
-			result = SetThreadIdealProcessor(thread,(DWORD)wantedCore);
-		} else if (affinity>=2) {
-			result = SetThreadAffinityMask(thread,wantedCore);
+		if (affinity == 1) {
+			result = SetThreadIdealProcessor(thread, (DWORD)wantedCore);
+		} else if (affinity >= 2) {
+			result = SetThreadAffinityMask(thread, wantedCore);
 		}
 
 		if (result > 0) {
@@ -320,7 +325,8 @@ static bool MultisampleTest(void)
  */
 static bool MultisampleVerify(void)
 {
-	GLint buffers, samples;
+	GLint buffers = 0;
+	GLint samples = 0;
 	glGetIntegerv(GL_SAMPLE_BUFFERS_ARB, &buffers);
 	glGetIntegerv(GL_SAMPLES_ARB, &samples);
 	if (buffers && samples) {
@@ -350,9 +356,7 @@ bool SpringApp::InitWindow(const char* title)
 
 	PrintAvailableResolutions();
 
-	// Sets window manager properties
-	SDL_WM_SetIcon(SDL_LoadBMP("spring.bmp"),NULL);
-	SDL_WM_SetCaption(title, title);
+	WindowManagerHelper::SetCaption(title);
 
 	if (!SetSDLVideoMode()) {
 		logOutput.Print("Failed to set SDL video mode: %s", SDL_GetError());
@@ -395,7 +399,12 @@ bool SpringApp::SetSDLVideoMode()
 
 	FSAA = MultisampleTest();
 
-	SDL_Surface *screen = SDL_SetVideoMode(screenWidth, screenHeight, 32, sdlflags);
+	// screen will be freed by SDL_Quit()
+	// from: http://sdl.beuc.net/sdl.wiki/SDL_SetVideoMode
+	// Note 3: This function should be called in the main thread of your application.
+	// User note 1: Some have found that enabling OpenGL attributes like SDL_GL_STENCIL_SIZE (the stencil buffer size) before the video mode has been set causes the application to simply ignore those attributes, while enabling attributes after the video mode has been set works fine.
+	// User note 2: Also note that, in Windows, setting the video mode resets the current OpenGL context. You must execute again the OpenGL initialization code (set the clear color or the shade model, or reload textures, for example) after calling SDL_SetVideoMode. In Linux, however, it works fine, and the initialization code only needs to be executed after the first call to SDL_SetVideoMode (although there is no harm in executing the initialization code after each call to SDL_SetVideoMode, for example for a multiplatform application). 
+	SDL_Surface* screen = SDL_SetVideoMode(screenWidth, screenHeight, 32, sdlflags);
 	if (!screen) {
 		char buf[1024];
 		SNPRINTF(buf, sizeof(buf), "Could not set video mode:\n%s", SDL_GetError());
@@ -536,8 +545,9 @@ bool SpringApp::GetDisplayGeometry()
 				windowState = 1;
 				break;
 			case SW_SHOWMINIMIZED:
-				windowState = 2;
-				break;
+				//! minimized startup breaks SDL_init stuff, so don't store it
+				//windowState = 2;
+				//break;
 			default:
 				windowState = 0;
 		}
@@ -610,7 +620,8 @@ void SpringApp::RestoreWindowPosition()
 				int wState;
 				switch (windowState) {
 					case 1: wState = SW_SHOWMAXIMIZED; break;
-					case 2: wState = SW_SHOWMINIMIZED; break;
+					//Setting the main-window minimized breaks initialization
+					case 2: // wState = SW_SHOWMINIMIZED; break;
 					default: stateChanged = false;
 				}
 				if (stateChanged) {
@@ -744,6 +755,10 @@ void SpringApp::UpdateOldConfigs()
 		configHandler->Delete("DepthBufferBits"); //! update to 24bits
 		configHandler->Set("Version",2);
 	}
+	if (cfgVersion < 3) {
+		configHandler->Delete("AtiHacks"); //! new runtime detection with -1
+		configHandler->Set("Version",3);
+	}
 }
 
 
@@ -775,7 +790,7 @@ void SpringApp::LoadFonts()
 			if (font && smallFont) {
 				break;
 			} else {
-				fi++;
+				++fi;
 			}
 		}
 		if (!font) {
@@ -810,12 +825,9 @@ void SpringApp::ParseCmdLine()
 	cmdline->AddSwitch(0,   "list-ai-interfaces", "Dump a list of available AI Interfaces to stdout");
 	cmdline->AddSwitch(0,   "list-skirmish-ais",  "Dump a list of available Skirmish AIs to stdout");
 
-	try
-	{
+	try {
 		cmdline->Parse();
-	}
-	catch (const std::exception& err)
-	{
+	} catch (const std::exception& err) {
 		std::cerr << err.what() << std::endl << std::endl;
 		cmdline->PrintUsage("Spring", SpringVersion::GetFull());
 		exit(1);
@@ -984,6 +996,7 @@ void SpringApp::Startup()
 #if defined(USE_GML) && GML_ENABLE_SIM
 volatile int gmlMultiThreadSim;
 volatile int gmlStartSim;
+volatile int SpringApp::gmlKeepRunning = 0;
 
 int SpringApp::Sim()
 {
@@ -996,12 +1009,12 @@ int SpringApp::Sim()
 
 		while(gmlKeepRunning) {
 			if(!gmlMultiThreadSim) {
-				CrashHandler::ClearSimWDT(true);
+				Watchdog::ClearTimer("main",true);
 				while(!gmlMultiThreadSim && gmlKeepRunning)
 					SDL_Delay(200);
 			}
 			else if (activeController) {
-				CrashHandler::ClearSimWDT();
+				Watchdog::ClearTimer("main");
 				gmlProcessor->ExpandAuxQueue();
 
 				{
@@ -1018,11 +1031,7 @@ int SpringApp::Sim()
 
 		if(GML_SHARE_LISTS)
 			ogc->WorkerThreadFree();
-	} catch(opengl_error &e) {
-		Threading::SetThreadError(e.what());
-		Threading::GetMainThread()->interrupt();
-		return 0;
-	}
+	} CATCH_SPRING_ERRORS
 
 	return 1;
 }
@@ -1044,7 +1053,7 @@ int SpringApp::Update()
 
 	int ret = 1;
 	if (activeController) {
-		CrashHandler::ClearDrawWDT();
+		Watchdog::ClearTimer("main");
 #if defined(USE_GML) && GML_ENABLE_SIM
 			if (gmlMultiThreadSim) {
 				if (!gs->frameNum) {
@@ -1102,24 +1111,6 @@ int SpringApp::Update()
 }
 
 
-/**
- * Tests SDL keystates and sets values
- * in key array
- */
-void SpringApp::UpdateSDLKeys()
-{
-	int numkeys;
-	boost::uint8_t *state;
-	state = SDL_GetKeyState(&numkeys);
-	memcpy(keys, state, sizeof(boost::uint8_t) * numkeys);
-
-	const SDLMod mods = SDL_GetModState();
-	keys[SDLK_LALT]   = (mods & KMOD_ALT)   ? 1 : 0;
-	keys[SDLK_LCTRL]  = (mods & KMOD_CTRL)  ? 1 : 0;
-	keys[SDLK_LMETA]  = (mods & KMOD_META)  ? 1 : 0;
-	keys[SDLK_LSHIFT] = (mods & KMOD_SHIFT) ? 1 : 0;
-}
-
 
 static void ResetScreenSaverTimeout()
 {
@@ -1166,56 +1157,35 @@ int SpringApp::Run(int argc, char *argv[])
 	if (!Initialize())
 		return -1;
 
-	CrashHandler::InstallHangHandler();
-
 #ifdef USE_GML
-	gmlProcessor=new gmlClientServer<void, int, CUnit*>;
+	gmlProcessor = new gmlClientServer<void, int, CUnit*>;
 #	if GML_ENABLE_SIM
-	gmlKeepRunning=1;
-	gmlStartSim=0;
-	if(GML_SHARE_LISTS)
+	gmlKeepRunning = 1;
+	gmlStartSim = 0;
+
+	if (GML_SHARE_LISTS)
 		ogc = new COffscreenGLContext();
-	gmlProcessor->AuxWork(&SpringApp::Simcb,this); // start sim thread
+	gmlProcessor->AuxWork(&SpringApp::Simcb, this); // start sim thread
 #	endif
 #endif
-	while (true) // end is handled by globalQuit
-	{
+
+	while (!gu->globalQuit) {
 		ResetScreenSaverTimeout();
 
 		{
 			SCOPED_TIMER("Input");
 			SDL_Event event;
+
 			while (SDL_PollEvent(&event)) {
 				input.PushEvent(event);
 			}
 		}
 
-		if (globalQuit)
+		if (!Update())
 			break;
-
-		try {
-			if (!Update())
-				break;
-		} catch (content_error &e) {
-			LogObject() << "Caught content exception: " << e.what() << "\n";
-			handleerror(NULL, e.what(), "Content error", MBF_OK | MBF_EXCL);
-		}
 	}
 
-#ifdef USE_GML
-	#if GML_ENABLE_SIM
-	gmlKeepRunning=0; // wait for sim to finish
-	while(!gmlProcessor->PumpAux())
-		boost::thread::yield();
-	if(GML_SHARE_LISTS)
-		delete ogc;
-	#endif
-	delete gmlProcessor;
-#endif
-
 	SaveWindowPosition();
-
-	CrashHandler::UninstallHangHandler();
 
 	// Shutdown
 	Shutdown();
@@ -1223,27 +1193,57 @@ int SpringApp::Run(int argc, char *argv[])
 }
 
 
+
 /**
  * Deallocates and shuts down game
  */
 void SpringApp::Shutdown()
 {
-	delete pregame;	//in case we exit during init
-	CLoadScreen::DeleteInstance(); // FIXME? (see ~CGame)
-	delete game;
-	delete gameSetup;
-	delete font;
-	delete smallFont;
+	if (gu) gu->globalQuit = true;
+
+#define DeleteAndNull(x) delete x; x = NULL;
+
+#ifdef USE_GML
+	if(gmlProcessor) {
+#if GML_ENABLE_SIM
+		gmlKeepRunning=0; // wait for sim to finish
+		while(!gmlProcessor->PumpAux())
+			boost::thread::yield();
+		if(GML_SHARE_LISTS)
+			DeleteAndNull(ogc);
+#endif
+		DeleteAndNull(gmlProcessor);
+	}
+#endif
+
+	DeleteAndNull(pregame);
+	DeleteAndNull(game);
+	DeleteAndNull(gameServer);
+	DeleteAndNull(gameSetup);
+	CLoadScreen::DeleteInstance();
+	ISound::Shutdown();
+	DeleteAndNull(font);
+	DeleteAndNull(smallFont);
 	CNamedTextures::Kill();
 	GLContext::Free();
 	ConfigHandler::Deallocate();
 	UnloadExtensions();
-	delete mouseInput;
+
+	IMouseInput::FreeInstance(mouseInput);
+	KeyInput::FreeInstance(keyInput);
+
 	SDL_WM_GrabInput(SDL_GRAB_OFF);
+#if !defined(HEADLESS)
+	SDL_QuitSubSystem(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_JOYSTICK);
+#endif
 	SDL_Quit();
-	delete gs;
-	delete gu;
-	delete startsetup;
+
+	DeleteAndNull(gs);
+	DeleteAndNull(gu);
+	DeleteAndNull(startsetup);
+
+	Watchdog::Uninstall();
+
 #ifdef USE_MMGR
 	m_dumpMemoryReport();
 #endif
@@ -1256,7 +1256,7 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 
 			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
-			CrashHandler::ClearDrawWDT(true);
+			Watchdog::ClearTimer("main",true);
 			screenWidth = event.resize.w;
 			screenHeight = event.resize.h;
 #ifndef WIN32
@@ -1273,7 +1273,7 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 
 			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
-			CrashHandler::ClearDrawWDT(true);
+			Watchdog::ClearTimer("main",true);
 			// re-initialize the stencil
 			glClearStencil(0);
 			glClear(GL_STENCIL_BUFFER_BIT); SDL_GL_SwapBuffers();
@@ -1283,11 +1283,11 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			break;
 		}
 		case SDL_QUIT: {
-			globalQuit = true;
+			gu->globalQuit = true;
 			break;
 		}
 		case SDL_ACTIVEEVENT: {
-			CrashHandler::ClearDrawWDT(true);
+			Watchdog::ClearTimer("main",true);
 
 			if (event.active.state & (SDL_APPACTIVE | (globalRendering->fullScreen ? SDL_APPINPUTFOCUS : 0))) {
 				globalRendering->active = !!event.active.gain;
@@ -1321,43 +1321,29 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			break;
 		}
 		case SDL_KEYDOWN: {
-			int i = event.key.keysym.sym;
-			currentUnicode = event.key.keysym.unicode;
+			const boost::uint16_t sym = keyInput->GetNormalizedKeySymbol(event.key.keysym.sym);
+			const bool isRepeat = !!keyInput->GetKeyState(sym);
 
-			const bool isRepeat = !!keys[i];
-
-			UpdateSDLKeys();
+			keyInput->Update(event.key.keysym.unicode, ((keyBindings != NULL)? keyBindings->GetFakeMetaKey(): -1));
 
 			if (activeController) {
-				if (i <= SDLK_DELETE) {
-					i = tolower(i);
-				}
-				else if (i == SDLK_RSHIFT) { i = SDLK_LSHIFT; }
-				else if (i == SDLK_RCTRL)  { i = SDLK_LCTRL;  }
-				else if (i == SDLK_RMETA)  { i = SDLK_LMETA;  }
-				else if (i == SDLK_RALT)   { i = SDLK_LALT;   }
-
-				if (keyBindings) {
-					const int fakeMetaKey = keyBindings->GetFakeMetaKey();
-					if (fakeMetaKey >= 0) {
-						keys[SDLK_LMETA] |= keys[fakeMetaKey];
-					}
-				}
-
-				activeController->KeyPressed(i, isRepeat);
+				activeController->KeyPressed(sym, isRepeat);
 
 				if (activeController->userWriting){
 					// use unicode for printed characters
-					i = event.key.keysym.unicode;
-					if ((i >= SDLK_SPACE) && (i <= 255)) {
+					const boost::uint16_t usym = keyInput->GetCurrentKeyUnicodeChar();
+
+					if ((usym >= SDLK_SPACE) && (usym <= 255)) {
 						CGameController* ac = activeController;
-						if (ac->ignoreNextChar || ac->ignoreChar == char(i)) {
+
+						if (ac->ignoreNextChar || (ac->ignoreChar == (char)usym)) {
 							ac->ignoreNextChar = false;
 						} else {
-							if (i < 255 && (!isRepeat || ac->userInput.length()>0)) {
+							if (usym < 255 && (!isRepeat || ac->userInput.length() > 0)) {
 								const int len = (int)ac->userInput.length();
+								const char str[2] = { (char)usym, 0 };
+
 								ac->writingPos = std::max(0, std::min(len, ac->writingPos));
-								char str[2] = { char(i), 0 };
 								ac->userInput.insert(ac->writingPos, str);
 								ac->writingPos++;
 							}
@@ -1369,33 +1355,16 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			break;
 		}
 		case SDL_KEYUP: {
-			int i = event.key.keysym.sym;
-			currentUnicode = event.key.keysym.unicode;
-
-			UpdateSDLKeys();
+			keyInput->Update(event.key.keysym.unicode, ((keyBindings != NULL)? keyBindings->GetFakeMetaKey(): -1));
 
 			if (activeController) {
-				if (i <= SDLK_DELETE) {
-					i = tolower(i);
-				}
-				else if (i == SDLK_RSHIFT) { i = SDLK_LSHIFT; }
-				else if (i == SDLK_RCTRL)  { i = SDLK_LCTRL;  }
-				else if (i == SDLK_RMETA)  { i = SDLK_LMETA;  }
-				else if (i == SDLK_RALT)   { i = SDLK_LALT;   }
-
-				if (keyBindings) {
-					const int fakeMetaKey = keyBindings->GetFakeMetaKey();
-					if (fakeMetaKey >= 0) {
-						keys[SDLK_LMETA] |= keys[fakeMetaKey];
-					}
-				}
-
-				activeController->KeyReleased(i);
+				activeController->KeyReleased(keyInput->GetNormalizedKeySymbol(event.key.keysym.sym));
 			}
 			break;
 		}
 		default:
 			break;
 	}
+
 	return false;
 }

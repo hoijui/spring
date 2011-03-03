@@ -8,10 +8,13 @@
 #include <assert.h>
 
 #include "Sim/Misc/GlobalConstants.h"
+#include "Rendering/GlobalRendering.h"
+
 #include "MapParser.h"
 #include "Lua/LuaParser.h"
 #include "LogOutput.h"
 #include "Exceptions.h"
+#include <float.h>
 
 
 using namespace std;
@@ -33,13 +36,7 @@ CMapInfo::CMapInfo(const std::string& _mapInfoFile, const string& mapName) : map
 		throw content_error("MapInfo: " + parser->GetErrorLog());
 	}
 
-	resRoot = NULL;
-}
-
-void CMapInfo::Load()
-{
-	LuaParser resParser("gamedata/resources.lua",
-	                    SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
+	LuaParser resParser("gamedata/resources.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
 	if (!resParser.Execute()) {
 		logOutput.Print(resParser.GetErrorLog());
 	}
@@ -73,10 +70,10 @@ void CMapInfo::ReadGlobal()
 {
 	const LuaTable topTable = parser->GetRoot();
 
-	map.humanName    = topTable.GetString("description", map.name);
+	map.description  = topTable.GetString("description", map.name);
 	map.author       = topTable.GetString("author", "");
 
-	map.hardness      = std::max(0.001f, topTable.GetFloat("maphardness", 100.0f));
+	map.hardness      = topTable.GetFloat("maphardness", 100.0f);
 	map.notDeformable = topTable.GetBool("notDeformable", false);
 
 	map.gravity = topTable.GetFloat("gravity", 130.0f);
@@ -90,10 +87,13 @@ void CMapInfo::ReadGlobal()
 	map.voidWater = topTable.GetBool("voidWater", false);
 
 	// clamps
-	map.hardness        = max(0.0f, map.hardness);
-	map.tidalStrength   = max(0.0f, map.tidalStrength);
-	map.maxMetal        = max(0.0f, map.maxMetal);
-	map.extractorRadius = max(0.0f, map.extractorRadius);
+	if (-0.001f < map.hardness && map.hardness <= 0.0f)
+		map.hardness = -0.001f;
+	else if (0.0f <= map.hardness && map.hardness < 0.001f)
+		map.hardness = 0.001f;
+	map.tidalStrength   = max(0.000f, map.tidalStrength);
+	map.maxMetal        = max(0.000f, map.maxMetal);
+	map.extractorRadius = max(0.000f, map.extractorRadius);
 }
 
 
@@ -115,6 +115,9 @@ void CMapInfo::ReadAtmosphere()
 	atmo.fogStart     = atmoTable.GetFloat("fogStart", 0.1f);
 	atmo.fogColor   = atmoTable.GetFloat3("fogColor", float3(0.7f, 0.7f, 0.8f));
 	atmo.skyColor   = atmoTable.GetFloat3("skyColor", float3(0.1f, 0.15f, 0.7f));
+	atmo.skyDir = atmoTable.GetFloat3("skyDir", float3(0.0f, 0.0f, -1.0f));
+	atmo.skyDir.ANormalize();
+	globalRendering->skyDir = atmo.skyDir;
 	atmo.sunColor   = atmoTable.GetFloat3("sunColor", float3(1.0f, 1.0f, 1.0f));
 	atmo.cloudColor = atmoTable.GetFloat3("cloudColor", float3(1.0f, 1.0f, 1.0f));
 	atmo.skyBox = atmoTable.GetString("skyBox", "");
@@ -149,8 +152,16 @@ void CMapInfo::ReadLight()
 {
 	const LuaTable lightTable = parser->GetRoot().SubTable("lighting");
 
-	light.sunDir = lightTable.GetFloat3("sunDir", float3(0.0f, 1.0f, 2.0f));
+	light.sunStartAngle = lightTable.GetFloat("sunStartAngle", 0.0f);
+	light.sunOrbitTime = lightTable.GetFloat("sunOrbitTime", 1440.0f);
+	light.sunDir = lightTable.GetFloat4("sunDir", float4(0.0f, 1.0f, 2.0f, FLT_MAX));
+	bool iscompat = (light.sunDir.w == FLT_MAX);
+	if(iscompat) {
+		light.sunDir = lightTable.GetFloat3("sunDir", float3(0.0f, 1.0f, 2.0f));
+		light.sunDir.w = 0.0f;
+	}
 	light.sunDir.ANormalize();
+	globalRendering->UpdateSunParams(light.sunDir, light.sunStartAngle, light.sunOrbitTime, iscompat);
 
 	light.groundAmbientColor  = lightTable.GetFloat3("groundAmbientColor",
 	                                                float3(0.5f, 0.5f, 0.5f));
@@ -159,6 +170,7 @@ void CMapInfo::ReadLight()
 	light.groundSpecularColor = lightTable.GetFloat3("groundSpecularColor",
 	                                                float3(0.1f, 0.1f, 0.1f));
 	light.groundShadowDensity = lightTable.GetFloat("groundShadowDensity", 0.8f);
+	globalRendering->groundShadowDensity = light.groundShadowDensity;
 
 	light.unitAmbientColor  = lightTable.GetFloat3("unitAmbientColor",
 	                                                float3(0.4f, 0.4f, 0.4f));
@@ -167,6 +179,7 @@ void CMapInfo::ReadLight()
 	light.unitSpecularColor  = lightTable.GetFloat3("unitSpecularColor",
 	                                               light.unitSunColor);
 	light.unitShadowDensity = lightTable.GetFloat("unitShadowDensity", 0.8f);
+	globalRendering->unitShadowDensity = light.unitShadowDensity;
 }
 
 
@@ -286,11 +299,12 @@ void CMapInfo::ReadSmf()
 	smf.grassShadingTexName = mapResTable.GetString("grassShadingTex", "");
 
 	smf.skyReflectModTexName = mapResTable.GetString("skyReflectModTex", "");
+	smf.detailNormalTexName = mapResTable.GetString("detailNormalTex", "");
 
 	if (!smf.detailTexName.empty()) {
 		smf.detailTexName = "maps/" + smf.detailTexName;
 	} else {
-		const LuaTable resGfxMaps = resRoot->SubTable("graphics").SubTable("maps");
+		const LuaTable& resGfxMaps = resRoot->SubTable("graphics").SubTable("maps");
 		smf.detailTexName = resGfxMaps.GetString("detailtex", "detailtex2.bmp");
 		smf.detailTexName = "bitmaps/" + smf.detailTexName;
 	}
@@ -301,6 +315,7 @@ void CMapInfo::ReadSmf()
 	if (!smf.grassBladeTexName.empty()) { smf.grassBladeTexName = "maps/" + smf.grassBladeTexName; }
 	if (!smf.grassShadingTexName.empty()) { smf.grassShadingTexName = "maps/" + smf.grassShadingTexName; }
 	if (!smf.skyReflectModTexName.empty()) { smf.skyReflectModTexName = "maps/" + smf.skyReflectModTexName; }
+	if (!smf.detailNormalTexName.empty()) { smf.detailNormalTexName = "maps/" + smf.detailNormalTexName; }
 
 	// height overrides
 	const LuaTable smfTable = parser->GetRoot().SubTable("smf");
@@ -335,8 +350,7 @@ void CMapInfo::ReadSm3()
 
 void CMapInfo::ReadTerrainTypes()
 {
-	const LuaTable terrTypeTable =
-		parser->GetRoot().SubTable("terrainTypes");
+	const LuaTable terrTypeTable = parser->GetRoot().SubTable("terrainTypes");
 
 	for (int tt = 0; tt < NUM_TERRAIN_TYPES; tt++) {
 		TerrainType& terrType = terrainTypes[tt];
@@ -351,10 +365,10 @@ void CMapInfo::ReadTerrainTypes()
 		terrType.shipSpeed  = moveTable.GetFloat("ship",  1.0f);
 
 		// clamps
-		terrType.hardness   = max(0.0f, terrType.hardness);
-		terrType.tankSpeed  = max(0.0f, terrType.tankSpeed);
-		terrType.kbotSpeed  = max(0.0f, terrType.kbotSpeed);
-		terrType.hoverSpeed = max(0.0f, terrType.hoverSpeed);
-		terrType.shipSpeed  = max(0.0f, terrType.shipSpeed);
+		terrType.hardness   = max(0.001f, terrType.hardness);
+		terrType.tankSpeed  = max(0.000f, terrType.tankSpeed);
+		terrType.kbotSpeed  = max(0.000f, terrType.kbotSpeed);
+		terrType.hoverSpeed = max(0.000f, terrType.hoverSpeed);
+		terrType.shipSpeed  = max(0.000f, terrType.shipSpeed);
 	}
 }

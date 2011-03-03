@@ -297,6 +297,8 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 					${myDependLibFiles}
 					${mySourcesDep}
 				COMMAND "${CMAKE_COMMAND}"
+					"-E" "remove_directory" "${myJavaBuildDir}"
+				COMMAND "${CMAKE_COMMAND}"
 					"-E" "make_directory" "${myJavaBuildDir}"
 				COMMAND "${JAVA_COMPILE}"
 					"${JAVA_COMPILE_FLAG_CONDITIONAL}"
@@ -677,6 +679,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 	target_link_libraries(${myTarget} streflop cutils-streflop)
 	set_target_properties(${myTarget} PROPERTIES COMPILE_FLAGS "-DUSING_STREFLOP")
 	set_target_properties(${myTarget} PROPERTIES OUTPUT_NAME   "AIInterface")
+	FixLibName(${myTarget})
 
 
 	# Build the java part
@@ -693,6 +696,8 @@ if    (BUILD_${myName}_AIINTERFACE)
 
 	add_custom_command(TARGET ${myTarget} POST_BUILD
 		#OUTPUT "${myJavaBuildDir}/${myPkg}/*.class"
+		COMMAND "${CMAKE_COMMAND}"
+			"-E" "remove_directory" "${myJavaBuildDir}"
 		COMMAND "${CMAKE_COMMAND}"
 			"-E" "make_directory" "${myJavaBuildDir}"
 		COMMAND "${JAVA_COMPILE}" ARGS

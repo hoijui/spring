@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _AIAICALLBACK_H
-#define _AIAICALLBACK_H
+#ifndef _AI_AI_CALLBACK_H
+#define _AI_AI_CALLBACK_H
 
 #include "IAICallback.h"
 
@@ -29,6 +29,7 @@ class CAIAICallback : public IAICallback {
 public:
 	CAIAICallback();
 	CAIAICallback(int skirmishAIId, const SSkirmishAICallback* sAICallback);
+	~CAIAICallback();
 
 	void SendTextMsg(const char* text, int zone);
 	void SetLastMsgPos(float3 pos);
@@ -101,17 +102,17 @@ public:
 	bool IsUnitCloaked(int unitid);
 	bool IsUnitParalyzed(int unitid);
 	bool IsUnitNeutral(int unitid);
-	bool GetUnitResourceInfo(int unitid,
-			UnitResourceInfo* resourceInfo);
+	bool GetUnitResourceInfo(int unitid, UnitResourceInfo* resourceInfo);
 
 	const UnitDef* GetUnitDef(const char* unitName);
 	const UnitDef* GetUnitDefById(int unitDefId);
 
-	int InitPath(float3 start, float3 end, int pathType, float goalRadius = 8);
+	int InitPath(float3 start, float3 end, int pathType, float goalRadius);
 	float3 GetNextWaypoint(int pathid);
 	void FreePath(int pathid);
 
-	float GetPathLength(float3 start, float3 end, int pathType, float goalRadius = 8);
+	float GetPathLength(float3 start, float3 end, int pathType,
+			float goalRadius);
 
 	int GetEnemyUnits(int* unitIds, int unitIds_max);
 	int GetEnemyUnitsInRadarAndLos(int* unitIds, int unitIds_max);
@@ -241,9 +242,12 @@ public:
 
 	const float3* GetStartPos();
 
+	unsigned int GetCategoryFlag(const char* categoryName);
+	unsigned int GetCategoriesFlag(const char* categoryNames);
+	void GetCategoryName(int categoryFlag, char* name, int name_sizeMax);
 
-	const char* CallLuaRules(const char* data, int inSize = -1,
-			int* outSize = NULL);
+
+	const char* CallLuaRules(const char* data, int inSize, int* outSize);
 
 	std::map<std::string, std::string> GetMyInfo();
 	std::map<std::string, std::string> GetMyOptionValues();
@@ -268,6 +272,15 @@ private:
 	FeatureDef** featureDefs;
 	int* featureDefFrames;
 	float3 startPos;
+
+	static size_t numClbInstances;
+	static float* heightMap;
+	static float* cornersHeightMap;
+	static float* slopeMap;
+	static unsigned short* losMap;
+	static unsigned short* radarMap;
+	static unsigned short* jammerMap;
+	static unsigned char* metalMap;
 };
 
-#endif // _AIAICALLBACK_H
+#endif // _AI_AI_CALLBACK_H

@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef TAAIRMOVETYPE_H
-#define TAAIRMOVETYPE_H
+#ifndef TA_AIR_MOVE_TYPE_H
+#define TA_AIR_MOVE_TYPE_H
 
 #include "AAirMoveType.h"
 
@@ -20,7 +20,7 @@ public:
 	 * needed to get transport close enough to what is going to be transported.
 	 * better way ?
 	 */
-	bool dontCheckCol;
+	bool loadingUnits;
 	bool bankingAllowed;
 
 	/// to reset altitude back
@@ -68,16 +68,21 @@ public:
 
 
 	CTAAirMoveType(CUnit* owner);
-	~CTAAirMoveType(void);
+	~CTAAirMoveType();
 
 	// MoveType interface
-	virtual void Update();
-	virtual void SlowUpdate();
-	virtual void StartMoving(float3 pos, float goalRadius);
-	virtual void StartMoving(float3 pos, float goalRadius, float speed);
-	virtual void KeepPointingTo(float3 pos, float distance, bool aggressive);
-	virtual void StopMoving();
-	virtual void Idle();
+	bool Update();
+	void SlowUpdate();
+	void StartMoving(float3 pos, float goalRadius);
+	void StartMoving(float3 pos, float goalRadius, float speed);
+	void KeepPointingTo(float3 pos, float distance, bool aggressive);
+	void StopMoving();
+
+	void ForceHeading(short h);
+	void SetGoal(float3 newPos, float distance);
+	void SetState(AircraftState newState);
+	void SetWantedAltitude(float altitude);
+	void SetDefaultAltitude(float altitude);
 
 	// Main state handlers
 	void UpdateLanded();
@@ -87,25 +92,21 @@ public:
 	void UpdateCircling();
 	void UpdateHovering();
 
+private:
 	// Helpers for (multiple) state handlers
 	void UpdateHeading();
 	void UpdateBanking(bool noBanking);
 	void UpdateAirPhysics();
 	void UpdateMoveRate();
 
-	void SetGoal(float3 newPos, float distance);
-	void SetState(AircraftState newState);
-
-	bool CanLandAt(float3 pos);
+	bool CanLandAt(const float3& pos) const;
 	void ExecuteStop();
-	void ForceHeading(short h);
-	void SetWantedAltitude(float altitude);
-	void SetDefaultAltitude(float altitude);
-	void CheckForCollision(void);
 	void DependentDied(CObject* o);
 
 	void Takeoff();
-	bool IsFighter();
+	bool IsFighter() const;
+
+	bool HandleCollisions();
 };
 
-#endif // TAAIRMOVETYPE_H
+#endif // TA_AIR_MOVE_TYPE_H

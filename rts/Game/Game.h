@@ -34,6 +34,7 @@ private:
 
 public:
 	void LoadGame(const std::string& mapname);
+	void SetupRenderingParams();
 
 private:
 	void LoadDefs();
@@ -150,6 +151,8 @@ private:
 	void ReColorTeams();
 
 	void ReloadCOB(const std::string& msg, int player);
+	void ReloadCEGs(const std::string& tag);
+
 	void StartSkip(int toFrame);
 	void DrawSkip(bool blackscreen = true);
 	void EndSkip();

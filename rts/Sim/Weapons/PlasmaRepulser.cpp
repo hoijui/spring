@@ -12,7 +12,7 @@
 #include "Sim/Projectiles/Unsynced/RepulseGfx.h"
 #include "Sim/Projectiles/Unsynced/ShieldPartProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/WeaponProjectile.h"
-#include "Sim/Units/COB/UnitScript.h"
+#include "Sim/Units/Scripts/UnitScript.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
@@ -126,18 +126,11 @@ void CPlasmaRepulser::Update(void)
 
 		if (drawMe || wasDrawn) {
 			const float colorMix = std::min(1.0f, curPower / std::max(1.0f, weaponDef->shieldPower));
-			const float3 color = (weaponDef->shieldGoodColor * colorMix) +
-													 (weaponDef->shieldBadColor * (1.0f - colorMix));
+			const float3 color = (weaponDef->shieldGoodColor * colorMix)
+					+ (weaponDef->shieldBadColor * (1.0f - colorMix));
 			std::list<CShieldPartProjectile*>::iterator si;
 			for (si = visibleShieldParts.begin(); si != visibleShieldParts.end(); ++si) {
-				CShieldPartProjectile* part = *si;
-				part->centerPos = weaponPos;
-				part->color = color;
-				if (isEnabled) {
-					part->baseAlpha = drawAlpha;
-				} else {
-					part->baseAlpha = 0.0f;
-				}
+				(*si)->Actualize(weaponPos, color, isEnabled ? drawAlpha : 0.0f);
 			}
 		}
 		wasDrawn = drawMe;

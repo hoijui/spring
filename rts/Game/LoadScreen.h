@@ -8,7 +8,7 @@
 #include <boost/thread/recursive_mutex.hpp>
 
 #include "GameController.h"
-#include "Rendering/GL/myGL.h"
+/// #include "Rendering/GL/myGL.h"
 #include "System/LoadSave/LoadSaveHandler.h"
 #include "System/OffscreenGLContext.h"
 #include "myTime.h"
@@ -27,6 +27,7 @@ public:
 
 public:
 	static CLoadScreen* GetInstance() {
+		assert(singleton);
 		return singleton;
 	}
 	static void CreateInstance(const std::string& mapName, const std::string& modName, ILoadSaveHandler* saveFile);
@@ -62,7 +63,7 @@ private:
 	COffscreenGLThread* gameLoadThread;
 	bool mt_loading;
 
-	GLuint startupTexture;
+	unsigned int startupTexture;
 	float aspectRatio;
 	spring_time last_draw;
 };

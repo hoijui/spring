@@ -1,12 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 /*
- * This file has to be C99 compatible, as it is not only used by the engine,
+ * This file has to be C90 compatible, as it is not only used by the engine,
  * but also by AIs.
  */
 
-#ifndef _MAINDEFINES_H
-#define _MAINDEFINES_H
+#ifndef _MAIN_DEFINES_H
+#define _MAIN_DEFINES_H
 
 #include <stdio.h>
 
@@ -22,8 +22,10 @@
 // define a common indicator for 32bit or 64bit-ness
 #if defined _WIN64 || defined __LP64__ || defined __ppc64__ || defined __ILP64__ || defined __SILP64__ || defined __LLP64__ || defined(__sparcv9)
 #define __arch64__
+#define __archBits__ 64
 #else
 #define __arch32__
+#define __archBits__ 32
 #endif
 
 // define a cross-platform/-compiler compatible "%z" format replacement for
@@ -96,35 +98,47 @@
 
 // define a platform independent path separator C-string and char
 #ifndef sPS
-#ifdef _WIN32
-#define sPS "\\"
-#else // _WIN32
-#define sPS "/"
-#endif // _WIN32
+	#define sPS_WIN32 "\\"
+	#define sPS_POSIX "/"
+
+	#ifdef    _WIN32
+	#define sPS sPS_WIN32
+	#else  // _WIN32
+	#define sPS sPS_POSIX
+	#endif // _WIN32
 #endif // sPS
 #ifndef cPS
-#ifdef _WIN32
-#define cPS '\\'
-#else // _WIN32
-#define cPS '/'
-#endif // _WIN32
+	#define cPS_WIN32 '\\'
+	#define cPS_POSIX '/'
+
+	#ifdef    _WIN32
+	#define cPS cPS_WIN32
+	#else  // _WIN32
+	#define cPS cPS_POSIX
+	#endif // _WIN32
 #endif // cPS
 
 // define a platform independent path delimitter C-string and char
 #ifndef sPD
-#ifdef _WIN32
-#define sPD ";"
-#else // _WIN32
-#define sPD ":"
-#endif // _WIN32
+	#define sPD_WIN32 ";"
+	#define sPD_POSIX ":"
+
+	#ifdef    _WIN32
+	#define sPD sPD_WIN32
+	#else  // _WIN32
+	#define sPD sPD_POSIX
+	#endif // _WIN32
 #endif // sPD
 #ifndef cPD
-#ifdef _WIN32
-#define cPD ';'
-#else // _WIN32
-#define cPD ':'
-#endif // _WIN32
+	#define cPD_WIN32 ';'
+	#define cPD_POSIX ':'
+
+	#ifdef    _WIN32
+	#define cPD cPD_WIN32
+	#else  // _WIN32
+	#define cPD cPD_POSIX
+	#endif // _WIN32
 #endif // cPD
 
 
-#endif // _MAINDEFINES_H
+#endif // _MAIN_DEFINES_H

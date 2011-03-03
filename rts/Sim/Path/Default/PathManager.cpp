@@ -15,13 +15,17 @@
 #include "System/myMath.h"
 #include "System/TimeProfiler.h"
 
+#define PM_UNCONSTRAINED_MAXRES_FALLBACK_SEARCH 0
+#define PM_UNCONSTRAINED_MEDRES_FALLBACK_SEARCH 1
+#define PM_UNCONSTRAINED_LOWRES_FALLBACK_SEARCH 1
+
 
 
 CPathManager::CPathManager(): nextPathId(0)
 {
 	maxResPF = new CPathFinder();
-	medResPE = new CPathEstimator(maxResPF,  8, CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN, "pe",  mapInfo->map.name);
-	lowResPE = new CPathEstimator(maxResPF, 32, CMoveMath::BLOCK_STRUCTURE | CMoveMath::BLOCK_TERRAIN, "pe2", mapInfo->map.name);
+	medResPE = new CPathEstimator(maxResPF,  8, "pe",  mapInfo->map.name);
+	lowResPE = new CPathEstimator(maxResPF, 32, "pe2", mapInfo->map.name);
 
 	logOutput.Print("[CPathManager] pathing data checksum: %08x\n", GetPathCheckSum());
 
@@ -59,15 +63,11 @@ unsigned int CPathManager::RequestPath(
 	float3 sp(startPos); sp.CheckInBounds();
 	float3 gp(goalPos); gp.CheckInBounds();
 
-	// ?
-	// if (sp.x > (gs->mapx * SQUARE_SIZE - 5)) { sp.x = gs->mapx * SQUARE_SIZE - 5; }
-	// if (gp.z > (gs->mapy * SQUARE_SIZE - 5)) { gp.z = gs->mapy * SQUARE_SIZE - 5; }
-
 	// Create an estimator definition.
-	CRangedGoalWithCircularConstraint* rangedGoalPED = new CRangedGoalWithCircularConstraint(sp, gp, goalRadius, 3.0f, 2000);
+	CRangedGoalWithCircularConstraint* pfDef = new CRangedGoalWithCircularConstraint(sp, gp, goalRadius, 3.0f, 2000);
 
 	// Make request.
-	return RequestPath(moveData, sp, gp, rangedGoalPED, caller, synced);
+	return RequestPath(moveData, sp, gp, pfDef, caller, synced);
 }
 
 /*
@@ -87,6 +87,7 @@ unsigned int CPathManager::RequestPath(
 	moveData->tempOwner = caller;
 
 	// Creates a new multipath.
+	IPath::SearchResult result = IPath::Error;
 	MultiPath* newPath = new MultiPath(startPos, pfDef, moveData);
 	newPath->finalGoal = goalPos;
 	newPath->caller = caller;
@@ -96,93 +97,62 @@ unsigned int CPathManager::RequestPath(
 	}
 
 	const int ownerId = caller? caller->id: 0;
-	unsigned int retValue = 0;
+	unsigned int pathID = 0;
 
-	// choose the PF or the PE depending on the goal-distance
-	const float distanceToGoal = pfDef->Heuristic(int(startPos.x / SQUARE_SIZE), int(startPos.z / SQUARE_SIZE));
+	// choose the PF or the PE depending on the projected 2D goal-distance
+	// NOTE: this distance can be far smaller than the actual path length!
+	const float goalDist2D = pfDef->Heuristic(startPos.x / SQUARE_SIZE, startPos.z / SQUARE_SIZE) + fabs(goalPos.y - startPos.y) / SQUARE_SIZE;
 
-	if (distanceToGoal < DETAILED_DISTANCE) {
-		// Get a detailed path.
-		IPath::SearchResult result =
-			maxResPF->GetPath(*moveData, startPos, *pfDef, newPath->maxResPath, true, false, MAX_SEARCHED_NODES_PF, true, ownerId, synced);
-		newPath->searchResult = result;
+	if (goalDist2D < DETAILED_DISTANCE) {
+		result = maxResPF->GetPath(*moveData, startPos, *pfDef, newPath->maxResPath, true, false, MAX_SEARCHED_NODES_PF >> 3, true, ownerId, synced);
 
-		if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-			retValue = Store(newPath);
-		} else {
-			delete newPath;
+		#if (PM_UNCONSTRAINED_MAXRES_FALLBACK_SEARCH == 1)
+		// unnecessary so long as a fallback path exists within the
+		// {med, low}ResPE's restricted search region (in many cases
+		// where it does not, the goal position is unreachable anyway)
+		pfDef->DisableConstraint(true);
+		#endif
+
+		// fallback (note that this uses the estimators as backup,
+		// unconstrained PF queries are too expensive on average)
+		if (result != IPath::Ok) {
+			result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 		}
-	} else if (distanceToGoal < ESTIMATE_DISTANCE) {
-		// Get an estimate path.
-		IPath::SearchResult result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE, synced);
-		newPath->searchResult = result;
+		if (result != IPath::Ok) {
+			result = lowResPE->GetPath(*moveData, startPos, *pfDef, newPath->lowResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
+		}
+	} else if (goalDist2D < ESTIMATE_DISTANCE) {
+		result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 
-		if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-			// Turn a part of it into detailed path.
-			MedRes2MaxRes(*newPath, startPos, ownerId, synced);
-			// Store the path.
-			retValue = Store(newPath);
-		} else {
-			// if we fail see if it can work find a better block to start from
-			float3 sp = medResPE->FindBestBlockCenter(moveData, startPos, synced);
+		#if (PM_UNCONSTRAINED_MEDRES_FALLBACK_SEARCH == 1)
+		pfDef->DisableConstraint(true);
+		#endif
 
-			if (sp.x != 0 &&
-				(((int) sp.x) / (SQUARE_SIZE * 8) != ((int) startPos.x) / (SQUARE_SIZE * 8) ||
-				((int) sp.z) / (SQUARE_SIZE * 8) != ((int) startPos.z) / (SQUARE_SIZE * 8))) {
-				IPath::SearchResult result = medResPE->GetPath(*moveData, sp, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE, synced);
-				newPath->searchResult = result;
-
-				if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-					MedRes2MaxRes(*newPath, startPos, ownerId, synced);
-					retValue = Store(newPath);
-				} else {
-					delete newPath;
-				}
-			} else {
-				delete newPath;
-			}
+		// fallback
+		if (result != IPath::Ok) {
+			result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 		}
 	} else {
-		// Get a low-res. estimate path.
-		IPath::SearchResult result = lowResPE->GetPath(*moveData, startPos, *pfDef, newPath->lowResPath, MAX_SEARCHED_NODES_PE, synced);
-		newPath->searchResult = result;
+		result = lowResPE->GetPath(*moveData, startPos, *pfDef, newPath->lowResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 
-		if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-			// Turn a part of it into hi-res. estimate path.
-			LowRes2MedRes(*newPath, startPos, ownerId, synced);
-			// And estimate into detailed.
-			MedRes2MaxRes(*newPath, startPos, ownerId, synced);
+		#if (PM_UNCONSTRAINED_LOWRES_FALLBACK_SEARCH == 1)
+		pfDef->DisableConstraint(true);
+		#endif
 
-			// Store the path.
-			retValue = Store(newPath);
-		} else {
-			// sometimes the 32*32 squares can be wrong (admissibility...) so if it fails to get a path also try with 8*8 squares
-			IPath::SearchResult result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE, synced);
-			newPath->searchResult = result;
-
-			if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-				MedRes2MaxRes(*newPath, startPos, ownerId, synced);
-				retValue = Store(newPath);
-			} else {
-				// 8*8 can also fail rarely, so see if we can find a better 8*8 to start from
-				float3 sp = medResPE->FindBestBlockCenter(moveData, startPos, synced);
-
-				if (sp.x != 0 &&
-					(((int) sp.x) / (SQUARE_SIZE * 8) != ((int) startPos.x) / (SQUARE_SIZE * 8) ||
-					((int) sp.z) / (SQUARE_SIZE * 8) != ((int) startPos.z) / (SQUARE_SIZE * 8))) {
-					IPath::SearchResult result = medResPE->GetPath(*moveData, sp, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE, synced);
-
-					if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
-						MedRes2MaxRes(*newPath, startPos, ownerId, synced);
-						retValue = Store(newPath);
-					} else {
-						delete newPath;
-					}
-				} else {
-					delete newPath;
-				}
-			}
+		// fallback
+		if (result != IPath::Ok) {
+			result = lowResPE->GetPath(*moveData, startPos, *pfDef, newPath->lowResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 		}
+	}
+
+	if (result == IPath::Ok || result == IPath::GoalOutOfRange) {
+		LowRes2MedRes(*newPath, startPos, ownerId, synced);
+		MedRes2MaxRes(*newPath, startPos, ownerId, synced);
+
+		newPath->searchResult = result;
+		pathID = Store(newPath);
+	} else {
+		delete newPath;
 	}
 
 	if (caller) {
@@ -190,7 +160,7 @@ unsigned int CPathManager::RequestPath(
 	}
 
 	moveData->tempOwner = NULL;
-	return retValue;
+	return pathID;
 }
 
 
@@ -236,12 +206,12 @@ void CPathManager::MedRes2MaxRes(MultiPath& multiPath, const float3& startPos, i
 
 	// Perform the search.
 	// If this is the final improvement of the path, then use the original goal.
-	IPath::SearchResult result;
+	IPath::SearchResult result = IPath::Error;
 
 	if (medResPath.path.empty() && lowResPath.path.empty()) {
-		result = maxResPF->GetPath(*multiPath.moveData, startPos, *multiPath.peDef, maxResPath, true, false, MAX_SEARCHED_NODES_PF, true, ownerId, synced);
+		result = maxResPF->GetPath(*multiPath.moveData, startPos, *multiPath.peDef, maxResPath, true, false, MAX_SEARCHED_NODES_PF >> 3, true, ownerId, synced);
 	} else {
-		result = maxResPF->GetPath(*multiPath.moveData, startPos, rangedGoalPFD, maxResPath, true, false, MAX_SEARCHED_NODES_PF, true, ownerId, synced);
+		result = maxResPF->GetPath(*multiPath.moveData, startPos, rangedGoalPFD, maxResPath, true, false, MAX_SEARCHED_NODES_PF >> 3, true, ownerId, synced);
 	}
 
 	// If no refined path could be found, set goal as desired goal.
@@ -282,7 +252,7 @@ void CPathManager::LowRes2MedRes(MultiPath& multiPath, const float3& startPos, i
 
 	// Perform the search.
 	// If there is no estimate2 path left, use original goal.
-	IPath::SearchResult result;
+	IPath::SearchResult result = IPath::Error;
 
 	if (lowResPath.path.empty()) {
 		result = medResPE->GetPath(*multiPath.moveData, startPos, *multiPath.peDef, medResPath, MAX_SEARCHED_NODES_ON_REFINE, synced);
@@ -557,6 +527,7 @@ bool CPathManager::SetNodeExtraCosts(const float* costs, unsigned int sizex, uns
 	PathNodeStateBuffer& medResBuf = medResPE->GetNodeStateBuffer();
 	PathNodeStateBuffer& lowResBuf = lowResPE->GetNodeStateBuffer();
 
+	// make all buffers share the same cost-overlay
 	maxResBuf.SetNodeExtraCosts(costs, sizex, sizez, synced);
 	medResBuf.SetNodeExtraCosts(costs, sizex, sizez, synced);
 	lowResBuf.SetNodeExtraCosts(costs, sizex, sizez, synced);
@@ -567,11 +538,13 @@ float CPathManager::GetNodeExtraCost(unsigned int x, unsigned int z, bool synced
 	if (x >= gs->mapx) { return 0.0f; }
 	if (z >= gs->mapy) { return 0.0f; }
 
-	PathNodeStateBuffer& maxResBuf = maxResPF->GetNodeStateBuffer();
-	return (maxResBuf.GetNodeExtraCost(x, z, synced));
+	const PathNodeStateBuffer& maxResBuf = maxResPF->GetNodeStateBuffer();
+	const float cost = maxResBuf.GetNodeExtraCost(x, z, synced);
+	return cost;
 }
 
 const float* CPathManager::GetNodeExtraCosts(bool synced) const {
 	const PathNodeStateBuffer& buf = maxResPF->GetNodeStateBuffer();
-	return (buf.GetNodeExtraCosts(synced));
+	const float* costs = buf.GetNodeExtraCosts(synced);
+	return costs;
 }

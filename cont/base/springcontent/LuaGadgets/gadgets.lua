@@ -121,6 +121,10 @@ local callInLists = {
 	"UnitUnloaded",
 	"UnitCloaked",
 	"UnitDecloaked",
+	-- optional
+	-- "UnitUnitCollision",
+	-- "UnitFeatureCollision",
+	-- "UnitMoveFailed",
 	"StockpileChanged",
 
 	-- Feature CallIns
@@ -1177,9 +1181,9 @@ function gadgetHandler:AllowResourceLevel(teamID, res, level)
 end
 
 
-function gadgetHandler:AllowResourceTransfer(teamID, res, level)
+function gadgetHandler:AllowResourceTransfer(oldTeamID, newTeamID, res, amount)
   for _,g in ipairs(self.AllowResourceTransferList) do
-    if (not g:AllowResourceTransfer(teamID, res, level)) then
+    if (not g:AllowResourceTransfer(oldTeamID, newTeamID, res, amount)) then
       return false
     end
   end
@@ -1441,6 +1445,19 @@ function gadgetHandler:UnitDecloaked(unitID, unitDefID, unitTeam)
     g:UnitDecloaked(unitID, unitDefID, unitTeam)
   end
   return
+end
+
+
+function gadgetHandler:UnitUnitCollision(colliderID, collideeID)
+	for _,g in ipairs(self.UnitUnitCollisionList) do
+		g:UnitUnitCollision(colliderID, collideeID)
+	end
+end
+
+function gadgetHandler:UnitFeatureCollision(colliderID, collideeID)
+	for _,g in ipairs(self.UnitFeatureCollisionList) do
+		g:UnitFeatureCollision(colliderID, collideeID)
+	end
 end
 
 

@@ -9,17 +9,17 @@
 #include <string>
 #include "mmgr.h"
 
+#include "Rendering/GL/myGL.h"
 #include "LogOutput.h"
 #include "IconHandler.h"
 #include "Lua/LuaParser.h"
 #include "Textures/Bitmap.h"
 #include "Exceptions.h"
 
+namespace icon {
 using std::string;
 
 CIconHandler* iconHandler = NULL;
-
-
 CIconData CIconHandler::safetyData;
 
 
@@ -251,6 +251,9 @@ CIcon::~CIcon()
 }
 
 
+
+
+
 /******************************************************************************/
 //
 //  CIconData
@@ -270,7 +273,6 @@ CIconData::CIconData() :
 {
 }
 
-
 CIconData::CIconData(const std::string& _name, unsigned int _texID,
                      float _size, float _distance, bool radAdj, bool ownTex,
                      int _xsize, int _ysize)
@@ -282,7 +284,6 @@ CIconData::CIconData(const std::string& _name, unsigned int _texID,
 {
 	distSqr = distance * distance;
 }
-
 
 CIconData::~CIconData()
 {
@@ -297,7 +298,6 @@ void CIconData::Ref()
 	refCount++;
 }
 
-
 void CIconData::UnRef()
 {
 	refCount--;
@@ -305,7 +305,6 @@ void CIconData::UnRef()
 		delete this;
 	}
 }
-
 
 void CIconData::CopyData(const CIconData* iconData)
 {
@@ -320,12 +319,10 @@ void CIconData::CopyData(const CIconData* iconData)
 	ownTexture   = false;
 }
 
-
 void CIconData::BindTexture() const
 {
 	glBindTexture(GL_TEXTURE_2D, texID);
 }
-
 
 void CIconData::Draw(float x0, float y0, float x1, float y1) const
 {
@@ -337,7 +334,6 @@ void CIconData::Draw(float x0, float y0, float x1, float y1) const
 	glTexCoord2f(0.0f, 1.0f); glVertex2f(x0, y1);
 	glEnd();
 }
-
 
 void CIconData::Draw(const float3& botLeft, const float3& botRight,
                      const float3& topLeft, const float3& topRight) const
@@ -353,3 +349,5 @@ void CIconData::Draw(const float3& botLeft, const float3& botRight,
 
 
 /******************************************************************************/
+
+};

@@ -186,13 +186,13 @@ defaultBindings[] = {
 	{ "Ctrl+f4", "viewrot"  },
 	{ "Ctrl+f5", "viewfree" },
 
-	{ "Any+f1",  "showElevation"  },
-	{ "Any+f2",  "ShowPathMap"    },
-	{ "Any+f3",  "LastMsgPos"     },
-	{ "Any+f4",  "ShowMetalMap"   },
-	{ "Any+f5",  "hideinterface"  },
-	{ "Any+f6",  "NoSound"        },
-	{ "Any+f7",  "dynamicSky"     },
+	{ "Any+f1",  "ShowElevation"         },
+	{ "Any+f2",  "ShowPathTraversability"},
+	{ "Any+f3",  "LastMsgPos"            },
+	{ "Any+f4",  "ShowMetalMap"          },
+	{ "Any+f5",  "HideInterface"         },
+	{ "Any+f6",  "NoSound"               },
+	{ "Any+f7",  "DynamicSky"            },
 	{ "Ctrl+Shift+f8", "savegame" },
 #ifdef USE_GML
 	{ "Any+f9",  "showhealthbars" },
@@ -458,11 +458,11 @@ bool CKeyBindings::UnBindAction(const string& command)
 		}
 		if (al.size() <= 0) {
 			KeyMap::iterator it_next = it;
-			it_next++;
+			++it_next;
 			bindings.erase(it);
 			it = it_next;
 		} else {
-			it++;
+			++it;
 		}
 	}
 	return success;

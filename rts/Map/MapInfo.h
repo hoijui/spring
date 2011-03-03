@@ -20,7 +20,6 @@ public:
 	@param mapName human readable mapname e.g. DeltaSiegeDry
 	*/
 	CMapInfo(const std::string& mapInfoFile, const std::string& mapName);
-	void Load(); // fill in infos
 	~CMapInfo();
 
 	/* The settings are just public members because:
@@ -54,17 +53,16 @@ public:
 
 	/** Global settings, ie. from "MAP" section. */
 	struct map_t {
-		std::string name;      ///< The filename as passed to the constructor.
-		std::string humanName; ///< "MAP\\Description"
+		std::string name;        ///< The filename as passed to the constructor.
+		std::string description; ///< "MAP\\Description"
 		std::string author;
-		float hardness;        ///< "MAP\\MapHardness"
+		float hardness;          ///< "MAP\\MapHardness"
 		bool  notDeformable;
 		/** Stores the gravity as a negative number in units/frame^2
 		    (NOT positive units/second^2 as in the mapfile) */
 		float gravity;
 		float tidalStrength;
-		/// what metal value 255 in the metal map is worth
-		float maxMetal;
+		float maxMetal;        ///< what metal value 255 in the metal map is worth
 		float extractorRadius; ///< extraction radius for mines
 		bool  voidWater;
 	} map;
@@ -80,6 +78,7 @@ public:
 		float  fogStart;
 		float4 fogColor;
 		float3 skyColor;
+		float3 skyDir;
 		float3 sunColor;
 		float3 cloudColor;
 		float  minWind;
@@ -104,6 +103,8 @@ public:
 	/** settings read from "MAP\LIGHT" section */
 	struct light_t {
 		float4 sunDir;     ///< Holds vector for the direction of the sun
+		float sunOrbitTime;
+		float sunStartAngle;
 		float3 groundAmbientColor;
 		float3 groundSunColor;
 		float3 groundSpecularColor;
@@ -161,6 +162,7 @@ public:
 		std::string grassBladeTexName;    // defaults to internally-generated texture
 		std::string grassShadingTexName;  // defaults to minimap texture
 		std::string skyReflectModTexName;
+		std::string detailNormalTexName;
 
 		float minHeight;
 		bool  minHeightOverride;

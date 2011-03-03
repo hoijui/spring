@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef S3OTEXTUREHANDLER_H
-#define S3OTEXTUREHANDLER_H
+#ifndef S3O_TEXTURE_HANDLER_H
+#define S3O_TEXTURE_HANDLER_H
 
 #include <map>
 #include <string>
@@ -30,7 +30,7 @@ public:
 
 	void Update();
 	void LoadS3OTexture(S3DModel* model);
-	int LoadS3OTextureNow(const std::string& tex1, const std::string& tex2);
+	int LoadS3OTextureNow(const S3DModel* model);
 	void SetS3oTexture(int num);
 
 	const S3oTex* GetS3oTex(int num) {
@@ -47,4 +47,4 @@ private:
 
 extern CS3OTextureHandler* texturehandlerS3O;
 
-#endif /* S3OTEXTUREHANDLER_H */
+#endif /* S3O_TEXTURE_HANDLER_H */

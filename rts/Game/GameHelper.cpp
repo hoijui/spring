@@ -13,6 +13,7 @@
 #include "Map/ReadMap.h"
 #include "Rendering/Env/BaseWater.h"
 #include "Rendering/GroundDecalHandler.h"
+#include "Rendering/Models/3DModel.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Misc/CollisionHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
@@ -48,7 +49,7 @@ CGameHelper* helper;
 
 CGameHelper::CGameHelper()
 {
-	stdExplosionGenerator = new CStdExplosionGenerator;
+	stdExplosionGenerator = new CStdExplosionGenerator();
 }
 
 CGameHelper::~CGameHelper()
@@ -63,6 +64,8 @@ CGameHelper::~CGameHelper()
 		}
 	}
 }
+
+
 
 //////////////////////////////////////////////////////////////////////
 // Explosions/Damage
@@ -83,9 +86,29 @@ void CGameHelper::DoExplosionDamage(CUnit* unit,
 	// position of its collision volume and "unit radius" by
 	// the volume's minimally-bounding sphere
 	//
-	float3 dif = (unit->midPos + unit->collisionVolume->GetOffsets()) - expPos;
-	const float volRad = unit->collisionVolume->GetBoundingRadius();
-	const float expDist = std::max(dif.Length(), volRad + 0.1f);
+	const int damageFrame = unit->lastAttackedPieceFrame;
+	const LocalModelPiece* piece = unit->lastAttackedPiece;
+	const CollisionVolume* volume = NULL;
+
+	float3 basePos;
+	float3 diffPos;
+
+	if (piece != NULL && unit->unitDef->usePieceCollisionVolumes && damageFrame == gs->frameNum) {
+		volume = piece->GetCollisionVolume();
+		basePos = piece->GetPos() + volume->GetOffsets();
+		basePos = unit->pos + 
+			unit->rightdir * basePos.x +
+			unit->updir    * basePos.y +
+			unit->frontdir * basePos.z;
+	} else {
+		volume = unit->collisionVolume;
+		basePos = unit->midPos + volume->GetOffsets();
+	}
+
+	diffPos = basePos - expPos;
+
+	const float volRad = volume->GetBoundingRadius();
+	const float expDist = std::max(diffPos.Length(), volRad + 0.1f);
 
 	// expDist2 is the distance from the boundary of the
 	// _volume's_ minimally-bounding sphere (!) to the
@@ -105,7 +128,7 @@ void CGameHelper::DoExplosionDamage(CUnit* unit,
 	// that should not be touched)
 	// Clamp expDist to radius to prevent division by zero
 	// (expDist2 can never be > radius). We still need the
-	// original expDist later to normalize dif.
+	// original expDist later to normalize diffPos.
 	// expDist2 _can_ exceed radius when explosion is eg.
 	// on shield surface: in that case don't do any damage
 	float expDist2 = expDist - volRad;
@@ -123,14 +146,15 @@ void CGameHelper::DoExplosionDamage(CUnit* unit,
 
 	float mod  = (expRad - expDist1) / (expRad - expDist1 * edgeEffectiveness);
 	float mod2 = (expRad - expDist2) / (expRad - expDist2 * edgeEffectiveness);
-	dif /= expDist;
-	dif.y += 0.12f;
+
+	diffPos /= expDist;
+	diffPos.y += 0.12f;
 
 	if (mod < 0.01f)
 		mod = 0.01f;
 
-	DamageArray damageDone = damages * mod2;
-	float3 addedImpulse = dif * (damages.impulseFactor * mod * (damages[0] + damages.impulseBoost) * 3.2f);
+	const DamageArray damageDone = damages * mod2;
+	const float3 addedImpulse = diffPos * (damages.impulseFactor * mod * (damages[0] + damages.impulseBoost) * 3.2f);
 
 	if (expDist2 < (expSpeed * 4.0f)) { // damage directly
 		unit->DoDamage(damageDone, owner, addedImpulse, weaponId);
@@ -141,30 +165,32 @@ void CGameHelper::DoExplosionDamage(CUnit* unit,
 }
 
 void CGameHelper::DoExplosionDamage(CFeature* feature,
-	const float3& expPos, float expRad, CUnit* owner, const DamageArray& damages)
+	const float3& expPos, float expRad, const DamageArray& damages)
 {
-	CollisionVolume* cv = feature->collisionVolume;
+	const CollisionVolume* cv = feature->collisionVolume;
 
 	if (cv) {
-		float3 dif = (feature->midPos + cv->GetOffsets()) - expPos;
+		const float3 dif = (feature->midPos + cv->GetOffsets()) - expPos;
+
 		float expDist = std::max(dif.Length(), 0.1f);
 		float expMod = (expRad - expDist) / expRad;
+		float dmgScale = (damages[0] + damages.impulseBoost);
 
 		// always do some damage with explosive stuff
 		// (DDM wreckage etc. is too big to normally
 		// be damaged otherwise, even by BB shells)
 		// NOTE: this will also be only approximate
 		// for non-spherical volumes
-		if ((expRad > 8.0f) && (expDist < (cv->GetBoundingRadius() * 1.1f)) && (expMod < 0.1f)) {
+		if ((expRad > SQUARE_SIZE) && (expDist < (cv->GetBoundingRadius() * 1.1f)) && (expMod < 0.1f)) {
 			expMod = 0.1f;
 		}
+
 		if (expMod > 0.0f) {
-			feature->DoDamage(damages * expMod, owner,
-				dif * (damages.impulseFactor * expMod / expDist *
-				(damages[0] + damages.impulseBoost)));
+			feature->DoDamage(damages * expMod, dif * (damages.impulseFactor * expMod / expDist * dmgScale));
 		}
 	}
 }
+
 
 
 void CGameHelper::Explosion(
@@ -173,82 +199,84 @@ void CGameHelper::Explosion(
 	float expSpeed, CUnit* owner,
 	bool damageGround, float gfxMod,
 	bool ignoreOwner, bool impactOnly,
-	CExplosionGenerator* explosionGraphics, CUnit* hit,
+	IExplosionGenerator* explosionGenerator,
+	CUnit* hitUnit,
 	const float3& impactDir, int weaponId,
-	CFeature* hitfeature
+	CFeature* hitFeature
 ) {
+	const WeaponDef* wd = weaponDefHandler->GetWeaponById(weaponId);
+
 	if (luaUI) {
-		if ((weaponId >= 0) && (weaponId < weaponDefHandler->numWeaponDefs)) {
-			WeaponDef& wd = weaponDefHandler->weaponDefs[weaponId];
-			const float cameraShake = wd.cameraShake;
-			if (cameraShake > 0.0f) {
-				luaUI->ShockFront(cameraShake, expPos, expRad);
-			}
+		if (wd != NULL && wd->cameraShake > 0.0f) {
+			luaUI->ShockFront(wd->cameraShake, expPos, expRad);
 		}
 	}
-
-	bool noGfx = eventHandler.Explosion(weaponId, expPos, owner);
 
 #ifdef TRACE_SYNC
 	tracefile << "Explosion: ";
 	tracefile << expPos.x << " " << damages[0] <<  " " << expRad << "\n";
 #endif
 
-	float h2 = ground->GetHeight2(expPos.x, expPos.z);
+	const bool noGfx = eventHandler.Explosion(weaponId, expPos, owner);
+	const float h2 = ground->GetHeightReal(expPos.x, expPos.z);
+
 	expPos.y = std::max(expPos.y, h2);
 	expRad = std::max(expRad, 1.0f);
 
 	if (impactOnly) {
-		if (hit) {
-			DoExplosionDamage(hit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
-		} else if (hitfeature) {
-			DoExplosionDamage(hitfeature, expPos, expRad, owner, damages);
+		if (hitUnit) {
+			DoExplosionDamage(hitUnit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
+		} else if (hitFeature) {
+			DoExplosionDamage(hitFeature, expPos, expRad, damages);
 		}
 	} else {
 		float height = std::max(expPos.y - h2, 0.0f);
 
-		// damage all units within the explosion radius
-		const vector<CUnit*> &units = qf->GetUnitsExact(expPos, expRad);
-		bool hitUnitDamaged = false;
+		{
+			// damage all units within the explosion radius
+			const vector<CUnit*>& units = qf->GetUnitsExact(expPos, expRad);
+			bool hitUnitDamaged = false;
 
-		for (vector<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
-			CUnit* unit = *ui;
+			for (vector<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
+				CUnit* unit = *ui;
 
-			if (unit == hit) {
-				hitUnitDamaged = true;
+				if (unit == hitUnit) {
+					hitUnitDamaged = true;
+				}
+
+				DoExplosionDamage(unit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
 			}
 
-			DoExplosionDamage(unit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
-		}
-
-		// HACK: for a unit with an offset coldet volume, the explosion
-		// (from an impacting projectile) position might not correspond
-		// to its quadfield position so we need to damage it separately
-		if (hit && !hitUnitDamaged) {
-			DoExplosionDamage(hit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
-		}
-
-
-		// damage all features within the explosion radius
-		const vector<CFeature*> &features = qf->GetFeaturesExact(expPos, expRad);
-		bool hitFeatureDamaged = false;
-
-		for (vector<CFeature*>::const_iterator fi = features.begin(); fi != features.end(); ++fi) {
-			CFeature* feature = *fi;
-
-			if (hitfeature == feature) {
-				hitFeatureDamaged = true;
+			// HACK: for a unit with an offset coldet volume, the explosion
+			// (from an impacting projectile) position might not correspond
+			// to its quadfield position so we need to damage it separately
+			if (hitUnit != NULL && !hitUnitDamaged) {
+				DoExplosionDamage(hitUnit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
 			}
-			DoExplosionDamage(feature, expPos, expRad, owner, damages);
 		}
 
-		if (hitfeature && !hitFeatureDamaged) {
-			DoExplosionDamage(hitfeature, expPos, expRad, owner, damages);
+		{
+			// damage all features within the explosion radius
+			const vector<CFeature*>& features = qf->GetFeaturesExact(expPos, expRad);
+			bool hitFeatureDamaged = false;
+
+			for (vector<CFeature*>::const_iterator fi = features.begin(); fi != features.end(); ++fi) {
+				CFeature* feature = *fi;
+
+				if (feature == hitFeature) {
+					hitFeatureDamaged = true;
+				}
+
+				DoExplosionDamage(feature, expPos, expRad, damages);
+			}
+
+			if (hitFeature != NULL && !hitFeatureDamaged) {
+				DoExplosionDamage(hitFeature, expPos, expRad, damages);
+			}
 		}
 
 		// deform the map
-		if (damageGround && !mapDamage->disabled &&
-		    (expRad > height) && (damages.craterMult > 0.0f)) {
+		if (damageGround && !mapDamage->disabled && (expRad > height) && (damages.craterMult > 0.0f)) {
 			float damage = damages[0] * (1.0f - (height / expRad));
 			if (damage > (expRad * 10.0f)) {
 				damage = expRad * 10.0f; // limit the depth somewhat
@@ -259,16 +287,17 @@ void CGameHelper::Explosion(
 
 	// use CStdExplosionGenerator by default
 	if (!noGfx) {
-		if (!explosionGraphics) {
-			explosionGraphics = stdExplosionGenerator;
+		if (explosionGenerator == NULL) {
+			explosionGenerator = stdExplosionGenerator;
 		}
-		explosionGraphics->Explosion(expPos, damages[0], expRad, owner, gfxMod, hit, impactDir);
+		explosionGenerator->Explosion(0, expPos, damages[0], expRad, owner, gfxMod, hitUnit, impactDir);
 	}
 
-	groundDecals->AddExplosion(expPos, damages[0], expRad);
-
+	groundDecals->AddExplosion(expPos, damages[0], expRad, (wd != NULL && wd->visuals.explosionScar));
 	water->AddExplosion(expPos, damages[0], expRad);
 }
+
+
 
 //////////////////////////////////////////////////////////////////////
 // Raytracing
@@ -1078,24 +1107,21 @@ float3 CGameHelper::GetUnitErrorPos(const CUnit* unit, int allyteam)
 }
 
 
-void CGameHelper::BuggerOff(float3 pos, float radius, bool spherical, bool forced, CUnit* excludeUnit)
+void CGameHelper::BuggerOff(float3 pos, float radius, bool spherical, bool forced, int teamId, CUnit* excludeUnit)
 {
 	const std::vector<CUnit*> &units = qf->GetUnitsExact(pos, radius + SQUARE_SIZE, spherical);
+	const int allyTeamId = teamHandler->AllyTeam(teamId);
 
 	for (std::vector<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
 		CUnit* u = *ui;
 
 		// don't send BuggerOff commands to enemy units
-		bool allied = true;
+		const int uAllyTeamId = u->allyteam;
+		const bool allied = (
+				teamHandler->Ally(uAllyTeamId,  allyTeamId) ||
+				teamHandler->Ally(allyTeamId, uAllyTeamId));
 
-		if (excludeUnit) {
-			const int eAllyTeam = excludeUnit->allyteam;
-			const int uAllyTeam = u->allyteam;
-
-			allied = (teamHandler->Ally(uAllyTeam, eAllyTeam) || teamHandler->Ally(eAllyTeam, uAllyTeam));
-		}
-
-		if (u != excludeUnit && allied && ((!u->unitDef->pushResistant && !u->usingScriptMoveType) || forced)) {
+		if ((u != excludeUnit) && allied && ((!u->unitDef->pushResistant && !u->usingScriptMoveType) || forced)) {
 			u->commandAI->BuggerOff(pos, radius + SQUARE_SIZE);
 		}
 	}
@@ -1249,55 +1275,48 @@ void CGameHelper::Update(void)
 
 /** @return true if there is an allied unit within
     the firing cone of <owner> (that might be hit) */
-bool CGameHelper::TestAllyCone(const float3& from, const float3& weaponDir, float length, float spread, int allyteam, CUnit* owner)
+bool CGameHelper::TestCone(
+	const float3& from,
+	const float3& weaponDir,
+	float length,
+	float spread,
+	const CUnit* owner,
+	unsigned int flags)
 {
-	int quads[1000];
+	int quads[1024];
 	int* endQuad = quads;
+
 	qf->GetQuadsOnRay(from, weaponDir, length, endQuad);
 
 	for (int* qi = quads; qi != endQuad; ++qi) {
 		const CQuadField::Quad& quad = qf->GetQuad(*qi);
-		for (std::list<CUnit*>::const_iterator ui = quad.teamUnits[allyteam].begin(); ui != quad.teamUnits[allyteam].end(); ++ui) {
-			CUnit* u = *ui;
+
+		const std::list<CUnit*>& units =
+			((flags & TEST_ALLIED) != 0)?
+			quad.teamUnits[owner->allyteam]:
+			quad.units;
+
+		for (std::list<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
+			const CUnit* u = *ui;
 
 			if (u == owner)
+				continue;
+
+			if ((flags & TEST_NEUTRAL) != 0 && !u->IsNeutral())
 				continue;
 
 			if (TestConeHelper(from, weaponDir, length, spread, u))
 				return true;
 		}
 	}
+
 	return false;
 }
 
-/** same as TestAllyCone, but looks for neutral units */
-bool CGameHelper::TestNeutralCone(const float3& from, const float3& weaponDir, float length, float spread, CUnit* owner)
-{
-	int quads[1000];
-	int* endQuad = quads;
-	qf->GetQuadsOnRay(from, weaponDir, length, endQuad);
-
-	for (int* qi = quads; qi != endQuad; ++qi) {
-		const CQuadField::Quad& quad = qf->GetQuad(*qi);
-
-		for (std::list<CUnit*>::const_iterator ui = quad.units.begin(); ui != quad.units.end(); ++ui) {
-			CUnit* u = *ui;
-
-			if (u == owner)
-				continue;
-
-			if (u->IsNeutral()) {
-				if (TestConeHelper(from, weaponDir, length, spread, u))
-					return true;
-			}
-		}
-	}
-	return false;
-}
-
-
-/** helper for TestAllyCone and TestNeutralCone
-    @return true if the unit u is in the firing cone, false otherwise */
+/**
+    helper for TestCone
+    @return true if the unit u is in the firing cone
+*/
 bool CGameHelper::TestConeHelper(const float3& from, const float3& weaponDir, float length, float spread, const CUnit* u)
 {
 	// account for any offset, since we want to know if our shots might hit
@@ -1322,56 +1341,53 @@ bool CGameHelper::TestConeHelper(const float3& from, const float3& weaponDir, fl
 
 
 
-/** @return true if there is an allied unit within
+/** @return true if there is an allied or neutral unit within
     the firing trajectory of <owner> (that might be hit) */
-bool CGameHelper::TestTrajectoryAllyCone(const float3& from, const float3& flatdir, float length, float linear, float quadratic, float spread, float baseSize, int allyteam, CUnit* owner)
+bool CGameHelper::TestTrajectoryCone(
+	const float3& from,
+	const float3& flatdir,
+	float length,
+	float linear,
+	float quadratic,
+	float spread,
+	float baseSize,
+	const CUnit* owner,
+	unsigned int flags)
 {
-	int quads[1000];
+	int quads[1024];
 	int* endQuad = quads;
+
 	qf->GetQuadsOnRay(from, flatdir, length, endQuad);
 
 	for (int* qi = quads; qi != endQuad; ++qi) {
 		const CQuadField::Quad& quad = qf->GetQuad(*qi);
-		for (std::list<CUnit*>::const_iterator ui = quad.teamUnits[allyteam].begin(); ui != quad.teamUnits[allyteam].end(); ++ui) {
-			CUnit* u = *ui;
+
+		const std::list<CUnit*>& units =
+			((flags & TEST_ALLIED) != 0)?
+			quad.teamUnits[owner->allyteam]:
+			quad.units;
+
+		for (std::list<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
+			const CUnit* u = *ui;
 
 			if (u == owner)
+				continue;
+
+			if ((flags & TEST_NEUTRAL) != 0 && !u->IsNeutral())
 				continue;
 
 			if (TestTrajectoryConeHelper(from, flatdir, length, linear, quadratic, spread, baseSize, u))
 				return true;
 		}
 	}
+
 	return false;
 }
 
-/** same as TestTrajectoryAllyCone, but looks for neutral units */
-bool CGameHelper::TestTrajectoryNeutralCone(const float3& from, const float3& flatdir, float length, float linear, float quadratic, float spread, float baseSize, CUnit* owner)
-{
-	int quads[1000];
-	int* endQuad = quads;
-	qf->GetQuadsOnRay(from, flatdir, length, endQuad);
-
-	for (int* qi = quads; qi != endQuad; ++qi) {
-		const CQuadField::Quad& quad = qf->GetQuad(*qi);
-		for (std::list<CUnit*>::const_iterator ui = quad.units.begin(); ui != quad.units.end(); ++ui) {
-			CUnit* u = *ui;
-
-			if (u == owner)
-				continue;
-
-			if (u->IsNeutral()) {
-				if (TestTrajectoryConeHelper(from, flatdir, length, linear, quadratic, spread, baseSize, u))
-					return true;
-			}
-		}
-	}
-	return false;
-}
-
-
-/** helper for TestTrajectoryAllyCone and TestTrajectoryNeutralCone
-    @return true if the unit u is in the firing trajectory, false otherwise */
+/**
+    helper for TestTrajectoryCone
+    @return true if the unit u is in the firing trajectory
+*/
 bool CGameHelper::TestTrajectoryConeHelper(const float3& from, const float3& flatdir, float length, float linear, float quadratic, float spread, float baseSize, const CUnit* u)
 {
 	const CollisionVolume* cv = u->collisionVolume;

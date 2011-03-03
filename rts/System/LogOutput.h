@@ -92,7 +92,7 @@ public:
 
 
 /**
- * @brief logging class 
+ * @brief logging class
  * Global object to write log info to.
  * Game UI elements that display log can subscribe to it to receive the log messages.
  */
@@ -151,7 +151,7 @@ public:
 	 * @brief returns the absolute path to the log file
 	 *
 	 * Relative paths are relative to the writeable data-dir.
-	 * This method may only be called after the logger got initialzized.
+	 * This method may only be called after the logger got initialized.
 	 * @see Initialize()
 	 */
 	const std::string& GetFilePath() const;
@@ -241,3 +241,4 @@ extern CLogOutput logOutput;
 #undef FORMATSTRING
 
 #endif // LOGOUTPUT_H
+

@@ -211,7 +211,7 @@ CCommandAI::CCommandAI(CUnit* owner):
 		c.type = CMDTYPE_ICON_MODE;
 		c.name = "Fire state";
 		c.mouseicon = c.name;
-		c.params.push_back("2");
+		c.params.push_back(IntToString(FIRESTATE_FIREATWILL));
 		c.params.push_back("Hold fire");
 		c.params.push_back("Return fire");
 		c.params.push_back("Fire at will");
@@ -227,7 +227,7 @@ CCommandAI::CCommandAI(CUnit* owner):
 		c.type = CMDTYPE_ICON_MODE;
 		c.name = "Move state";
 		c.mouseicon = c.name;
-		c.params.push_back("1");
+		c.params.push_back(IntToString(MOVESTATE_MANEUVER));
 		c.params.push_back("Hold pos");
 		c.params.push_back("Maneuver");
 		c.params.push_back("Roam");
@@ -235,7 +235,7 @@ CCommandAI::CCommandAI(CUnit* owner):
 		possibleCommands.push_back(c);
 		nonQueingCommands.insert(CMD_MOVE_STATE);
 	} else {
-		owner->moveState = 0;
+		owner->moveState = MOVESTATE_HOLDPOS;
 	}
 
 	if (owner->unitDef->canRepeat) {
@@ -335,8 +335,9 @@ vector<CommandDescription>& CCommandAI::GetPossibleCommands()
 bool CCommandAI::isAttackCapable() const
 {
 	const UnitDef* ud = owner->unitDef;
-	return (ud->canAttack &&
-	        (!ud->weapons.empty() || ud->canKamikaze || (ud->type == "Factory")));
+	const bool b = (!ud->weapons.empty() || ud->canKamikaze || (ud->IsFactoryUnit()));
+
+	return (ud->canAttack && b);
 }
 
 
@@ -347,7 +348,7 @@ static inline const CUnit* GetCommandUnit(const Command& c, int idx) {
 	}
 
 	if (c.IsAreaCommand()) {
-		return false;
+		return NULL;
 	}
 
 	const CUnit* unit = uh->GetUnit(c.params[idx]);
@@ -420,7 +421,7 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 
 					// check if attack ground is really attack ground
 					if (!aiOrder && !fromSynced &&
-						fabs(cPos.y - ground->GetHeight2(cPos.x, cPos.z)) > SQUARE_SIZE) {
+						fabs(cPos.y - ground->GetHeightReal(cPos.x, cPos.z)) > SQUARE_SIZE) {
 						return false;
 					}
 				}
@@ -453,15 +454,16 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 			const CUnit* reclaimeeUnit = GetCommandUnit(c, 0);
 			const CFeature* reclaimeeFeature = NULL;
 
+			if (c.IsAreaCommand()) { return true; }
 			if (!ud->canReclaim) { return false; }
 			if (reclaimeeUnit && !reclaimeeUnit->unitDef->reclaimable) { return false; }
 			if (reclaimeeUnit && !reclaimeeUnit->AllowedReclaim(owner)) { return false; }
 			if (reclaimeeUnit && !reclaimeeUnit->pos.IsInBounds()) { return false; }
 
-			if (reclaimeeUnit == NULL && !c.IsAreaCommand()) {
+			if (reclaimeeUnit == NULL && !c.params.empty()) {
 				const unsigned int reclaimeeFeatureID(c.params[0]);
 
-				if (!c.params.empty() && reclaimeeFeatureID >= uh->MaxUnits()) {
+				if (reclaimeeFeatureID >= uh->MaxUnits()) {
 					reclaimeeFeature = featureHandler->GetFeature(reclaimeeFeatureID - uh->MaxUnits());
 
 					if (reclaimeeFeature && !reclaimeeFeature->def->reclaimable) {
@@ -714,7 +716,7 @@ void CCommandAI::GiveAllowedCommand(const Command& c, bool fromSynced)
 
 	if (c.id == CMD_PATROL) {
 		CCommandQueue::iterator ci = commandQue.begin();
-		for (; ci != commandQue.end() && ci->id != CMD_PATROL; ci++) {
+		for (; ci != commandQue.end() && ci->id != CMD_PATROL; ++ci) {
 			// just increment
 		}
 		if (ci == commandQue.end()) {
@@ -729,7 +731,7 @@ void CCommandAI::GiveAllowedCommand(const Command& c, bool fromSynced)
 			}
 			else {
 				do {
-					ci--;
+					--ci;
 					if (ci->params.size() >= 3) {
 						Command c2;
 						c2.id = CMD_PATROL;
@@ -906,7 +908,7 @@ void CCommandAI::ExecuteInsert(const Command& c, bool fromSynced)
 			return;
 		}
 		if ((c.options & RIGHT_MOUSE_KEY) && (insertIt != queue->end())) {
-			insertIt++; // insert after the tagged command
+			++insertIt; // insert after the tagged command
 		}
 	}
 
@@ -941,21 +943,24 @@ void CCommandAI::ExecuteInsert(const Command& c, bool fromSynced)
 
 void CCommandAI::ExecuteRemove(const Command& c)
 {
+	CCommandQueue* queue = &commandQue;
+	CFactoryCAI* facCAI = dynamic_cast<CFactoryCAI*>(this);
+
+	// if false, remove commands by tag
+	const bool removeByID = (c.options & ALT_KEY);
 	// disable repeating during the removals
 	const bool prevRepeat = repeatOrders;
-	repeatOrders = false;
 
-	CCommandQueue* queue = &commandQue;
-
+	// erase commands by a list of command types
+	bool active = false;
 	bool facBuildQueue = false;
-	CFactoryCAI* facCAI = dynamic_cast<CFactoryCAI*>(this);
 
 	if (facCAI) {
 		if (c.options & CONTROL_KEY) {
-			// check the build order
+			// keep using the build-order queue
 			facBuildQueue = true;
 		} else {
-			// use the new commands
+			// use the command-queue for new units
 			queue = &facCAI->newUnitCommands;
 		}
 	}
@@ -964,20 +969,24 @@ void CCommandAI::ExecuteRemove(const Command& c)
 		return;
 	}
 
-	// erase commands by a list of command types
-	bool active = false;
-	for (unsigned int p = 0; p < c.params.size(); p++) {
-		const int removeValue = (int)c.params[p]; // tag or id
+	repeatOrders = false;
 
-		if (facBuildQueue && (removeValue == 0) && !(c.options & ALT_KEY)) {
-			continue; // don't remove tag=0 commands from build queues, they
-			          // are used the same way that CMD_STOP is, to void orders
+	for (unsigned int p = 0; p < c.params.size(); p++) {
+		const int removeValue = c.params[p]; // tag or id
+
+		if (facBuildQueue && !removeByID && (removeValue == 0)) {
+			// don't remove commands with tag 0 from build queues, they
+			// are used the same way that CMD_STOP is (to void orders)
+			continue;
 		}
+
 		CCommandQueue::iterator ci;
+
 		do {
 			for (ci = queue->begin(); ci != queue->end(); ++ci) {
 				const Command& qc = *ci;
-				if (c.options & ALT_KEY) {
+
+				if (removeByID) {
 					if (qc.id != removeValue)  { continue; }
 				} else {
 					if (qc.tag != removeValue) { continue; }
@@ -988,9 +997,11 @@ void CCommandAI::ExecuteRemove(const Command& c)
 				}
 
 				if (facBuildQueue) {
-					facCAI->RemoveBuildCommand(ci);
-					ci = queue->begin();
-					break; // the removal may have corrupted the iterator
+					// if ci == queue->begin() and !queue->empty(), this pop_front()'s
+					// via CFAI::ExecuteStop; otherwise only modifies *ci (not <queue>)
+					if (facCAI->RemoveBuildCommand(ci)) {
+						ci = queue->begin(); break;
+					}
 				}
 
 				if (!facCAI && (ci == queue->begin())) {
@@ -1002,16 +1013,18 @@ void CCommandAI::ExecuteRemove(const Command& c)
 					}
 					active = true;
 				}
+
 				queue->erase(ci);
 				ci = queue->begin();
-				break; // the removal may have corrupted the iterator
+
+				// the removal may have corrupted the iterator
+				break;
 			}
 		}
 		while (ci != queue->end());
 	}
 
 	repeatOrders = prevRepeat;
-	return;
 }
 
 
@@ -1036,7 +1049,7 @@ CCommandQueue::iterator CCommandAI::GetCancelQueued(const Command &c,
 
 	while (ci != q.begin()) {
 
-		ci--; //iterate from the end and dont check the current order
+		--ci; //iterate from the end and dont check the current order
 		const Command& t = *ci;
 
 		if (((c.id == t.id) || ((c.id < 0) && (t.id < 0))
@@ -1090,21 +1103,21 @@ int CCommandAI::CancelCommands(const Command &c, CCommandQueue& q,
 		CCommandQueue::iterator firstErase = ci;
 		CCommandQueue::iterator lastErase = ci;
 
-		ci++;
+		++ci;
 		if ((ci != q.end()) && (ci->id == CMD_SET_WANTED_MAX_SPEED)) {
 			lastErase = ci;
 			cancelCount++;
-			ci++;
+			++ci;
 		}
 
 		if ((ci != q.end()) && (ci->id == CMD_WAIT)) {
   		waitCommandsAI.RemoveWaitCommand(owner, *ci);
 			lastErase = ci;
 			cancelCount++;
-			ci++;
+			++ci;
 		}
 
-		lastErase++; // STL: erase the range [first, last)
+		++lastErase; // STL: erase the range [first, last)
 		q.erase(firstErase, lastErase);
 
 		if (c.id >= 0) {
@@ -1135,7 +1148,7 @@ std::vector<Command> CCommandAI::GetOverlapQueued(const Command &c,
 
 	if (ci != q.begin()){
 		do {
-			ci--; //iterate from the end and dont check the current order
+			--ci; //iterate from the end and dont check the current order
 			const Command& t = *ci;
 
 			if (((t.id == c.id) || ((c.id < 0) && (t.id < 0))) &&
@@ -1500,10 +1513,12 @@ void CCommandAI::UpdateStockpileIcon(void)
 
 void CCommandAI::WeaponFired(CWeapon* weapon)
 {
-	if(weapon->weaponDef->manualfire && !weapon->weaponDef->dropped && !commandQue.empty()
-		&& (commandQue.front().id==CMD_ATTACK || commandQue.front().id==CMD_DGUN) && inCommand)
-	{
-		owner->AttackUnit(0,true);
+	if (!inCommand) { return; }
+	if (commandQue.empty()) { return; }
+	if (!weapon->weaponDef->manualfire) { return; }
+
+	if (commandQue.front().id == CMD_ATTACK || commandQue.front().id == CMD_DGUN) {
+		owner->AttackUnit(0, true);
 		eoh->WeaponFired(*owner, *(weapon->weaponDef));
 		FinishCommand();
 	}
@@ -1569,7 +1584,7 @@ void CCommandAI::PushOrUpdateReturnFight(const float3& cmdPos1, const float3& cm
 bool CCommandAI::HasMoreMoveCommands()
 {
 	if (!commandQue.empty()) {
-		for (CCommandQueue::iterator i = (commandQue.begin()++); i != commandQue.end(); i++) {
+		for (CCommandQueue::iterator i = (commandQue.begin()++); i != commandQue.end(); ++i) {
 			const int id = i->id;
 
 			// build commands are no different from reclaim or repair commands
@@ -1614,10 +1629,11 @@ bool CCommandAI::SkipParalyzeTarget(const CUnit* target)
 	return false;
 }
 
-bool CCommandAI::CanChangeFireState(){
-	return owner->unitDef->canFireControl &&
-		(!owner->unitDef->weapons.empty() || owner->unitDef->type=="Factory" ||
-				owner->unitDef->canKamikaze);
+bool CCommandAI::CanChangeFireState() {
+	const UnitDef* ud = owner->unitDef;
+	const bool b = (!ud->weapons.empty() || ud->canKamikaze || ud->IsFactoryUnit());
+
+	return (ud->canFireControl && b);
 }
 
 /// remove attack commands targeted at our new ally

@@ -159,14 +159,15 @@
 //         image[0].get_mipmap(i).get_depth(), 0, image.get_format(), 
 //         GL_UNSIGNED_BYTE, image[0].get_mipmap(i));
 // }
+
 #include "StdAfx.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include "nv_dds.h"
 
 // spring related
 #include "Rendering/GL/myGL.h"
+#include "nv_dds.h"
 #include "FileSystem/FileHandler.h"
 #include "Platform/byteorder.h"
 #include "mmgr.h"
@@ -640,6 +641,16 @@ void CDDSImage::clear()
     m_images.clear();
 }
 
+bool CDDSImage::is_compressed() const
+{
+	if ((m_format == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT) ||
+		(m_format == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT) ||
+		(m_format == GL_COMPRESSED_RGBA_S3TC_DXT5_EXT))
+		return true;
+	else
+		return false;
+}
+
 #ifndef BITMAP_NO_OPENGL
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -713,7 +724,7 @@ bool CDDSImage::upload_texture1D()
 //              the 2D texture such as a specific face of a cubemap
 //
 //              default: GL_TEXTURE_2D
-bool CDDSImage::upload_texture2D(unsigned int imageIndex, GLenum target)
+bool CDDSImage::upload_texture2D(unsigned int imageIndex, int target)
 {
     assert(m_valid);
     assert(!m_images.empty());
