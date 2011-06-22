@@ -4,33 +4,32 @@ project(Spring)
 # CMake 2.4:
 # - lacks some cross-compiling features and fails on windows
 # CMake 2.6:
-# - Windows command line is limited to 32k length commands
+# - fixes: Windows command line is limited to 32k length commands
 # CMake 2.6.3:
-# + support for SOURCES attribute of add_custom_target(), which is required for AI stuff
+# + support for SOURCES attribute of add_custom_target() (not required anymore)
 # CMake 2.8
 # + works around command line length limited by using an @objectFilesList.txt parameter when linking
 if    (WIN32)
 	set(MIN_CMAKE_VERSION 2.8)
 else  (WIN32)
-	set(MIN_CMAKE_VERSION 2.6.3)
+	set(MIN_CMAKE_VERSION 2.6)
 endif (WIN32)
 cmake_minimum_required(VERSION ${MIN_CMAKE_VERSION})
 
-LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/rts/build/cmake")
+SET(CMAKE_MODULES_SPRING "${CMAKE_CURRENT_SOURCE_DIR}/rts/build/cmake")
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_MODULES_SPRING}")
 
 # includes rts/build/cmake/Util.cmake
 INCLUDE(Util)
 
 CheckMinCMakeVersion(CUSTOM_TARGET_SOURCES_SUPPORT 2 6 3)
-IF     (NOT CUSTOM_TARGET_SOURCES_SUPPORT)
-	MESSAGE(
-		"warning: ADD_CUSTOM_TARGET() support for the SOURCES attribute "
-		"was added in CMake 2.6.3, you are using CMake "
-		"${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}. "
-		"Some parts of ${CMAKE_PROJECT_NAME} require this feature, "
-		"and will consequently not be configured/built. "
-		"You will get separate warnings for all parts that will not be built.")
-ENDIF  ()
+
+# Tell windows to pass arguments around in @response files
+# (32k arg limit workaround)
+if    (WIN32)
+	SET(CMAKE_C_USE_RESPONSE_FILE_FOR_OBJECTS 1)
+	SET(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS 1)
+endif (WIN32)
 
 ### Install path (relative to CMAKE_INSTALL_PREFIX)
 if    (UNIX AND NOT MINGW)
@@ -48,7 +47,9 @@ else  (UNIX AND NOT MINGW)
 	set (LIBDIR  "." CACHE STRING "Where to install libraries")
 	set (DATADIR "." CACHE STRING "Where to install game content")
 
-	set(MINGWLIBS ${CMAKE_SOURCE_DIR}/mingwlibs CACHE PATH "Location of the mingwlibs package")
+	if    (NOT MINGWLIBS)
+		set(MINGWLIBS ${CMAKE_SOURCE_DIR}/mingwlibs CACHE PATH "Location of the mingwlibs package")
+	endif (NOT MINGWLIBS)
 	if    (NOT EXISTS "${MINGWLIBS}" OR NOT IS_DIRECTORY "${MINGWLIBS}")
 		MESSAGE(FATAL_ERROR "MINGWLIBS is not a valid directory")
 	endif (NOT EXISTS "${MINGWLIBS}" OR NOT IS_DIRECTORY "${MINGWLIBS}")

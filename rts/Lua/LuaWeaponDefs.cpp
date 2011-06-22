@@ -17,6 +17,7 @@
 #include "LuaDefs.h"
 #include "LuaHandle.h"
 #include "LuaUtils.h"
+#include "Game/TraceRay.h"
 #include "Sim/Misc/CategoryHandler.h"
 #include "Sim/Misc/DamageArrayHandler.h"
 #include "Sim/Projectiles/Projectile.h"
@@ -152,7 +153,7 @@ static int WeaponDefIndex(lua_State* L)
 			return 1;
 		}
 		case STRING_TYPE: {
-			lua_pushstring(L, ((string*)p)->c_str());
+			lua_pushsstring(L, *((string*)p));
 			return 1;
 		}
 		case FUNCTION_TYPE: {
@@ -318,21 +319,21 @@ static int VisualsTable(lua_State* L, const void* data)
 static int NoFeatureCollide(lua_State* L, const void* data)
 {
 	const int bits = *((const int*) data);
-	lua_pushboolean(L, (bits & COLLISION_NOFEATURE));
+	lua_pushboolean(L, (bits & Collision::NOFEATURES));
 	return 1;
 }
 
 static int NoFriendlyCollide(lua_State* L, const void* data)
 {
 	const int bits = *((const int*) data);
-	lua_pushboolean(L, (bits & COLLISION_NOFRIENDLY));
+	lua_pushboolean(L, (bits & Collision::NOFRIENDLIES));
 	return 1;
 }
 
 static int NoNeutralCollide(lua_State* L, const void* data)
 {
 	const int bits = *((const int*) data);
-	lua_pushboolean(L, (bits & COLLISION_NONEUTRAL));
+	lua_pushboolean(L, (bits & Collision::NONEUTRALS));
 	return 1;
 }
 
@@ -342,7 +343,7 @@ static inline int BuildCategorySet(lua_State* L, const vector<string>& cats)
 	lua_newtable(L);
 	const int count = (int)cats.size();
 	for (int i = 0; i < count; i++) {
-		lua_pushstring(L, cats[i].c_str());
+		lua_pushsstring(L, cats[i]);
 		lua_pushboolean(L, true);
 		lua_rawset(L, -3);
 	}
@@ -374,8 +375,8 @@ static int CustomParamsTable(lua_State* L, const void* data)
 	lua_newtable(L);
 	map<string, string>::const_iterator it;
 	for (it = params.begin(); it != params.end(); ++it) {
-		lua_pushstring(L, it->first.c_str());
-		lua_pushstring(L, it->second.c_str());
+		lua_pushsstring(L, it->first);
+		lua_pushsstring(L, it->second);
 		lua_rawset(L, -3);
 	}
 	return 1;

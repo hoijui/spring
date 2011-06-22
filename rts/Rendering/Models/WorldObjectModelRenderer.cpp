@@ -14,6 +14,7 @@ IWorldObjectModelRenderer* IWorldObjectModelRenderer::GetInstance(int modelType)
 		case MODELTYPE_3DO: { return (new WorldObjectModelRenderer3DO()); } break;
 		case MODELTYPE_S3O: { return (new WorldObjectModelRendererS3O()); } break;
 		case MODELTYPE_OBJ: { return (new WorldObjectModelRendererOBJ()); } break;
+		case MODELTYPE_ASS: { return (new WorldObjectModelRendererASS()); } break;
 		default: { return (new IWorldObjectModelRenderer(MODELTYPE_OTHER)); } break;
 	}
 }
@@ -76,7 +77,7 @@ void IWorldObjectModelRenderer::DrawModels(const UnitSet& models)
 void IWorldObjectModelRenderer::DrawModels(const FeatureSet& models)
 {
 	for (FeatureSetIt fIt = models.begin(); fIt != models.end(); ++fIt) {
-		DrawModel(*fIt);
+		DrawModel(fIt->first);
 	}
 }
 
@@ -111,26 +112,55 @@ void IWorldObjectModelRenderer::DelUnit(const CUnit* u)
 }
 
 
-void IWorldObjectModelRenderer::AddFeature(const CFeature* f)
+void IWorldObjectModelRenderer::AddFeature(const CFeature* f, float alpha)
 {
 	if (features.find(TEX_TYPE(f)) == features.end()) {
 		features[TEX_TYPE(f)] = FeatureSet();
 	}
 
-	if(features[TEX_TYPE(f)].insert(const_cast<CFeature*>(f)).second)
+	FeatureSet &fs = features.find(TEX_TYPE(f))->second;
+	FeatureSet::iterator i = fs.find(const_cast<CFeature*>(f));
+	if(i != fs.end()) {
+		if(i->second != alpha) {
+			fs[const_cast<CFeature*>(f)] = alpha;
+		}
+	}
+	else {
+		fs[const_cast<CFeature*>(f)] = alpha;
 		numFeatures += 1;
+	}
 }
 
 void IWorldObjectModelRenderer::DelFeature(const CFeature* f)
 {
-	if(features[TEX_TYPE(f)].erase(const_cast<CFeature*>(f)))
-		numFeatures -= 1;
+	{
+		FeatureRenderBin::iterator i = features.find(TEX_TYPE(f));
+		if (i != features.end()) {
+			if((*i).second.erase(const_cast<CFeature*>(f)))
+				numFeatures -= 1;
 
-	if (features[TEX_TYPE(f)].empty()) {
-		features.erase(TEX_TYPE(f));
+			if ((*i).second.empty()) 
+				features.erase(TEX_TYPE(f));
+		}
+	}
+
+	{
+		FeatureRenderBin::iterator i = featuresSave.find(TEX_TYPE(f));
+		if (i != featuresSave.end()) {
+			if((*i).second.erase(const_cast<CFeature*>(f)))
+				numFeaturesSave -= 1;
+
+			if ((*i).second.empty()) 
+				featuresSave.erase(TEX_TYPE(f));
+		}
 	}
 }
 
+void IWorldObjectModelRenderer::SwapFeatures()
+{
+	features.swap(featuresSave);
+	std::swap(numFeatures, numFeaturesSave);
+}
 
 void IWorldObjectModelRenderer::AddProjectile(const CProjectile* p)
 {
@@ -197,7 +227,18 @@ void WorldObjectModelRendererOBJ::PopRenderState()
 	// WRITEME
 }
 
-
+void WorldObjectModelRendererASS::PushRenderState()
+{
+	#if (WORLDOBJECT_MODEL_RENDERER_DEBUG == 1)
+	#endif
+	// WRITEME
+}
+void WorldObjectModelRendererASS::PopRenderState()
+{
+	#if (WORLDOBJECT_MODEL_RENDERER_DEBUG == 1)
+	#endif
+	// WRITEME
+}
 
 void WorldObjectModelRendererS3O::DrawModel(const CUnit* u)
 {

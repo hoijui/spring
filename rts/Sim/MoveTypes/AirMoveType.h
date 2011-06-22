@@ -32,7 +32,7 @@ public:
 			float engine, const float3& engineVector);
 	void SetState(AircraftState state);
 	void UpdateTakeOff(float wantedHeight);
-	void ImpulseAdded();
+	void ImpulseAdded(const float3&);
 	float3 FindLandingPos() const;
 
 	void DependentDied(CObject* o);
@@ -90,6 +90,7 @@ public:
 
 	struct RudderInfo{
 		CR_DECLARE_STRUCT(RudderInfo);
+		RudderInfo() : rotation(0.f) {}
 		float rotation;
 	};
 

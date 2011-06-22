@@ -5,17 +5,16 @@
 
 #include "MapInfo.h"
 
-#include <assert.h>
-
 #include "Sim/Misc/GlobalConstants.h"
 #include "Rendering/GlobalRendering.h"
 
 #include "MapParser.h"
 #include "Lua/LuaParser.h"
-#include "LogOutput.h"
-#include "Exceptions.h"
-#include <float.h>
+#include "System/LogOutput.h"
+#include "System/Exceptions.h"
 
+#include <cassert>
+#include <cfloat>
 
 using namespace std;
 
@@ -24,7 +23,7 @@ using namespace std;
 // no (other) situations where mapInfo may be modified, except
 //   LuaUnsyncedCtrl may change water
 //   LuaSyncedCtrl may change terrainTypes
-const CMapInfo* mapInfo;
+const CMapInfo* mapInfo = NULL;
 
 
 CMapInfo::CMapInfo(const std::string& _mapInfoFile, const string& mapName) : mapInfoFile(_mapInfoFile)
@@ -117,7 +116,6 @@ void CMapInfo::ReadAtmosphere()
 	atmo.skyColor   = atmoTable.GetFloat3("skyColor", float3(0.1f, 0.15f, 0.7f));
 	atmo.skyDir = atmoTable.GetFloat3("skyDir", float3(0.0f, 0.0f, -1.0f));
 	atmo.skyDir.ANormalize();
-	globalRendering->skyDir = atmo.skyDir;
 	atmo.sunColor   = atmoTable.GetFloat3("sunColor", float3(1.0f, 1.0f, 1.0f));
 	atmo.cloudColor = atmoTable.GetFloat3("cloudColor", float3(1.0f, 1.0f, 1.0f));
 	atmo.skyBox = atmoTable.GetString("skyBox", "");
@@ -155,31 +153,21 @@ void CMapInfo::ReadLight()
 	light.sunStartAngle = lightTable.GetFloat("sunStartAngle", 0.0f);
 	light.sunOrbitTime = lightTable.GetFloat("sunOrbitTime", 1440.0f);
 	light.sunDir = lightTable.GetFloat4("sunDir", float4(0.0f, 1.0f, 2.0f, FLT_MAX));
-	bool iscompat = (light.sunDir.w == FLT_MAX);
-	if(iscompat) {
+	if (light.sunDir.w == FLT_MAX) { // if four params are not specified for sundir, fallback to the old three param format
 		light.sunDir = lightTable.GetFloat3("sunDir", float3(0.0f, 1.0f, 2.0f));
-		light.sunDir.w = 0.0f;
+		light.sunDir.w = FLT_MAX;
 	}
 	light.sunDir.ANormalize();
-	globalRendering->UpdateSunParams(light.sunDir, light.sunStartAngle, light.sunOrbitTime, iscompat);
 
-	light.groundAmbientColor  = lightTable.GetFloat3("groundAmbientColor",
-	                                                float3(0.5f, 0.5f, 0.5f));
-	light.groundSunColor      = lightTable.GetFloat3("groundDiffuseColor",
-	                                                float3(0.5f, 0.5f, 0.5f));
-	light.groundSpecularColor = lightTable.GetFloat3("groundSpecularColor",
-	                                                float3(0.1f, 0.1f, 0.1f));
+	light.groundAmbientColor  = lightTable.GetFloat3("groundAmbientColor", float3(0.5f, 0.5f, 0.5f));
+	light.groundSunColor      = lightTable.GetFloat3("groundDiffuseColor", float3(0.5f, 0.5f, 0.5f));
+	light.groundSpecularColor = lightTable.GetFloat3("groundSpecularColor", float3(0.1f, 0.1f, 0.1f));
 	light.groundShadowDensity = lightTable.GetFloat("groundShadowDensity", 0.8f);
-	globalRendering->groundShadowDensity = light.groundShadowDensity;
 
-	light.unitAmbientColor  = lightTable.GetFloat3("unitAmbientColor",
-	                                                float3(0.4f, 0.4f, 0.4f));
-	light.unitSunColor      = lightTable.GetFloat3("unitDiffuseColor",
-	                                                float3(0.7f, 0.7f, 0.7f));
-	light.unitSpecularColor  = lightTable.GetFloat3("unitSpecularColor",
-	                                               light.unitSunColor);
+	light.unitAmbientColor  = lightTable.GetFloat3("unitAmbientColor", float3(0.4f, 0.4f, 0.4f));
+	light.unitSunColor      = lightTable.GetFloat3("unitDiffuseColor", float3(0.7f, 0.7f, 0.7f));
+	light.unitSpecularColor  = lightTable.GetFloat3("unitSpecularColor", light.unitSunColor);
 	light.unitShadowDensity = lightTable.GetFloat("unitShadowDensity", 0.8f);
-	globalRendering->unitShadowDensity = light.unitShadowDensity;
 }
 
 
@@ -300,6 +288,7 @@ void CMapInfo::ReadSmf()
 
 	smf.skyReflectModTexName = mapResTable.GetString("skyReflectModTex", "");
 	smf.detailNormalTexName = mapResTable.GetString("detailNormalTex", "");
+	smf.lightEmissionTexName = mapResTable.GetString("lightEmissionTex", "");
 
 	if (!smf.detailTexName.empty()) {
 		smf.detailTexName = "maps/" + smf.detailTexName;
@@ -316,6 +305,7 @@ void CMapInfo::ReadSmf()
 	if (!smf.grassShadingTexName.empty()) { smf.grassShadingTexName = "maps/" + smf.grassShadingTexName; }
 	if (!smf.skyReflectModTexName.empty()) { smf.skyReflectModTexName = "maps/" + smf.skyReflectModTexName; }
 	if (!smf.detailNormalTexName.empty()) { smf.detailNormalTexName = "maps/" + smf.detailNormalTexName; }
+	if (!smf.lightEmissionTexName.empty()) { smf.lightEmissionTexName = "maps/" + smf.lightEmissionTexName; }
 
 	// height overrides
 	const LuaTable smfTable = parser->GetRoot().SubTable("smf");

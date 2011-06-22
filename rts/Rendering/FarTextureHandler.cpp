@@ -181,7 +181,7 @@ void CFarTextureHandler::CreateFarTexture(const CSolidObject* obj)
 	unitDrawer->SetupForUnitDrawing();
 	unitDrawer->GetOpaqueModelRenderer(model->type)->PushRenderState();
 
-	if (model->type == MODELTYPE_S3O || model->type == MODELTYPE_OBJ) {
+	if (model->type == MODELTYPE_S3O || model->type == MODELTYPE_OBJ || model->type == MODELTYPE_ASS) {
 		// FIXME for some strange reason we need to invert the culling, why?
 		if (model->type == MODELTYPE_S3O) {
 			glCullFace(GL_FRONT);
@@ -201,6 +201,12 @@ void CFarTextureHandler::CreateFarTexture(const CSolidObject* obj)
 
 	glRotatef(45.0f, 1.0f, 0.0f, 0.0f);
 
+	// light the far-textures from straight above, we do
+	// not care much about the actual sun direction here
+	static const float4 sunDir = UpVector;
+
+	glLightfv(GL_LIGHT1, GL_POSITION, &sunDir.x);
+
 	//! draw the model in 8 different orientations
 	for (size_t orient = 0; orient < numOrientations; ++orient) {
 		//! setup viewport
@@ -219,8 +225,6 @@ void CFarTextureHandler::CreateFarTexture(const CSolidObject* obj)
 
 		//! rotate by 45 degrees for the next orientation
 		glRotatef(-360.0f / numOrientations, 0, 1, 0);
-		const float4 sunDir = globalRendering->dynamicSun ? float4(0.0f, 1.0f, 0.0f) : globalRendering->sunDir; // assume non static sun is in zenith
-		glLightfv(GL_LIGHT1, GL_POSITION, sunDir);
 	}
 
 	unitDrawer->GetOpaqueModelRenderer(model->type)->PopRenderState();

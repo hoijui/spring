@@ -214,19 +214,23 @@ void CPreGame::UpdateClientNet()
 					std::string message;
 					pckt >> message;
 					logOutput.Print(message);
-					handleerror(NULL, message, "Quit message", MBF_OK | MBF_EXCL);
+					handleerror(NULL, "Remote requested quit: " + message, "Quit message", MBF_OK | MBF_EXCL);
 				} catch (netcode::UnpackPacketException &e) {
 					logOutput.Print("Got invalid QuitMessage: %s", e.err.c_str());
 				}		
 				break;
 			}
-			case NETMSG_CREATE_NEWPLAYER: { // server will send this first if we're using midgame join feature, to let us know about ourself (we won't be in gamedata), otherwise skip to gamedata
+			case NETMSG_CREATE_NEWPLAYER: {
+				// server will send this first if we're using mid-game join
+				// feature, to let us know about ourself (we won't be in
+				// gamedata), otherwise skip to gamedata
 				try {
 					netcode::UnpackPacket pckt(packet, 3);
 					unsigned char spectator, team, playerNum;
 					std::string name;
-					// since the >> operator uses dest size to extract data from the packet, we need to use temp variables
-					// of the same size of the packet, then convert to dest variable
+					// since the >> operator uses dest size to extract data from
+					// the packet, we need to use temp variables of the same
+					// size of the packet, before converting to dest variable
 					pckt >> playerNum;
 					pckt >> spectator;
 					pckt >> team;
@@ -237,22 +241,30 @@ void CPreGame::UpdateClientNet()
 					player.spectator = spectator;
 					player.team = team;
 					player.playerNum = playerNum;
-					// add ourself, to avoid crashing if our player num gets queried
-					// we'll receive the same message later, in the game class, which is the global broadcast version
-					// the global broadcast will overwrite the user with the same values as here
+					// add ourself, to avoid crashing if our player num gets
+					// queried we will receive the same message later, in the
+					// game class, which is the global broadcast version
+					// the global broadcast will overwrite the user with the
+					// same values as here
 					playerHandler->AddPlayer(player);
 				} catch (netcode::UnpackPacketException &e) {
 					logOutput.Print("Got invalid New player message: %s", e.err.c_str());
 				}
 				break;
 			}
-			case NETMSG_GAMEDATA: { // server first ( not if we're joining midgame as extra players ) sends this to let us know about teams, allyteams etc.
+			case NETMSG_GAMEDATA: {
+				// server first sends this to let us know about teams, allyteams
+				// etc.
+				// (not if we are joining mid-game as extra players)
+				// see NETMSG_SETPLAYERNUM
 				if (gameSetup)
 					throw content_error("Duplicate game data received from server");
 				GameDataReceived(packet);
 				break;
 			}
-			case NETMSG_SETPLAYERNUM: { // this is sent afterwards to let us know which playernum we have
+			case NETMSG_SETPLAYERNUM: {
+				// this is sent after NETMSG_GAMEDATA, to let us know which
+				// playernum we have
 				if (!gameSetup)
 					throw content_error("No game data received from server");
 
@@ -428,10 +440,10 @@ void CPreGame::GameDataReceived(boost::shared_ptr<const netcode::RawPacket> pack
 	vfsHandler->AddArchiveWithDeps(gameSetup->mapName, false);
 	archiveScanner->CheckArchive(gameSetup->mapName, gameData->GetMapChecksum());
 
-	LogObject() << "Using mod: " << gameSetup->modName << "\n";
+	LogObject() << "Using game: " << gameSetup->modName << "\n";
 	vfsHandler->AddArchiveWithDeps(gameSetup->modName, false);
 	modArchive = archiveScanner->ArchiveFromName(gameSetup->modName);
-	LogObject() << "Using mod archive: " << modArchive << "\n";
+	LogObject() << "Using game archive: " << modArchive << "\n";
 	archiveScanner->CheckArchive(modArchive, gameData->GetModChecksum());
 
 	if (net && net->GetDemoRecorder()) {

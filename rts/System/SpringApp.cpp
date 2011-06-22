@@ -83,25 +83,31 @@
 	extern gmlClientServer<void, int,CUnit*> *gmlProcessor;
 #endif
 
-using std::string;
 
 ClientSetup* startsetup = NULL;
-
 COffscreenGLContext* SpringApp::ogc = NULL;
 
-/**
- * @brief xres default
- *
- * Defines the default X resolution as 1024
- */
-const int XRES_DEFAULT = 1024;
+
 
 /**
- * @brief yres default
+ * @brief multisample verify
+ * @return whether verification passed
  *
- * Defines the default Y resolution as 768
+ * Tests whether FSAA was actually enabled
  */
-const int YRES_DEFAULT = 768;
+static bool MultisampleVerify()
+{
+	if (!GLEW_ARB_multisample)
+		return false;
+	GLint buffers = 0;
+	GLint samples = 0;
+	glGetIntegerv(GL_SAMPLE_BUFFERS_ARB, &buffers);
+	glGetIntegerv(GL_SAMPLES_ARB, &samples);
+	if (buffers && samples) {
+		return true;
+	}
+	return false;
+}
 
 
 /**
@@ -110,13 +116,7 @@ const int YRES_DEFAULT = 768;
 SpringApp::SpringApp()
 {
 	cmdline = NULL;
-	screenWidth = screenHeight = 0;
-	FSAA = false;
 	lastRequiredDraw = 0;
-	depthBufferBits = 24;
-	windowState = 0;
-	windowPosX = windowPosY = 0;
-	ogc = NULL;
 }
 
 /**
@@ -125,7 +125,6 @@ SpringApp::SpringApp()
 SpringApp::~SpringApp()
 {
 	delete cmdline;
-
 	creg::System::FreeClasses();
 }
 
@@ -168,7 +167,6 @@ bool SpringApp::Initialize()
 	good_fpu_control_registers("::Run");
 
 	// log OS version
-	// TODO: improve version logging of non-Windows OSes
 	logOutput.Print("OS: %s", Platform::GetOS().c_str());
 	if (Platform::Is64Bit())
 		logOutput.Print("OS: 64bit native mode");
@@ -188,28 +186,23 @@ bool SpringApp::Initialize()
 
 	mouseInput = IMouseInput::GetInstance();
 	keyInput = KeyInput::GetInstance();
-
+	input.AddHandler(boost::bind(&SpringApp::MainEventHandler, this, _1));
+	
 	// Global structures
 	gs = new CGlobalSynced();
 	gu = new CGlobalUnsynced();
 
-	if (cmdline->IsSet("minimise")) {
-		globalRendering->active = false;
-		SDL_WM_IconifyWindow();
-	}
+	// Initialize GLEW
+	LoadExtensions();
+
+	//! check if FSAA init worked fine
+	if (globalRendering->FSAA && !MultisampleVerify())
+		globalRendering->FSAA = 0;
 
 	InitOpenGL();
 	agui::InitGui();
 	palette.Init();
-
-	input.AddHandler(boost::bind(&SpringApp::MainEventHandler, this, _1));
-
 	LoadFonts();
-
-	// Initialize GLEW
-	LoadExtensions();
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	SDL_GL_SwapBuffers();
 
 	globalRendering->PostInit();
 
@@ -233,7 +226,8 @@ bool SpringApp::Initialize()
 	return true;
 }
 
-void SpringApp::SetProcessAffinity(int affinity) const {
+void SpringApp::SetProcessAffinity(int affinity)
+{
 #ifdef WIN32
 	if (affinity > 0) {
 		//! Get the available cores
@@ -293,49 +287,6 @@ void SpringApp::SetProcessAffinity(int affinity) const {
 }
 
 
-
-/**
- * @brief multisample test
- * @return whether the multisampling test was successful
- *
- * Tests if a user has requested FSAA, if it's a valid
- * FSAA mode, and if it's supported by the current GL context
- */
-static bool MultisampleTest(void)
-{
-	if (!GL_ARB_multisample)
-		return false;
-	GLuint fsaa = configHandler->Get("FSAA",0);
-	if (!fsaa)
-		return false;
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS,1);
-	GLuint fsaalevel = std::max(std::min(configHandler->Get("FSAALevel", 2), 8), 0);
-
-	make_even_number(fsaalevel);
-
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES,fsaalevel);
-	return true;
-}
-
-/**
- * @brief multisample verify
- * @return whether verification passed
- *
- * Tests whether FSAA was actually enabled
- */
-static bool MultisampleVerify(void)
-{
-	GLint buffers = 0;
-	GLint samples = 0;
-	glGetIntegerv(GL_SAMPLE_BUFFERS_ARB, &buffers);
-	glGetIntegerv(GL_SAMPLES_ARB, &samples);
-	if (buffers && samples) {
-		return true;
-	}
-	return false;
-}
-
-
 /**
  * @return whether window initialization succeeded
  * @param title char* string with window title
@@ -364,9 +315,13 @@ bool SpringApp::InitWindow(const char* title)
 	}
 
 	RestoreWindowPosition();
+	if (cmdline->IsSet("minimise")) {
+		globalRendering->active = false;
+		SDL_WM_IconifyWindow();
+	}
 
 	glClearColor(0.0f,0.0f,0.0f,0.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	SDL_GL_SwapBuffers();
 
 	return true;
@@ -381,30 +336,45 @@ bool SpringApp::SetSDLVideoMode()
 {
 	int sdlflags = SDL_OPENGL | SDL_RESIZABLE;
 
-	//! w/o SDL_NOFRAME, kde's windowmanager still creates a border and force a `window`-resize causing a lot of trouble
+	//! w/o SDL_NOFRAME, kde's windowmanager still creates a border (in fullscreen!) and forces a `window`-resize causing a lot of trouble (in the ::SaveWindowPositione)
 	sdlflags |= globalRendering->fullScreen ? SDL_FULLSCREEN | SDL_NOFRAME : 0;
 
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8); // enable alpha channel
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8); //! enable alpha channel ???
 
-	depthBufferBits = configHandler->Get("DepthBufferBits", 24);
-	if (globalRendering) globalRendering->depthBufferBits = depthBufferBits;
-
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, depthBufferBits);
+	globalRendering->depthBufferBits = configHandler->Get("DepthBufferBits", 24);
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, globalRendering->depthBufferBits);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, configHandler->Get("StencilBufferBits", 8));
-
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	FSAA = MultisampleTest();
+	//! FullScreen AntiAliasing
+	globalRendering->FSAA = Clamp(configHandler->Get("FSAALevel", 0), 0, 8);
+	if (globalRendering->FSAA > 0) {
+		make_even_number(globalRendering->FSAA);
+		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, globalRendering->FSAA);
+	}
 
-	// screen will be freed by SDL_Quit()
-	// from: http://sdl.beuc.net/sdl.wiki/SDL_SetVideoMode
-	// Note 3: This function should be called in the main thread of your application.
-	// User note 1: Some have found that enabling OpenGL attributes like SDL_GL_STENCIL_SIZE (the stencil buffer size) before the video mode has been set causes the application to simply ignore those attributes, while enabling attributes after the video mode has been set works fine.
-	// User note 2: Also note that, in Windows, setting the video mode resets the current OpenGL context. You must execute again the OpenGL initialization code (set the clear color or the shade model, or reload textures, for example) after calling SDL_SetVideoMode. In Linux, however, it works fine, and the initialization code only needs to be executed after the first call to SDL_SetVideoMode (although there is no harm in executing the initialization code after each call to SDL_SetVideoMode, for example for a multiplatform application). 
-	SDL_Surface* screen = SDL_SetVideoMode(screenWidth, screenHeight, 32, sdlflags);
+	//! use desktop resolution?
+	if ((globalRendering->viewSizeX<=0) || (globalRendering->viewSizeY<=0)) {
+		const SDL_VideoInfo* screenInfo = SDL_GetVideoInfo(); //! it's a read-only struct (we don't need to free it!)
+		globalRendering->viewSizeX = screenInfo->current_w;
+		globalRendering->viewSizeY = screenInfo->current_h;
+	}
+	//! fallback if resolution couldn't be detected
+	if ((globalRendering->viewSizeX<=0) || (globalRendering->viewSizeY<=0)) {
+		globalRendering->viewSizeX = 1024;
+		globalRendering->viewSizeY = 768;
+	}
+	
+	//! screen will be freed by SDL_Quit()
+	//! from: http://sdl.beuc.net/sdl.wiki/SDL_SetVideoMode
+	//! Note 3: This function should be called in the main thread of your application.
+	//! User note 1: Some have found that enabling OpenGL attributes like SDL_GL_STENCIL_SIZE (the stencil buffer size) before the video mode has been set causes the application to simply ignore those attributes, while enabling attributes after the video mode has been set works fine.
+	//! User note 2: Also note that, in Windows, setting the video mode resets the current OpenGL context. You must execute again the OpenGL initialization code (set the clear color or the shade model, or reload textures, for example) after calling SDL_SetVideoMode. In Linux, however, it works fine, and the initialization code only needs to be executed after the first call to SDL_SetVideoMode (although there is no harm in executing the initialization code after each call to SDL_SetVideoMode, for example for a multiplatform application). 
+	SDL_Surface* screen = SDL_SetVideoMode(globalRendering->viewSizeX, globalRendering->viewSizeY, 32, sdlflags);
 	if (!screen) {
 		char buf[1024];
 		SNPRINTF(buf, sizeof(buf), "Could not set video mode:\n%s", SDL_GetError());
@@ -413,17 +383,13 @@ bool SpringApp::SetSDLVideoMode()
 	}
 
 #ifdef STREFLOP_H
-	// Something in SDL_SetVideoMode (OpenGL drivers?) messes with the FPU control word.
-	// Set single precision floating point math.
+	//! Something in SDL_SetVideoMode (OpenGL drivers?) messes with the FPU control word.
+	//! Set single precision floating point math.
 	streflop_init<streflop::Simple>();
 #endif
 
-	if (FSAA) {
- 		FSAA = MultisampleVerify();
-	}
-
-	// setup GL smoothing
-	const int defaultSmooth = 0; // FSAA ? 0 : 3;  // until a few things get fixed
+	//! setup GL smoothing
+	const int defaultSmooth = 0; //! FSAA ? 0 : 3;  // until a few things get fixed
 	const int lineSmoothing = configHandler->Get("SmoothLines", defaultSmooth);
 	if (lineSmoothing > 0) {
 		GLenum hint = GL_FASTEST;
@@ -447,18 +413,18 @@ bool SpringApp::SetSDLVideoMode()
 		glHint(GL_POINT_SMOOTH_HINT, hint);
 	}
 
-	// setup LOD bias factor
-	const float lodBias = std::max(std::min( configHandler->Get("TextureLODBias", 0.0f) , 4.0f), -4.0f);
+	//! setup LOD bias factor
+	const float lodBias = Clamp(configHandler->Get("TextureLODBias", 0.0f), -4.f, 4.f);
 	if (fabs(lodBias)>0.01f) {
 		glTexEnvf(GL_TEXTURE_FILTER_CONTROL,GL_TEXTURE_LOD_BIAS, lodBias );
 	}
 
-	// there must be a way to see if this is necessary, compare old/new context pointers?
+	//! there must be a way to see if this is necessary, compare old/new context pointers?
 	if (!!configHandler->Get("FixAltTab", 0)) {
-		// free GL resources
+		//! free GL resources
 		GLContext::Free();
 
-		// initialize any GL resources that were lost
+		//! initialize any GL resources that were lost
 		GLContext::Init();
 	}
 
@@ -467,9 +433,9 @@ bool SpringApp::SetSDLVideoMode()
 	int bits;
 	SDL_GL_GetAttribute(SDL_GL_BUFFER_SIZE, &bits);
 	if (globalRendering->fullScreen) {
-		logOutput.Print("Video mode set to %ix%i/%ibit", screenWidth, screenHeight, bits);
+		logOutput.Print("Video mode set to %ix%i/%ibit", globalRendering->viewSizeX, globalRendering->viewSizeY, bits);
 	} else {
-		logOutput.Print("Video mode set to %ix%i/%ibit (windowed)", screenWidth, screenHeight, bits);
+		logOutput.Print("Video mode set to %ix%i/%ibit (windowed)", globalRendering->viewSizeX, globalRendering->viewSizeY, bits);
 	}
 
 	return true;
@@ -485,14 +451,12 @@ bool SpringApp::GetDisplayGeometry()
 #else  // defined(HEADLESS)
 	//! not really needed, but makes it safer against unknown windowmanager behaviours
 	if (globalRendering->fullScreen) {
-		windowPosX = 0;
-		windowPosY = 0;
-		globalRendering->screenSizeX = screenWidth;
-		globalRendering->screenSizeY = screenHeight;
+		globalRendering->screenSizeX = globalRendering->viewSizeX;
+		globalRendering->screenSizeY = globalRendering->viewSizeY;
 		globalRendering->winSizeX = globalRendering->screenSizeX;
 		globalRendering->winSizeY = globalRendering->screenSizeY;
-		globalRendering->winPosX = windowPosX;
-		globalRendering->winPosY = globalRendering->screenSizeY - globalRendering->winSizeY - windowPosY; //! origin BOTTOMLEFT
+		globalRendering->winPosX = 0;
+		globalRendering->winPosY = 0;
 		return true;
 	}
 
@@ -506,9 +470,13 @@ bool SpringApp::GetDisplayGeometry()
 
   #if       defined(__APPLE__)
 	// TODO: implement this function & RestoreWindowPosition() on Mac
-	windowPosX = 30;
-	windowPosY = 30;
-	windowState = 0;
+	globalRendering->screenSizeX = 0;
+	globalRendering->screenSizeY = 0;
+	globalRendering->winSizeX = globalRendering->viewSizeX;
+	globalRendering->winSizeY = globalRendering->viewSizeY;
+	globalRendering->winPosX = 30;
+	globalRendering->winPosY = 30;
+	globalRendering->winState = 0;
 
   #elif     defined(WIN32)
 	globalRendering->screenSizeX = GetSystemMetrics(SM_CXSCREEN);
@@ -533,8 +501,8 @@ bool SpringApp::GetDisplayGeometry()
 		GetWindowRect(info.window, &rect);
 	}
 
-	windowPosX = rect.left;
-	windowPosY = rect.top;
+	globalRendering->winPosX = rect.left;
+	globalRendering->winPosY = rect.top;
 
 	// Get WindowState
 	WINDOWPLACEMENT wp;
@@ -542,14 +510,14 @@ bool SpringApp::GetDisplayGeometry()
 	if (GetWindowPlacement(info.window, &wp)) {
 		switch (wp.showCmd) {
 			case SW_SHOWMAXIMIZED:
-				windowState = 1;
+				globalRendering->winState = 1;
 				break;
 			case SW_SHOWMINIMIZED:
 				//! minimized startup breaks SDL_init stuff, so don't store it
-				//windowState = 2;
+				//globalRendering->winState = 2;
 				//break;
 			default:
-				windowState = 0;
+				globalRendering->winState = 0;
 		}
 	}
 
@@ -571,24 +539,21 @@ bool SpringApp::GetDisplayGeometry()
 		Window tmp;
 		int xp, yp;
 		XTranslateCoordinates(display, window, attrs.root, 0, 0, &xp, &yp, &tmp);
-		windowPosX = xp;
-		windowPosY = yp;
+		globalRendering->winPosX = xp;
+		globalRendering->winPosY = yp;
 
 		if (!globalRendering->fullScreen) {
 			int frame_left, frame_top;
 			MyX11GetFrameBorderOffset(display, window, &frame_left, &frame_top);
-			windowPosX -= frame_left;
-			windowPosY -= frame_top;
+			globalRendering->winPosX -= frame_left;
+			globalRendering->winPosY -= frame_top;
 		}
 
-		windowState = MyX11GetWindowState(display, window);
+		globalRendering->winState = MyX11GetWindowState(display, window);
 	}
 	info.info.x11.unlock_func();
 
   #endif // defined(__APPLE__)
-
-	globalRendering->winPosX = windowPosX;
-	globalRendering->winPosY = globalRendering->screenSizeY - globalRendering->winSizeY - windowPosY; //! origin BOTTOMLEFT
 
 	return true;
 #endif // defined(HEADLESS)
@@ -612,15 +577,15 @@ void SpringApp::RestoreWindowPosition()
   #if       defined(WIN32)
 			bool stateChanged = false;
 
-			if (windowState > 0) {
+			if (globalRendering->winState > 0) {
 				WINDOWPLACEMENT wp;
 				memset(&wp,0,sizeof(WINDOWPLACEMENT));
 				wp.length = sizeof(WINDOWPLACEMENT);
 				stateChanged = true;
 				int wState;
-				switch (windowState) {
+				switch (globalRendering->winState) {
 					case 1: wState = SW_SHOWMAXIMIZED; break;
-					//Setting the main-window minimized breaks initialization
+					//! Setting the main-window minimized breaks initialization
 					case 2: // wState = SW_SHOWMINIMIZED; break;
 					default: stateChanged = false;
 				}
@@ -631,7 +596,7 @@ void SpringApp::RestoreWindowPosition()
 			}
 
 			if (!stateChanged) {
-				MoveWindow(info.window, windowPosX, windowPosY, screenWidth, screenHeight, true);
+				MoveWindow(info.window, globalRendering->winPosX, globalRendering->winPosY, globalRendering->viewSizeX, globalRendering->viewSizeY, true);
 			}
 
   #elif     defined(__APPLE__)
@@ -640,8 +605,8 @@ void SpringApp::RestoreWindowPosition()
   #else
 			info.info.x11.lock_func();
 			{
-				XMoveWindow(info.info.x11.display, info.info.x11.wmwindow, windowPosX, windowPosY);
-				MyX11SetWindowState(info.info.x11.display, info.info.x11.wmwindow, windowState);
+				XMoveWindow(info.info.x11.display, info.info.x11.wmwindow, globalRendering->winPosX, globalRendering->winPosY);
+				MyX11SetWindowState(info.info.x11.display, info.info.x11.wmwindow, globalRendering->winState);
 			}
 			info.info.x11.unlock_func();
 
@@ -663,9 +628,9 @@ void SpringApp::SaveWindowPosition()
 #else
 	if (!globalRendering->fullScreen) {
 		GetDisplayGeometry();
-		configHandler->Set("WindowPosX", windowPosX);
-		configHandler->Set("WindowPosY", windowPosY);
-		configHandler->Set("WindowState", windowState);
+		configHandler->Set("WindowPosX",  globalRendering->winPosX);
+		configHandler->Set("WindowPosY",  globalRendering->winPosY);
+		configHandler->Set("WindowState", globalRendering->winState);
 
 	}
 #endif // defined(HEADLESS)
@@ -675,10 +640,10 @@ void SpringApp::SaveWindowPosition()
 void SpringApp::SetupViewportGeometry()
 {
 	if (!GetDisplayGeometry()) {
-		globalRendering->screenSizeX = screenWidth;
-		globalRendering->screenSizeY = screenHeight;
-		globalRendering->winSizeX = screenWidth;
-		globalRendering->winSizeY = screenHeight;
+		globalRendering->screenSizeX = globalRendering->viewSizeX;
+		globalRendering->screenSizeY = globalRendering->viewSizeY;
+		globalRendering->winSizeX = globalRendering->viewSizeX;
+		globalRendering->winSizeY = globalRendering->viewSizeY;
 		globalRendering->winPosX = 0;
 		globalRendering->winPosY = 0;
 	}
@@ -729,10 +694,8 @@ void SpringApp::SetupViewportGeometry()
 void SpringApp::InitOpenGL()
 {
 	SetupViewportGeometry();
-
 	glViewport(globalRendering->viewPosX, globalRendering->viewPosY, globalRendering->viewSizeX, globalRendering->viewSizeY);
-
-	gluPerspective(45.0f, (GLfloat)globalRendering->viewSizeX / (GLfloat)globalRendering->viewSizeY, 2.8f, MAX_VIEW_RANGE);
+	gluPerspective(45.0f,  globalRendering->aspectRatio, 2.8f, CGlobalRendering::MAX_VIEW_RANGE);
 
 	// Initialize some GL states
 	glShadeModel(GL_SMOOTH);
@@ -744,7 +707,6 @@ void SpringApp::InitOpenGL()
 
 void SpringApp::UpdateOldConfigs()
 {
-	// not very neat, should be done in the installer someday
 	const int cfgVersion = configHandler->Get("Version",0);
 	if (cfgVersion < 2) {
 		// force an update to new defaults
@@ -758,6 +720,22 @@ void SpringApp::UpdateOldConfigs()
 	if (cfgVersion < 3) {
 		configHandler->Delete("AtiHacks"); //! new runtime detection with -1
 		configHandler->Set("Version",3);
+	}
+	if (cfgVersion < 4) {
+		const bool fsaaEnabled = configHandler->Get("FSAA", false);
+		if (!fsaaEnabled)
+			configHandler->Set("FSAALevel", 0);
+		configHandler->Delete("FSAA");
+		configHandler->Set("Version",4);
+	}
+	if (cfgVersion < 5) {
+		const int xres = configHandler->Get("XResolution", 0); 
+		const int yres = configHandler->Get("YResolution", 0);
+		if ((xres == 1024) && (yres == 768)) { //! old default res (use desktop res now by default)
+			configHandler->Delete("XResolution");
+			configHandler->Delete("YResolution");
+		}
+		configHandler->Set("Version",5);
 	}
 }
 
@@ -885,17 +863,17 @@ void SpringApp::ParseCmdLine()
 		}
 	}
 
-	screenWidth = configHandler->Get("XResolution", XRES_DEFAULT);
+	globalRendering->viewSizeX = configHandler->Get("XResolution", 0);
 	if (cmdline->IsSet("xresolution"))
-		screenWidth = std::max(cmdline->GetInt("xresolution"), 640);
+		globalRendering->viewSizeX = std::max(cmdline->GetInt("xresolution"), 640);
 
-	screenHeight = configHandler->Get("YResolution", YRES_DEFAULT);
+	globalRendering->viewSizeY = configHandler->Get("YResolution", 0);
 	if (cmdline->IsSet("yresolution"))
-		screenHeight = std::max(cmdline->GetInt("yresolution"), 480);
+		globalRendering->viewSizeY = std::max(cmdline->GetInt("yresolution"), 480);
 
-	windowPosX  = configHandler->Get("WindowPosX", 32);
-	windowPosY  = configHandler->Get("WindowPosY", 32);
-	windowState = configHandler->Get("WindowState", 0);
+	globalRendering->winPosX  = configHandler->Get("WindowPosX", 32);
+	globalRendering->winPosY  = configHandler->Get("WindowPosY", 32);
+	globalRendering->winState = configHandler->Get("WindowState", 0);
 
 #ifdef USE_GML
 	gmlThreadCountOverride = configHandler->Get("HardwareThreadCount", 0);
@@ -1004,17 +982,21 @@ int SpringApp::Sim()
 		if(GML_SHARE_LISTS)
 			ogc->WorkerThreadPost();
 
+		Watchdog::ClearTimer("sim",true);
+
 		while(gmlKeepRunning && !gmlStartSim)
 			SDL_Delay(100);
 
+		Watchdog::ClearTimer("sim");
+
 		while(gmlKeepRunning) {
 			if(!gmlMultiThreadSim) {
-				Watchdog::ClearTimer("main",true);
+				Watchdog::ClearTimer("sim",true);
 				while(!gmlMultiThreadSim && gmlKeepRunning)
 					SDL_Delay(200);
 			}
 			else if (activeController) {
-				Watchdog::ClearTimer("main");
+				Watchdog::ClearTimer("sim");
 				gmlProcessor->ExpandAuxQueue();
 
 				{
@@ -1048,33 +1030,31 @@ int SpringApp::Sim()
  */
 int SpringApp::Update()
 {
-	if (FSAA)
+	if (globalRendering->FSAA)
 		glEnable(GL_MULTISAMPLE_ARB);
 
 	int ret = 1;
 	if (activeController) {
 		Watchdog::ClearTimer("main");
 #if defined(USE_GML) && GML_ENABLE_SIM
-			if (gmlMultiThreadSim) {
-				if (!gs->frameNum) {
-					GML_MSTMUTEX_LOCK(sim); // Update
-
-					activeController->Update();
-					if (gs->frameNum) {
-						gmlStartSim = 1;
-					}
-				}
-			} else {
+		if (gmlMultiThreadSim) {
+			if (!gs->frameNum) {
 				GML_MSTMUTEX_LOCK(sim); // Update
-
-				activeController->Update();
+				
+				ret = activeController->Update();
+				if (gs->frameNum) {
+					gmlStartSim = 1;
+				}
 			}
-#else
-		if (!activeController->Update()) {
-			ret = 0;
 		} else {
+			GML_MSTMUTEX_LOCK(sim); // Update
+			
+			ret = activeController->Update();
+		}
+#else
+		ret = activeController->Update();
 #endif
-
+		if (ret) {
 			globalRendering->drawFrame++;
 			if (globalRendering->drawFrame == 0) {
 				globalRendering->drawFrame++;
@@ -1084,28 +1064,26 @@ int SpringApp::Update()
 #if defined(USE_GML) && GML_ENABLE_SIM
 				!gmlMultiThreadSim &&
 #endif
-				gs->frameNum-lastRequiredDraw >= (float)MAX_CONSECUTIVE_SIMFRAMES * gs->userSpeedFactor) {
-
+				(gs->frameNum - lastRequiredDraw) >= (float)MAX_CONSECUTIVE_SIMFRAMES * gs->userSpeedFactor)
+			{
 				ScopedTimer cputimer("CPU load"); // Update
 
 				ret = activeController->Draw();
-				lastRequiredDraw=gs->frameNum;
+				lastRequiredDraw = gs->frameNum;
 			} else {
 				ret = activeController->Draw();
 			}
 #if defined(USE_GML) && GML_ENABLE_SIM
 			gmlProcessor->PumpAux();
-#else
-		}
 #endif
+		}
 	}
 
 	VSync.Delay();
 	SDL_GL_SwapBuffers();
 
-	if (FSAA) {
+	if (globalRendering->FSAA)
 		glDisable(GL_MULTISAMPLE_ARB);
-	}
 
 	return ret;
 }
@@ -1253,12 +1231,11 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 {
 	switch (event.type) {
 		case SDL_VIDEORESIZE: {
-
 			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
 			Watchdog::ClearTimer("main",true);
-			screenWidth = event.resize.w;
-			screenHeight = event.resize.h;
+			globalRendering->viewSizeX = event.resize.w;
+			globalRendering->viewSizeY = event.resize.h;
 #ifndef WIN32
 			// HACK   We don't want to break resizing on windows (again?),
 			//        so someone should test this very well before enabling it.
@@ -1270,7 +1247,6 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			break;
 		}
 		case SDL_VIDEOEXPOSE: {
-
 			GML_MSTMUTEX_LOCK(sim); // MainEventHandler
 
 			Watchdog::ClearTimer("main",true);
@@ -1289,6 +1265,7 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 		case SDL_ACTIVEEVENT: {
 			Watchdog::ClearTimer("main",true);
 
+			//! deactivate sounds and other
 			if (event.active.state & (SDL_APPACTIVE | (globalRendering->fullScreen ? SDL_APPINPUTFOCUS : 0))) {
 				globalRendering->active = !!event.active.gain;
 				if (ISound::IsInitialized()) {
@@ -1296,24 +1273,48 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 				}
 			}
 
+			//! update keydown table
+			if (event.active.gain) {
+				keyInput->Update(event.key.keysym.unicode, ((keyBindings != NULL)? keyBindings->GetFakeMetaKey(): -1));
+			}
+
+			//! unlock mouse
 			if (mouse && mouse->locked) {
 				mouse->ToggleState();
 			}
-
+			
+			//! release all keyboard keys		
 			if ((event.active.state & (SDL_APPACTIVE | SDL_APPINPUTFOCUS)) && !event.active.gain) {
-				// simulate release all to prevent hung buttons
-				for (int i = 1; i <= NUM_BUTTONS; ++i) {
-					SDL_Event event;
-					event.type = event.button.type = SDL_MOUSEBUTTONUP;
-					event.button.which = 0;
-					event.button.button = i;
-					event.button.x = -1;
-					event.button.y = -1;
-					event.button.state = SDL_RELEASED;
-					if(!mouse || mouse->buttons[i].pressed)
-						input.PushEvent(event);
+				for (boost::uint16_t i = 1; i < SDLK_LAST; ++i) {
+					if (keyInput->IsKeyPressed(i)) {
+						SDL_Event event;
+						event.type = event.key.type = SDL_KEYUP;
+						event.key.state = SDL_RELEASED;
+						event.key.keysym.sym = (SDLKey)i;
+						event.key.keysym.unicode = i;
+						//event.keysym.mod =;
+						//event.keysym.scancode =;
+						SDL_PushEvent(&event);
+					}
 				}
-				// and make sure to un-capture mouse
+			}
+			
+			//! simulate mouse release to prevent hung buttons
+			if ((event.active.state & (SDL_APPACTIVE | SDL_APPMOUSEFOCUS)) && !event.active.gain) {
+				for (int i = 1; i <= NUM_BUTTONS; ++i) {
+					if (mouse && mouse->buttons[i].pressed) {
+						SDL_Event event;
+						event.type = event.button.type = SDL_MOUSEBUTTONUP;
+						event.button.state = SDL_RELEASED;
+						event.button.which = 0;
+						event.button.button = i;
+						event.button.x = -1;
+						event.button.y = -1;
+						SDL_PushEvent(&event);
+					}
+				}
+
+				//! and make sure to un-capture mouse
 				if(SDL_WM_GrabInput(SDL_GRAB_QUERY) == SDL_GRAB_ON)
 					SDL_WM_GrabInput(SDL_GRAB_OFF);
 			}

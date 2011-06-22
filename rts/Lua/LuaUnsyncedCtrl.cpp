@@ -5,6 +5,7 @@
 #include <set>
 #include <list>
 #include <cctype>
+#include <cfloat>
 
 #include <fstream>
 
@@ -15,9 +16,7 @@
 #include "mmgr.h"
 
 #include "LuaUnsyncedCtrl.h"
-
 #include "LuaInclude.h"
-
 #include "LuaHandle.h"
 #include "LuaHashString.h"
 #include "LuaUtils.h"
@@ -41,6 +40,7 @@
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Map/BaseGroundDrawer.h"
+#include "Rendering/Env/BaseSky.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/InMapDraw.h"
@@ -57,25 +57,30 @@
 #include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Groups/GroupHandler.h"
-#include "LogOutput.h"
-#include "Util.h"
-#include "NetProtocol.h"
-#include "Sound/ISound.h"
-#include "Sound/SoundChannels.h"
+#include "System/ConfigHandler.h"
+#include "System/LogOutput.h"
+#include "System/NetProtocol.h"
+#include "System/Util.h"
+#include "System/Sound/ISound.h"
+#include "System/Sound/SoundChannels.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/FileSystemHandler.h"
+#include "System/FileSystem/FileSystem.h"
 #include "System/Platform/Watchdog.h"
-
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/FileSystemHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "ConfigHandler.h"
 
 #include <boost/cstdint.hpp>
 #include <Platform/Misc.h>
+
+#if !defined(HEADLESS) && !defined(NO_SOUND)
+	#include "System/Sound/EFX.h"
+	#include "System/Sound/EFXPresets.h"
+#endif
 
 using namespace std;
 
 // MinGW defines this for a WINAPI function
 #undef SendMessage
+#undef CreateDirectory
 
 const int CMD_INDEX_OFFSET = 1; // starting index for command descriptions
 
@@ -113,6 +118,7 @@ bool LuaUnsyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(StopSoundStream);
 	REGISTER_LUA_CFUNC(PauseSoundStream);
 	REGISTER_LUA_CFUNC(SetSoundStreamVolume);
+	REGISTER_LUA_CFUNC(SetSoundEffectParams);
 
 	REGISTER_LUA_CFUNC(SetCameraState);
 	REGISTER_LUA_CFUNC(SetCameraTarget);
@@ -612,7 +618,7 @@ int LuaUnsyncedCtrl::PlaySoundFile(lua_State* L)
 		}
 
 		//! last argument (with and without pos/speed arguments) is the optional `sfx channel`
-		EffectChannelImpl* channel = &Channels::General;
+		AudioChannelImpl* channel = &Channels::General;
 		if (args >= index) {
 			if (lua_isstring(L, index)) {
 				string channelStr = lua_tostring(L, index);
@@ -673,7 +679,7 @@ int LuaUnsyncedCtrl::PlaySoundStream(lua_State* L)
 	if (args >= 3)
 		enqueue = lua_toboolean(L, 3);
 
-	Channels::BGMusic.Play(soundFile, volume, enqueue);
+	Channels::BGMusic.StreamPlay(soundFile, volume, enqueue);
 
 	// .ogg files don't have sound ID's generated
 	// for them (yet), so we always succeed here
@@ -687,12 +693,12 @@ int LuaUnsyncedCtrl::PlaySoundStream(lua_State* L)
 
 int LuaUnsyncedCtrl::StopSoundStream(lua_State*)
 {
-	Channels::BGMusic.Stop();
+	Channels::BGMusic.StreamStop();
 	return 0;
 }
 int LuaUnsyncedCtrl::PauseSoundStream(lua_State*)
 {
-	Channels::BGMusic.Pause();
+	Channels::BGMusic.StreamPause();
 	return 0;
 }
 int LuaUnsyncedCtrl::SetSoundStreamVolume(lua_State* L)
@@ -703,6 +709,106 @@ int LuaUnsyncedCtrl::SetSoundStreamVolume(lua_State* L)
 	} else {
 		luaL_error(L, "Incorrect arguments to SetSoundStreamVolume(v)");
 	}
+	return 0;
+}
+
+
+int LuaUnsyncedCtrl::SetSoundEffectParams(lua_State* L)
+{
+#if !defined(HEADLESS) && !defined(NO_SOUND)
+	if (!efx)
+		return 0;
+
+	//! only a preset name given?
+	if (lua_israwstring(L, 1)) {
+		const std::string presetname = lua_tostring(L, 1);
+		efx->SetPreset(presetname, false);
+		return 0;
+	}
+
+	if (!lua_istable(L, 1)) {
+		luaL_error(L, "Incorrect arguments to SetSoundEffectParams()");
+	}
+
+	//! first parse the 'preset' key (so all following params use it as base and override it)
+	lua_pushliteral(L, "preset");
+	lua_gettable(L, -2);
+	if (lua_israwstring(L, -1)) {
+		std::string presetname = lua_tostring(L, -1);
+		efx->SetPreset(presetname, false, false);
+	}
+	lua_pop(L, 1);
+
+
+	if (!efx->sfxProperties)
+		return 0;
+
+	EAXSfxProps* efxprops = efx->sfxProperties;
+
+
+	//! parse pass filter
+	lua_pushliteral(L, "passfilter");
+	lua_gettable(L, -2);
+	if (lua_istable(L, -1)) {
+		for (lua_pushnil(L); lua_next(L, -2) != 0; lua_pop(L, 1)) {
+			if (lua_israwstring(L, -2)) {
+				const string key = StringToLower(lua_tostring(L, -2));
+				std::map<std::string, ALuint>::iterator it = nameToALFilterParam.find(key);
+				if (it != nameToALFilterParam.end()) {
+					ALuint& param = it->second;
+					if (lua_isnumber(L, -1)) {
+						if (alParamType[param] == EFXParamTypes::FLOAT) {
+							const float value = lua_tonumber(L, -1);
+							efxprops->filter_properties_f[param] = value;
+						}
+					}
+				}
+			}
+		}
+	}
+	lua_pop(L, 1);
+
+	//! parse EAX Reverb
+	lua_pushliteral(L, "reverb");
+	lua_gettable(L, -2);
+	if (lua_istable(L, -1)) {
+		for (lua_pushnil(L); lua_next(L, -2) != 0; lua_pop(L, 1)) {
+			if (lua_israwstring(L, -2)) {
+				const string key = StringToLower(lua_tostring(L, -2));
+				std::map<std::string, ALuint>::iterator it = nameToALParam.find(key);
+				if (it != nameToALParam.end()) {
+					ALuint& param = it->second;
+					if (lua_istable(L, -1)) {
+						if (alParamType[param] == EFXParamTypes::VECTOR) {
+							float3 v;
+							const int size = ParseFloatArray(L, -1, &v[0], 3);
+							if (size >= 3) {
+								efxprops->properties_v[param] = v;
+							}
+						}
+					}
+					else if (lua_isnumber(L, -1)) {
+						if (alParamType[param] == EFXParamTypes::FLOAT) {
+							const float value = lua_tonumber(L, -1);
+							efxprops->properties_f[param] = value;
+						}
+					}
+					else if (lua_isboolean(L, -1)) {
+						if (alParamType[param] == EFXParamTypes::BOOL) {
+							const bool value = lua_toboolean(L, -1);
+							efxprops->properties_i[param] = value;
+						}
+					}
+				}
+			}
+		}
+	}
+	lua_pop(L, 1);
+
+	//! commit effects
+	efx->CommitEffects();
+#endif /// !defined(HEADLESS) && !defined(NO_SOUND)
+
 	return 0;
 }
 
@@ -1202,7 +1308,6 @@ int LuaUnsyncedCtrl::SetWaterParams(lua_State* L)
 
 	return 0;
 }
-
 
 
 
@@ -1726,7 +1831,7 @@ static int SetActiveCommandByIndex(lua_State* L)
 	if ((args < 8) ||
 	    !lua_isboolean(L, 3) || !lua_isboolean(L, 4) || !lua_isboolean(L, 5) ||
 	    !lua_isboolean(L, 6) || !lua_isboolean(L, 7) || !lua_isboolean(L, 8)) {
-		lua_pushstring(L, "Incorrect arguments to SetActiveCommand()");
+		luaL_error(L, "Incorrect arguments to SetActiveCommand()");
 	}
 	const bool lmb   = lua_toboolean(L, 3);
 	const bool rmb   = lua_toboolean(L, 4);
@@ -1922,7 +2027,7 @@ int LuaUnsyncedCtrl::GetConfigString(lua_State* L)
 	const string def  = luaL_optstring(L, 2, "");
 	const bool setInOverlay = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : false;
 	const string value = configHandler->GetString(name, def, setInOverlay);
-	lua_pushstring(L, value.c_str());
+	lua_pushsstring(L, value);
 	return 1;
 }
 
@@ -2709,26 +2814,35 @@ int LuaUnsyncedCtrl::SetBuildFacing(lua_State* L)
 /******************************************************************************/
 /******************************************************************************/
 
+
+
 int LuaUnsyncedCtrl::SetSunParameters(lua_State* L)
 {
-	if(!globalRendering->dynamicSun)
+	DynamicSkyLight* dynSkyLight = dynamic_cast<DynamicSkyLight*>(sky->GetLight());
+
+	if (dynSkyLight == NULL)
 		return 0;
 
 	const int args = lua_gettop(L); // number of arguments
-	if (args != 6 || !lua_isnumber(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3) || 
-			!lua_isnumber(L, 4) || !lua_isnumber(L, 5) || !lua_isnumber(L, 6)) {
-		luaL_error(L, "Incorrect arguments to SetSunParameters(float,float,float,float,float,float)");
+	if (args != 6 ||
+		!lua_isnumber(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3) || 
+		!lua_isnumber(L, 4) || !lua_isnumber(L, 5) || !lua_isnumber(L, 6)) {
+		luaL_error(L, "Incorrect arguments to SetSunParameters(float, float, float, float, float, float)");
 	}
 
-	float4 sunDir(lua_tofloat(L, 1), lua_tofloat(L, 2), lua_tofloat(L, 3), lua_tofloat(L, 4));
-	globalRendering->UpdateSunParams(sunDir, lua_tofloat(L, 5), lua_tofloat(L, 6), false);
+	const float4 sunDir(lua_tofloat(L, 1), lua_tofloat(L, 2), lua_tofloat(L, 3), lua_tofloat(L, 4));
+	const float startAngle = lua_tofloat(L, 5);
+	const float orbitTime = lua_tofloat(L, 6);
 
+	dynSkyLight->SetLightParams(sunDir, startAngle, orbitTime);
 	return 0;
 }
 
 int LuaUnsyncedCtrl::SetSunManualControl(lua_State* L)
 {
-	if(!globalRendering->dynamicSun)
+	DynamicSkyLight* dynSkyLight = dynamic_cast<DynamicSkyLight*>(sky->GetLight());
+
+	if (dynSkyLight == NULL)
 		return 0;
 
 	const int args = lua_gettop(L); // number of arguments
@@ -2736,25 +2850,29 @@ int LuaUnsyncedCtrl::SetSunManualControl(lua_State* L)
 		luaL_error(L, "Incorrect arguments to SetSunManualControl(bool)");
 	}
 
-	globalRendering->dynamicSun = lua_toboolean(L, 1) ? 2 : 1;
-
+	dynSkyLight->SetLuaControl(lua_toboolean(L, 1));
 	return 0;
 }
 
 int LuaUnsyncedCtrl::SetSunDirection(lua_State* L)
 {
-	if(globalRendering->dynamicSun != 2)
+	DynamicSkyLight* dynSkyLight = dynamic_cast<DynamicSkyLight*>(sky->GetLight());
+
+	if (dynSkyLight == NULL)
+		return 0;
+	if (!dynSkyLight->GetLuaControl())
 		return 0;
 
 	const int args = lua_gettop(L); // number of arguments
 	if (args != 3 || !lua_isnumber(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3)) {
-		luaL_error(L, "Incorrect arguments to SetSunDirection(float,float,float)");
+		luaL_error(L, "Incorrect arguments to SetSunDirection(float, float, float)");
 	}
 
-	globalRendering->UpdateSunDir(float3(lua_tofloat(L, 1), lua_tofloat(L, 2), lua_tofloat(L, 3)));
-
+	dynSkyLight->SetLightDir(float3(lua_tofloat(L, 1), lua_tofloat(L, 2), lua_tofloat(L, 3)));
 	return 0;
 }
+
+
 
 /******************************************************************************/
 /******************************************************************************/

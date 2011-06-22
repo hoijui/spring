@@ -6,50 +6,59 @@
 #include "BaseSky.h"
 #include "BasicSky.h"
 #include "AdvSky.h"
-#include "Rendering/GL/myGL.h"
 #include "ConfigHandler.h"
 #include "SkyBox.h"
 #include "Map/MapInfo.h"
-#include "Map/ReadMap.h"
 #include "Exceptions.h"
 #include "LogOutput.h"
 
-CBaseSky* sky = NULL;
+IBaseSky* sky = NULL;
 
-CBaseSky::CBaseSky()
-	: dynamicSky(false)
-	, cloudDensity(0)
-	, wireframe(false)
-	, fogStart(0)
+IBaseSky::IBaseSky()
+	: wireframe(false)
+	, dynamicSky(false)
+	, fogStart(0.0f)
+	, skyLight(NULL)
+	, cloudDensity(0.0f)
 {
+	SetLight(configHandler->Get("DynamicSun", true));
 }
 
-CBaseSky::~CBaseSky()
+IBaseSky::~IBaseSky()
 {
+	delete skyLight;
 }
 
-CBaseSky* CBaseSky::GetSky()
+
+
+IBaseSky* IBaseSky::GetSky()
 {
-	CBaseSky* sky = NULL;
+	IBaseSky* sky = NULL;
 
 	try {
-		if(!mapInfo->atmosphere.skyBox.empty()) {
+		if (!mapInfo->atmosphere.skyBox.empty()) {
 			sky = new CSkyBox("maps/" + mapInfo->atmosphere.skyBox);
-		} else if(configHandler->Get("AdvSky", 1)) {
+		} else if (configHandler->Get("AdvSky", true)) {
 			sky = new CAdvSky();
 		}
 	} catch (content_error& e) {
-		if (e.what()[0] != '\0') {
-			logOutput.Print("Error: %s", e.what());
-		}
-		logOutput.Print("Sky: Fallback to BasicSky.");
-		// sky can not be != NULL here
-		//delete sky;
+		logOutput.Print("[%s] error: %s (falling back to BasicSky)", __FUNCTION__, e.what());
+		delete sky;
+		sky = NULL;
 	}
 
-	if (!sky) {
+	if (sky == NULL) {
 		sky = new CBasicSky();
 	}
 
 	return sky;
+}
+
+void IBaseSky::SetLight(bool dynamic) {
+	delete skyLight;
+
+	if (dynamic)
+		skyLight = new DynamicSkyLight();
+	else
+		skyLight = new StaticSkyLight();
 }

@@ -1,135 +1,23 @@
 ### Java AI Interface
 #
 # Global variables set in this file:
-# * JAVA_GLOBAL_LIBS_DIRS
 # * BUILD_Java_AIINTERFACE
 # * Java_AIINTERFACE_VERS
 # * Java_AIINTERFACE_TARGET
 #
 # Functions and macros defined in this file:
-# * FindJavaLib
-# * GetFirstSubDirName
-# * CreateClasspath
-# * ConcatClasspaths
-# * IsMavenInstalled
-# * IsMavenProject
-# * FindManifestFile
 # * ConfigureJavaSkirmishAI
 #
 
 #enable_language(Java)
 
 
-if     (CMAKE_HOST_WIN32)
-	set(JAVA_GLOBAL_LIBS_DIRS "${MINGWLIBS}")
-else   (CMAKE_HOST_WIN32)
-	set(JAVA_GLOBAL_LIBS_DIRS "/usr/share/java" "/usr/local/share/java")
-endif  (CMAKE_HOST_WIN32)
-MakeGlobal(JAVA_GLOBAL_LIBS_DIRS)
-
 ################################################################################
 ### BEGINN: MACROS_AND_FUNCTIONS
 # Define macros and functions to be used in this file and by Java Skirmish AIs
 
-# Looks for a Java library (Jar file) in system wide search paths and in
-# additional dirs supplied as argument.
-macro    (FindJavaLib path_var libName additionalSearchDirs)
-	find_file(${path_var} "${libName}.jar"
-		PATHS ${additionalSearchDirs} ${JAVA_GLOBAL_LIBS_DIRS}
-		DOC "Path to the Java library ${libName}.jar"
-		NO_DEFAULT_PATH
-		NO_CMAKE_FIND_ROOT_PATH
-		)
-	if    (NOT ${path_var})
-		message(SEND_ERROR "${libName}.jar not found!")
-	else  (NOT ${path_var})
-		AIMessage(STATUS "Found ${libName}.jar: ${${path_var}}")
-	endif (NOT ${path_var})
-endmacro (FindJavaLib path_var libName additionalSearchDirs)
-
-# Returns the name of the first sub-dir (in alphabetical descending order)
-# under dir.
-macro    (GetFirstSubDirName name_var dir)
-	file(GLOB dirContent RELATIVE "${dir}" FOLLOW_SYMLINKS "${dir}/*")
-	foreach    (dirPart ${dirContent})
-		if    (IS_DIRECTORY "${dir}/${dirPart}")
-			set(${name_var} ${dirPart})
-			break()
-		endif (IS_DIRECTORY "${dir}/${dirPart}")
-	endforeach (dirPart)
-endmacro (GetFirstSubDirName name_var dir)
-
-
-# Recursively lists all JAR files in a given directory
-# and concatenates them in a Java Classpath compatible way into a single string.
-macro    (CreateClasspath classPath_var dir)
-	file(GLOB_RECURSE ${classPath_var} FOLLOW_SYMLINKS "${dir}/*.jar")
-	# Make sure we use the correct path delimitter for the compiling system
-	string(REPLACE ";" "${PATH_DELIM_H}" ${classPath_var} "${${classPath_var}}")
-endmacro (CreateClasspath classPath_var dir)
-
-
-# Concatenates an arbritrary number of Java ClassPaths (may be empty).
-function    (ConcatClasspaths resultingCP_var)
-	set(${resultingCP_var} "")
-	foreach    (cpPart ${ARGN})
-		set(${resultingCP_var} "${${resultingCP_var}}${cpPart}${PATH_DELIM_H}")
-	endforeach (cpPart)
-	string(REGEX REPLACE "${PATH_DELIM_H}\$" "" ${resultingCP_var} "${${resultingCP_var}}")
-	set(${resultingCP_var} "${${resultingCP_var}}" PARENT_SCOPE)
-endfunction (ConcatClasspaths)
-
-# Checks if maven is installed by executing "mvn --version"
-# and checking the return value (0 == "is installed").
-# The result variable will be set to TRUE or FALSE
-function    (IsMavenInstalled result_var)
-	set(${result_var} FALSE)
-	execute_process(COMMAND "mvn" "--version"
-			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-			RESULT_VARIABLE MVN_RET
-			OUTPUT_QUIET ERROR_QUIET)
-	if    ("${MVN_RET}" MATCHES "0")
-		set(${result_var} TRUE)
-	endif ("${MVN_RET}" MATCHES "0")
-	set(${result_var} "${${result_var}}" PARENT_SCOPE)
-endfunction (IsMavenInstalled)
-
-# Checks if a given directory is the root of a Maven project.
-# The result variable will be set to TRUE or FALSE
-function    (IsMavenProject dirToCheck result_var)
-	set(${result_var} FALSE)
-	if    (EXISTS "${dirToCheck}/pom.xml")
-		set(${result_var} TRUE)
-	endif (EXISTS "${dirToCheck}/pom.xml")
-	set(${result_var} "${${result_var}}" PARENT_SCOPE)
-endfunction (IsMavenProject)
-
-# Look for a manifest.mf file in a few specific sub-dirs.
-# This could be done with a simple find_file call,
-# but that strangely does not find the file under win32,
-# so we use this workaround
-function    (FindManifestFile srcDir result_var)
-	set(manifestSubdirs
-		"/src/main/resources/META-INF/"
-		"/src/"
-		"/")
-	set(${result_var} "${result_var}-NOTFOUND")
-	if     (CMAKE_HOST_WIN32)
-		foreach(subDir_var ${manifestSubdirs})
-			if     (EXISTS "${srcDir}${subDir_var}manifest.mf")
-				set(${result_var} "${srcDir}${subDir_var}manifest.mf")
-				break()
-			endif  (EXISTS "${srcDir}${subDir_var}manifest.mf")
-		endforeach(subDir_var)
-	else   (CMAKE_HOST_WIN32)
-		find_file(${result_var}
-			NAMES "manifest.mf" "MANIFEST.MF"
-			PATHS "${srcDir}"
-			PATH_SUFFIXES ${manifestSubdirs}
-			NO_DEFAULT_PATH)
-	endif  (CMAKE_HOST_WIN32)
-	set(${result_var} ${${result_var}} PARENT_SCOPE)
-endfunction (FindManifestFile)
+# includes rts/build/cmake/UtilJava.cmake
+INCLUDE(UtilJava)
 
 # Java Skirmish AI configuration macro.
 # This will be called from Java AIs at AI/Skirmish/*/CMakeLists.txt.
@@ -151,12 +39,12 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 	set(myBuildDir      "${CMAKE_CURRENT_BINARY_DIR}")
 
 	# Check if the user wants to compile the AI
-	if    (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}" AND CUSTOM_TARGET_SOURCES_SUPPORT)
+	if    (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}")
 		set(BUILD_THIS_SKIRMISHAI TRUE)
-	else  (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}" AND CUSTOM_TARGET_SOURCES_SUPPORT)
+	else  (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}")
 		set(BUILD_THIS_SKIRMISHAI FALSE)
 		message("warning: ${myName} Skirmish AI will not be built!")
-	endif (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}" AND CUSTOM_TARGET_SOURCES_SUPPORT)
+	endif (BUILD_Java_AIINTERFACE AND NOT myName MATCHES "${AI_EXCLUDE_REGEX}")
 
 	# Compile and install
 	if    (BUILD_THIS_SKIRMISHAI)
@@ -214,11 +102,7 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 			# ${my.build.dir}/SkirmishAI-src.jar (optional)
 			file(RELATIVE_PATH myBuildDirRel "${myDir}" "${myBuildDir}")
 			set(MVN_ATTRIBUTES
-				"-P" "as-spring-subproject,!stand-alone" # disable default profile & enable special profile
-				"-Djava.ai.int.src.dir=${SOURCE_ROOT_Java_AIINTERFACE}"
-				"-Djava.ai.int.build.dir=${BUILD_ROOT_Java_AIINTERFACE}"
-				"-Djava.oo.wrp.src.dir=${SOURCE_ROOT_JavaOO_AIWRAPPER}"
-				"-Djava.oo.wrp.build.dir=${BUILD_ROOT_JavaOO_AIWRAPPER}"
+				"-P" "as-spring-subproject" # enable special profile
 				"-Dmy.build.dir=${myBuildDirRel}"
 				"-Dmy.version=${myVersion}"
 				"--batch-mode" # Run in non-interactive (batch) mode
@@ -242,7 +126,7 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 				COMMENT
 					"  ${myTarget}: Running Maven ${MVN_PHASE} phase" VERBATIM
 				)
-			add_custom_target(${myTarget} ALL SOURCES "${myBuildDir}/${myBinJarFile}" ${myVersionDepFile})
+			add_custom_target(${myTarget} ALL DEPENDS "${myBuildDir}/${myBinJarFile}" ${myVersionDepFile})
 			add_dependencies(${myTarget} ${myDependTargets})
 		else  (configureMavenProject)
 			# If main Java package is "my.ai.pkg", this has to be set to "my".
@@ -255,13 +139,13 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 			set(myJavaBuildDir "${myBuildDir}/classes")
 
 			add_custom_target(${myBinaryTarget}
-				SOURCES "${myBuildDir}/${myBinJarFile}")
+				DEPENDS "${myBuildDir}/${myBinJarFile}")
 			add_dependencies(${myBinaryTarget} ${myDependTargets})
 
 			add_custom_target(${mySourceTarget}
-				SOURCES "${myBuildDir}/${mySrcJarFile}")
+				DEPENDS "${myBuildDir}/${mySrcJarFile}")
 
-			add_custom_target(${myTarget} ALL SOURCES ${myVersionDepFile})
+			add_custom_target(${myTarget} ALL DEPENDS ${myVersionDepFile})
 			add_dependencies(${myTarget} ${myBinaryTarget} ${mySourceTarget})
 
 			# Create our full Java class-path
@@ -311,7 +195,7 @@ macro    (ConfigureJavaSkirmishAI wrapperNames)
 				WORKING_DIRECTORY
 					"${mySourceDir}"
 				COMMENT
-					"  ${myTarget}: Creating library ${myBinJarFile}" VERBATIM
+					"  ${myTarget}: Compiling sources and packing library ${myBinJarFile}" VERBATIM
 				)
 
 			# Pack the sources
@@ -446,7 +330,10 @@ endif (AI_TYPES_JAVA AND JNI_FOUND AND JAVA_FOUND AND EXISTS ${myDir} AND EXISTS
 # Build
 if    (BUILD_${myName}_AIINTERFACE)
 	GetVersionPlusDepFile(myVersion myVersionDepFile)
-	set(myTarget      "${myName}-AIInterface")
+	set(myTarget       "${myName}-AIInterface")
+	set(myNativeTarget "${myTarget}-native")
+	set(myJavaTarget   "${myTarget}-java")
+	set(myMavenInstallTarget "${myTarget}-mavenInstall")
 	set(myInstLibsDir ${AI_INTERFACES_LIBS}/${myName}/${myVersion})
 	set(myInstDataDir ${AI_INTERFACES_DATA}/${myName}/${myVersion})
 	MakeAbsolute(myNativeSourceDir "${myDir}" "${myNativeSourceDirRel}")
@@ -481,6 +368,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 	SetGlobal(BUILD_ROOT_${myName}_AIINTERFACE       "${myBuildDir}")
 	SetGlobal(${myName}_AIINTERFACE_JAR_BIN          "${myBuildDir}/${myBinJarFile}")
 	SetGlobal(${myName}_AIINTERFACE_JAR_SRC          "${myBuildDir}/${mySrcJarFile}")
+	SetGlobal(${myName}_AIINTERFACE_POM              "${myBuildDir}/pom-generated.xml")
 	SetGlobal(CLASSPATH_${myName}_AIINTERFACE        "${myJavaLibs}${PATH_DELIM_H}${myBuildDir}/${myBinJarFile}")
 	SetGlobal(JAVA_SRC_DIR_${myName}_AIINTERFACE     "${myJavaSourceDir}")
 	SetGlobal(JAVA_GEN_SRC_DIR_${myName}_AIINTERFACE "${myJavaGeneratedSourceDir}")
@@ -582,7 +470,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 		WORKING_DIRECTORY
 			"${myAwkScriptsDir}"
 		COMMENT
-			"  ${myTarget}: Cleanup & create generated source directories ..." VERBATIM
+			"  ${myTarget}: Cleanup & create generated source directories" VERBATIM
 		)
 
 	# 1. & 2. Wrapp Callback (native->native)
@@ -609,7 +497,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 		WORKING_DIRECTORY
 			"${myAwkScriptsDir}"
 		COMMENT
-			"  ${myTarget}: Generating native callback wrapper sources ..." VERBATIM
+			"  ${myTarget}: Generating native callback wrapper sources" VERBATIM
 		)
 
 	# 3. Wrapp AI Callback (native-JNI->Java)
@@ -632,7 +520,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 		WORKING_DIRECTORY
 			"${myAwkScriptsDir}"
 		COMMENT
-			"  ${myTarget}: Generating JNI callback wrapper sources ..." VERBATIM
+			"  ${myTarget}: Generating JNI callback wrapper sources" VERBATIM
 		)
 
 	# 4. Wrapp AI Events (native-JNI->Java)
@@ -655,7 +543,7 @@ if    (BUILD_${myName}_AIINTERFACE)
 		WORKING_DIRECTORY
 			"${myAwkScriptsDir}"
 		COMMENT
-			"  ${myTarget}: Generating JNI events wrapper sources ..." VERBATIM
+			"  ${myTarget}: Generating JNI events wrapper sources" VERBATIM
 		)
 
 	# Locate the manifest file
@@ -675,11 +563,11 @@ if    (BUILD_${myName}_AIINTERFACE)
 		include_directories(BEFORE ${MINGWLIBS}/include/java)
 	endif (MINGW)
 	include_directories(BEFORE "${rts}/lib/streflop" "${myNativeSourceDir}" "${myNativeGeneratedSourceDir}")
-	add_library(${myTarget} MODULE ${myNativeSources} ${myNativeGeneratedSources} ${ai_common_SRC} ${myVersionDepFile})
-	target_link_libraries(${myTarget} streflop cutils-streflop)
-	set_target_properties(${myTarget} PROPERTIES COMPILE_FLAGS "-DUSING_STREFLOP")
-	set_target_properties(${myTarget} PROPERTIES OUTPUT_NAME   "AIInterface")
-	FixLibName(${myTarget})
+	add_library(${myNativeTarget} MODULE ${myNativeSources} ${myNativeGeneratedSources} ${ai_common_SRC} ${myVersionDepFile})
+	target_link_libraries(${myNativeTarget} streflop cutils-streflop)
+	set_target_properties(${myNativeTarget} PROPERTIES COMPILE_FLAGS "-DUSING_STREFLOP")
+	set_target_properties(${myNativeTarget} PROPERTIES OUTPUT_NAME   "AIInterface")
+	FixLibName(${myNativeTarget})
 
 
 	# Build the java part
@@ -694,8 +582,9 @@ if    (BUILD_${myName}_AIINTERFACE)
 		file(APPEND "${mySrcArgFile}" "${srcFile}\n")
 	endforeach (srcFile)
 
-	add_custom_command(TARGET ${myTarget} POST_BUILD
-		#OUTPUT "${myJavaBuildDir}/${myPkg}/*.class"
+	add_custom_command(
+		OUTPUT
+			"${myBuildDir}/${myBinJarFile}"
 		COMMAND "${CMAKE_COMMAND}"
 			"-E" "remove_directory" "${myJavaBuildDir}"
 		COMMAND "${CMAKE_COMMAND}"
@@ -705,21 +594,21 @@ if    (BUILD_${myName}_AIINTERFACE)
 			"-cp" "${myClassPath}"
 			"-d" "${myJavaBuildDir}"
 			"@${mySrcArgFile}"
-		DEPENDS ${myJavaSources} ${myJavaGeneratedSources}
-		WORKING_DIRECTORY "${myJavaGeneratedSourceDir}"
-		COMMENT "  ${myTarget}: Compiling Java sources ..." VERBATIM)
-
-	add_custom_command(TARGET ${myTarget} POST_BUILD
-		#OUTPUT "${myBuildDir}/${myBinJarFile}"
-		#DEPENDS "${myJavaBuildDir}/${myPkg}/*.class"
 		COMMAND "${JAVA_ARCHIVE}" ARGS
 			${myBinJarArgs} "${myBuildDir}/${myBinJarFile}"
 			"-C" "${myJavaBuildDir}" "${myPkgFirstPart}"
-		WORKING_DIRECTORY "${myBuildDir}"
-		COMMENT "  ${myTarget}: Creating library ${myBinJarFile} ..." VERBATIM)
+		DEPENDS
+			${myJavaSources}
+			${myJavaGeneratedSources}
+		WORKING_DIRECTORY
+			"${myJavaGeneratedSourceDir}"
+		COMMENT
+			"  ${myTarget}: Compiling sources and packing library ${myBinJarFile}" VERBATIM
+		)
 
-	add_custom_command(TARGET ${myTarget} POST_BUILD
-		#OUTPUT "${myBuildDir}/${mySrcJarFile}"
+	add_custom_command(
+		OUTPUT
+			"${myBuildDir}/${mySrcJarFile}"
 		COMMAND "${JAVA_ARCHIVE}" ARGS
 			"cf" "${myBuildDir}/${mySrcJarFile}"
 			"-C" "${myJavaSourceDir}" "${myPkgFirstPart}"
@@ -729,11 +618,78 @@ if    (BUILD_${myName}_AIINTERFACE)
 		DEPENDS
 			${myJavaSources}
 			${myJavaGeneratedSources}
-		WORKING_DIRECTORY "${myBuildDir}"
-		COMMENT "  ${myTarget}: Creating sources archive ${mySrcJarFile} ..." VERBATIM)
+		WORKING_DIRECTORY
+			"${myBuildDir}"
+		COMMENT
+			"  ${myTarget}: Creating sources archive ${mySrcJarFile}" VERBATIM
+		)
+
+	add_custom_target(${myJavaTarget}
+		DEPENDS
+			"${myBuildDir}/${myBinJarFile}"
+			"${myBuildDir}/${mySrcJarFile}")
+
+	add_custom_target(${myTarget} ALL)
+	add_dependencies(${myTarget} ${myNativeTarget})
+
+	# this sets the version in pom.xml
+	set(myMavenProperties "-DmyVersion=${myVersion}")
+	add_custom_command(
+		OUTPUT
+			"${myBuildDir}/pom-generated.xml"
+		COMMAND "${CMAKE_COMMAND}"
+			"-Dfile.in=${myDir}/pom.xml"
+			"-Dfile.out=${myBuildDir}/pom-generated.xml"
+			${myMavenProperties}
+			"-P" "${CMAKE_MODULES_SPRING}/ConfigureFile.cmake"
+		DEPENDS
+			"${myDir}/pom.xml"
+		WORKING_DIRECTORY
+			"${myDir}"
+		COMMENT
+			"  ${myTarget}: Configure pom.xml" VERBATIM
+		)
+	set_source_files_properties("${myBuildDir}/pom-generated.xml" PROPERTIES GENERATED TRUE)
+
+	IsMavenInstalled(isMavenInstalled)
+	if    (isMavenInstalled)
+		# This is required because the local Maven install does not create a
+		# file (whichs path we could know), and thus we would not be able to
+		# create a nice dependency chain without this.
+		set(myMavenInstallStubFile "${myBuildDir}/mavenInstallStub.txt")
+		set_source_files_properties("${myMavenInstallStubFile}" PROPERTIES GENERATED TRUE)
+		SetGlobal(${myName}_AIINTERFACE_MVN_INST_STUB_FILE  "${myMavenInstallStubFile}")
+		add_custom_command(
+			OUTPUT
+				"${myMavenInstallStubFile}"
+			COMMAND "mvn"
+				"install:install-file"
+				"-DpomFile=${myBuildDir}/pom-generated.xml"
+				"-Dfile=${myBuildDir}/${myBinJarFile}"
+				"-Dsources=${myBuildDir}/${mySrcJarFile}"
+			COMMAND "${CMAKE_COMMAND}"
+				"-E" "touch" "${myMavenInstallStubFile}"
+			DEPENDS
+				"${myBuildDir}/pom-generated.xml"
+				"${myBuildDir}/${myBinJarFile}"
+				"${myBuildDir}/${mySrcJarFile}"
+			WORKING_DIRECTORY
+				"${myDir}"
+			COMMENT
+				"  ${myTarget}: Installing to local maven repository" VERBATIM
+			)
+		add_custom_target(${myMavenInstallTarget}
+			DEPENDS
+				"${myMavenInstallStubFile}"
+			)
+		add_dependencies(${myMavenInstallTarget} ${myJavaTarget})
+		add_dependencies(${myTarget} ${myMavenInstallTarget})
+	else  (isMavenInstalled)
+		add_dependencies(${myTarget} ${myJavaTarget})
+	endif (isMavenInstalled)
 
 	# Install the native library
-	install(TARGETS   ${myTarget} DESTINATION ${myInstLibsDir})
+	install(TARGETS   ${myNativeTarget} DESTINATION ${myInstLibsDir})
 	# Install the data files
 	install(DIRECTORY "${myDir}/data/" DESTINATION ${myInstLibsDir} FILES_MATCHING PATTERN REGEX "InterfaceInfo\\.lua$")
 	install(DIRECTORY "${myDir}/data/" DESTINATION ${myInstDataDir} FILES_MATCHING PATTERN REGEX "InterfaceInfo\\.lua$" EXCLUDE PATTERN "*")

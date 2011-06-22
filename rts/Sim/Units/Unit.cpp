@@ -2,6 +2,7 @@
 
 #include "StdAfx.h"
 #include "mmgr.h"
+#include "lib/gml/gml.h"
 
 #include "UnitDef.h"
 #include "Unit.h"
@@ -119,6 +120,7 @@ CUnit::CUnit() : CSolidObject(),
 	stunned(false),
 	useHighTrajectory(false),
 	dontUseWeapons(false),
+	dontFire(false),
 	deathScriptFinished(false),
 	delayedWreckLevel(-1),
 	restTime(0),
@@ -136,6 +138,7 @@ CUnit::CUnit() : CSolidObject(),
 	category(0),
 	los(NULL),
 	tempNum(0),
+	mapSquare(-1),
 	losRadius(0),
 	airLosRadius(0),
 	losHeight(0.0f),
@@ -148,6 +151,9 @@ CUnit::CUnit() : CSolidObject(),
 	seismicSignature(0.0f),
 	hasRadarCapacity(false),
 	oldRadarPos(0, 0),
+	hasRadarPos(false),
+	stealth(false),
+	sonarStealth(false),
 	moveType(NULL),
 	prevMoveType(NULL),
 	usingScriptMoveType(false),
@@ -195,7 +201,6 @@ CUnit::CUnit() : CSolidObject(),
 	commandShotCount(-1),
 	fireState(FIRESTATE_FIREATWILL),
 	moveState(MOVESTATE_MANEUVER),
-	dontFire(false),
 	activated(false),
 	crashing(false),
 	isDead(false),
@@ -228,6 +233,10 @@ CUnit::CUnit() : CSolidObject(),
 	myTrack(NULL),
 	lastFlareDrop(0),
 	currentFuel(0.0f),
+	maxSpeed(0.0f),
+	maxReverseSpeed(0.0f),
+	alphaThreshold(0.1f),
+	cegDamage(1),
 	luaDraw(false),
 	noDraw(false),
 	noSelect(false),
@@ -235,12 +244,8 @@ CUnit::CUnit() : CSolidObject(),
 	leaveTracks(false),
 	isIcon(false),
 	iconRadius(0.0f),
-	maxSpeed(0.0f),
-	maxReverseSpeed(0.0f),
 	lodCount(0),
-	currentLOD(0),
-	alphaThreshold(0.1f),
-	cegDamage(1)
+	currentLOD(0)
 #ifdef USE_GML
 	, lastDrawFrame(-30)
 #endif
@@ -588,45 +593,6 @@ void CUnit::ForcedSpin(const float3& newDir)
 	ForcedMove(pos); // lazy, don't need to update the quadfield, etc...
 }
 
-
-/*
-void CUnit::SetFront(const SyncedFloat3& newDir)
-{
-	frontdir = newDir;
-	frontdir.Normalize();
-	rightdir = frontdir.cross(updir);
-	rightdir.Normalize();
-	updir = rightdir.cross(frontdir);
-	updir.Normalize();
-	heading = GetHeadingFromVector(frontdir.x, frontdir.z);
-	UpdateMidPos();
-}
-
-void CUnit::SetUp(const SyncedFloat3& newDir)
-{
-	updir = newDir;
-	updir.Normalize();
-	frontdir = updir.cross(rightdir);
-	frontdir.Normalize();
-	rightdir = frontdir.cross(updir);
-	rightdir.Normalize();
-	heading = GetHeadingFromVector(frontdir.x, frontdir.z);
-	UpdateMidPos();
-}
-
-void CUnit::SetRight(const SyncedFloat3& newDir)
-{
-	rightdir = newDir;
-	rightdir.Normalize();
-	updir = rightdir.cross(frontdir);
-	updir.Normalize();
-	frontdir = updir.cross(rightdir);
-	frontdir.Normalize();
-	heading = GetHeadingFromVector(frontdir.x, frontdir.z);
-	UpdateMidPos();
-}
-*/
-
 void CUnit::SetDirectionFromHeading()
 {
 	if (GetTransporter() == NULL) {
@@ -650,6 +616,14 @@ void CUnit::UpdateMidPos()
 	midPos = pos +
 		(frontdir * relMidPos.z) +
 		(updir    * relMidPos.y) +
+		(rightdir * relMidPos.x);
+}
+
+void CUnit::MoveMidPos(const float3& deltaPos) {
+	midPos += deltaPos;
+	pos = midPos -
+		(frontdir * relMidPos.z) -
+		(updir    * relMidPos.y) -
 		(rightdir * relMidPos.x);
 }
 
@@ -893,7 +867,7 @@ void CUnit::SlowUpdate()
 		return;
 	}
 
-	repairAmount=0.0f;
+	repairAmount = 0.0f;
 
 	if (paralyzeDamage > 0) {
 		paralyzeDamage -= maxHealth * 0.5f * CUnit::empDecline;
@@ -984,7 +958,7 @@ void CUnit::SlowUpdate()
 	}
 	AddEnergy(energyTickMake * 0.5f);
 
-	if (health<maxHealth) {
+	if (health < maxHealth) {
 		health += unitDef->autoHeal;
 
 		if (restTime > unitDef->idleTime) {
@@ -1029,9 +1003,14 @@ void CUnit::SlowUpdate()
 		}
 	}
 
+	// aircraft and ScriptMoveType do not want this
+	if (moveType->useHeading) {
+		SetDirectionFromHeading();
+	}
+
 	SlowUpdateWeapons();
 
-	if (moveType->progressState == AMoveType::Active ) {
+	if (moveType->progressState == AMoveType::Active) {
 		if (seismicSignature && !GetTransporter()) {
 			DoSeismicPing((int)seismicSignature);
 		}
@@ -1048,11 +1027,6 @@ void CUnit::SlowUpdateWeapons() {
 
 	haveTarget = false;
 	haveUserTarget = false;
-
-	// aircraft and ScriptMoveType do not want this
-	if (moveType->useHeading) {
-		SetDirectionFromHeading();
-	}
 
 	if (!dontFire) {
 		for (vector<CWeapon*>::iterator wi = weapons.begin(); wi != weapons.end(); ++wi) {
@@ -1080,18 +1054,21 @@ void CUnit::SlowUpdateWeapons() {
 
 void CUnit::DoWaterDamage()
 {
-	if (uh->waterDamage > 0.0f) {
-		if (pos.IsInBounds()) {
-			const int  px            = int(pos.x / (SQUARE_SIZE * 2));
-			const int  pz            = int(pos.z / (SQUARE_SIZE * 2));
-			const bool isFloating    = (physicalState == CSolidObject::Floating);
-			const bool onGround      = (physicalState == CSolidObject::OnGround);
-			const bool isWaterSquare = (readmap->mipHeightmap[1][pz * gs->hmapx + px] <= 0.0f);
+	if (mapInfo->water.damage <= 0.0f) {
+		return;
+	}
+	if (!pos.IsInBounds()) {
+		return;
+	}
 
-			if ((pos.y <= 0.0f) && isWaterSquare && (isFloating || onGround)) {
-				DoDamage(DamageArray(uh->waterDamage), 0, ZeroVector, -1);
-			}
-		}
+	const int  px            = pos.x / (SQUARE_SIZE * 2);
+	const int  pz            = pos.z / (SQUARE_SIZE * 2);
+	const bool isFloating    = (physicalState == CSolidObject::Floating);
+	const bool onGround      = (physicalState == CSolidObject::OnGround);
+	const bool isWaterSquare = (readmap->mipHeightmap[1][pz * gs->hmapx + px] <= 0.0f);
+
+	if ((pos.y <= 0.0f) && isWaterSquare && (isFloating || onGround)) {
+		DoDamage(DamageArray(mapInfo->water.damage), 0, ZeroVector, -1);
 	}
 }
 
@@ -1151,8 +1128,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 		damage = newDamage;
 	}
 
-	residualImpulse += ((impulse * impulseMult) / mass);
-	moveType->ImpulseAdded();
+	AddImpulse((impulse * impulseMult) / mass);
 
 	if (paralyzeTime == 0) { // real damage
 		if (damage > 0.0f) {
@@ -1173,8 +1149,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 				stunned = false;
 			}
 		}
-	}
-	else { // paralyzation
+	} else { // paralyzation
 		experienceMod *= 0.1f; // reduced experience
 		if (damage > 0.0f) {
 			// paralyzeDamage may not get higher than maxHealth * (paralyzeTime + 1),
@@ -1248,6 +1223,13 @@ void CUnit::Kill(const float3& impulse) {
 	DoDamage(da, NULL, impulse, -1);
 }
 
+void CUnit::AddImpulse(const float3& addedImpulse) {
+	residualImpulse += addedImpulse;
+
+	if (addedImpulse.SqLength() >= 0.01f)
+		moveType->ImpulseAdded(addedImpulse);
+}
+
 
 
 /******************************************************************************/
@@ -1261,8 +1243,6 @@ CMatrix44f CUnit::GetTransformMatrix(const bool synced, const bool error) const
 		interPos += helper->GetUnitErrorPos(this, gu->myAllyTeam) - midPos;
 	}
 
-	CTransportUnit* trans = NULL;
-
 	if (usingScriptMoveType ||
 	    (!beingBuilt && (physicalState == CSolidObject::Flying) && unitDef->canmove)) {
 		// aircraft, skidding ground unit, or active ScriptMoveType
@@ -1270,7 +1250,7 @@ CMatrix44f CUnit::GetTransformMatrix(const bool synced, const bool error) const
 		// use this matrix, or their nanoframes won't spin on pad
 		return CMatrix44f(interPos, -rightdir, updir, frontdir);
 	}
-	else if ((trans = GetTransporter()) != NULL) {
+	else if (GetTransporter()) {
 		// we're being transported, transporter sets our vectors
 		return CMatrix44f(interPos, -rightdir, updir, frontdir);
 	}

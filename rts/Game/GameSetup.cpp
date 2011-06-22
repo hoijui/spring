@@ -67,7 +67,10 @@ void CGameSetup::LoadUnitRestrictions(const TdfParser& file)
 void CGameSetup::LoadStartPositionsFromMap()
 {
 	MapParser mapParser(MapFile());
-
+	if (!mapParser.IsValid()) {
+		throw content_error("MapInfo: " + mapParser.GetErrorLog());
+	}
+	
 	for(size_t a = 0; a < teamStartingData.size(); ++a) {
 		float3 pos(1000.0f, 100.0f, 1000.0f);
 		if (!mapParser.GetStartPos(teamStartingData[a].teamStartNum, pos)) // don't fail when playing with more players than startpositions and we didn't use them anyway
@@ -216,16 +219,6 @@ void CGameSetup::LoadSkirmishAIs(const TdfParser& file, std::set<std::string>& n
 	} else {
 		throw content_error(
 				"incorrect number of skirmish AIs in GameSetup script");
-	}
-}
-const SkirmishAIData* CGameSetup::GetSkirmishAIDataForTeam(int teamId) const {
-
-	std::map<int, const SkirmishAIData*>::const_iterator sad;
-	sad = team_skirmishAI.find(teamId);
-	if (sad == team_skirmishAI.end()) {
-		return NULL;
-	} else {
-		return sad->second;
 	}
 }
 

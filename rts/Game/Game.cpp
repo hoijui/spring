@@ -145,6 +145,7 @@
 #include "System/LoadSave/DemoRecorder.h"
 #include "System/Net/PackPacket.h"
 #include "System/Platform/CrashHandler.h"
+#include "System/Platform/Watchdog.h"
 #include "System/Sound/ISound.h"
 #include "System/Sound/SoundChannels.h"
 #include "System/Sync/SyncedPrimitiveIO.h"
@@ -217,7 +218,6 @@ CR_REG_METADATA(CGame,(
 
 
 CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHandler* saveFile) :
-	finishedLoading(false),
 	gameDrawMode(gameNotDrawing),
 	defsParser(NULL),
 	fps(0),
@@ -231,6 +231,7 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	gameOver(false),
 
 	noSpectatorChat(false),
+	finishedLoading(false),
 
 	infoConsole(NULL),
 	consoleHistory(NULL),
@@ -391,6 +392,8 @@ CGame::~CGame()
 
 void CGame::LoadGame(const std::string& mapname)
 {
+	Watchdog::RegisterThread("loadscreen");
+
 	if (!gu->globalQuit) LoadDefs();
 	if (!gu->globalQuit) LoadSimulation(mapname);
 	if (!gu->globalQuit) LoadRendering();
@@ -402,6 +405,8 @@ void CGame::LoadGame(const std::string& mapname)
 		loadscreen->SetLoadMessage("Loading game");
 		saveFile->LoadGame();
 	}
+
+	Watchdog::DeregisterThread("loadscreen");
 }
 
 
@@ -524,6 +529,10 @@ void CGame::LoadSimulation(const std::string& mapname)
 void CGame::LoadRendering()
 {
 	// rendering components
+	loadscreen->SetLoadMessage("Creating Sky");
+	sky = IBaseSky::GetSky();
+
+	loadscreen->SetLoadMessage("Creating ShadowHandler & DecalHandler");
 	cubeMapHandler = new CubeMapHandler();
 	shadowHandler = new CShadowHandler();
 	groundDecals = new CGroundDecalHandler();
@@ -539,13 +548,13 @@ void CGame::LoadRendering()
 
 	geometricObjects = new CGeometricObjects();
 
+	loadscreen->SetLoadMessage("Creating ProjectileDrawer & UnitDrawer");
 	projectileDrawer = new CProjectileDrawer();
 	projectileDrawer->LoadWeaponTextures();
 	unitDrawer = new CUnitDrawer();
 	modelDrawer = IModelDrawer::GetInstance();
 
-	loadscreen->SetLoadMessage("Creating Sky & Water");
-	sky = CBaseSky::GetSky();
+	loadscreen->SetLoadMessage("Creating Water");
 	water = CBaseWater::GetWater(NULL, -1);
 }
 
@@ -704,20 +713,23 @@ void CGame::ResizeEvent()
 }
 
 
-int CGame::KeyPressed(unsigned short k, bool isRepeat)
+int CGame::KeyPressed(unsigned short key, bool isRepeat)
 {
 	if (!gameOver && !isRepeat) {
 		playerHandler->Player(gu->myPlayerNum)->currentStats.keyPresses++;
 	}
 
+	// Get the list of possible key actions
+	const CKeySet ks(key, false);
+	const CKeyBindings::ActionList& actionList = keyBindings->GetActionList(ks);
+
 	if (!hotBinding.empty()) {
-		if (k == SDLK_ESCAPE) {
+		if (key == SDLK_ESCAPE) {
 			hotBinding.clear();
 		}
-		else if (!keyCodes->IsModifier(k) && (k != keyBindings->GetFakeMetaKey())) {
-			CKeySet ks(k, false);
+		else if (!keyCodes->IsModifier(key) && (key != keyBindings->GetFakeMetaKey())) {
 			string cmd = "bind";
-			cmd += " " + ks.GetString(false) ;
+			cmd += " " + ks.GetString(false);
 			cmd += " " + hotBinding;
 			keyBindings->Command(cmd);
 			hotBinding.clear();
@@ -726,171 +738,13 @@ int CGame::KeyPressed(unsigned short k, bool isRepeat)
 		return 0;
 	}
 
-	// Get the list of possible key actions
-	CKeySet ks(k, false);
-	const CKeyBindings::ActionList& actionList = keyBindings->GetActionList(ks);
-
 	if (userWriting) {
-		unsigned int actionIndex;
-		for (actionIndex = 0; actionIndex < actionList.size(); actionIndex++) {
-			const Action& action = actionList[actionIndex];
-
-			if (action.command == "edit_return") {
-				userWriting=false;
-				writingPos = 0;
-
-				if (k == SDLK_RETURN) {
-					keyInput->SetKeyState(k, 0); //prevent game start when server chats
-				}
-				if (chatting) {
-					string command;
-					if ((userInput.find_first_of("aAsS") == 0) && (userInput[1] == ':')) {
-						command = userInput.substr(2);
-					} else {
-						command = userInput;
-					}
-					if ((command[0] == '/') && (command[1] != '/')) {
-						// execute an action
-						consoleHistory->AddLine(command);
-						const string actionLine = command.substr(1); // strip the '/'
-						chatting = false;
-						userInput = "";
-						writingPos = 0;
-						logOutput.Print(command);
-						CKeySet ks(k, false);
-						Action fakeAction(actionLine);
-						ActionPressed(fakeAction, ks, isRepeat);
-					}
-				}
+		for (unsigned int actionIndex = 0; actionIndex < actionList.size(); actionIndex++) {
+			if (ProcessKeyPressAction(key, actionList[actionIndex])) {
+				// the key was used, ignore it (ex: alt+a)
+				ignoreNextChar = (actionIndex < (actionList.size() - 1));
 				break;
 			}
-			else if ((action.command == "edit_escape") &&
-			         (chatting || inMapDrawer->wantLabel)) {
-				if (chatting) {
-					consoleHistory->AddLine(userInput);
-				}
-				userWriting=false;
-				chatting=false;
-				inMapDrawer->wantLabel=false;
-				userInput="";
-				writingPos = 0;
-				break;
-			}
-			else if (action.command == "edit_complete") {
-				string head = userInput.substr(0, writingPos);
-				string tail = userInput.substr(writingPos);
-				const vector<string> &partials = wordCompletion->Complete(head);
-				userInput = head + tail;
-				writingPos = (int)head.length();
-				if (!partials.empty()) {
-					string msg;
-					for (unsigned int i = 0; i < partials.size(); i++) {
-						msg += "  ";
-						msg += partials[i];
-					}
-					logOutput.Print(msg);
-				}
-				break;
-			}
-			else if (action.command == "chatswitchall") {
-				if ((userInput.find_first_of("aAsS") == 0) && (userInput[1] == ':')) {
-					userInput = userInput.substr(2);
-					writingPos = std::max(0, writingPos - 2);
-				}
-				userInputPrefix = "";
-				break;
-			}
-			else if (action.command == "chatswitchally") {
-				if ((userInput.find_first_of("aAsS") == 0) && (userInput[1] == ':')) {
-					userInput[0] = 'a';
-				} else {
-					userInput = "a:" + userInput;
-					writingPos += 2;
-				}
-				userInputPrefix = "a:";
-				break;
-			}
-			else if (action.command == "chatswitchspec") {
-				if ((userInput.find_first_of("aAsS") == 0) && (userInput[1] == ':')) {
-					userInput[0] = 's';
-				} else {
-					userInput = "s:" + userInput;
-					writingPos += 2;
-				}
-				userInputPrefix = "s:";
-				break;
-			}
-			else if (action.command == "pastetext") {
-				if (!action.extra.empty()) {
-					userInput.insert(writingPos, action.extra);
-					writingPos += action.extra.length();
-				} else {
-					PasteClipboard();
-				}
-				break;
-			}
-
-			else if (action.command == "edit_backspace") {
-				if (!userInput.empty() && (writingPos > 0)) {
-					userInput.erase(writingPos - 1, 1);
-					writingPos--;
-				}
-				break;
-			}
-			else if (action.command == "edit_delete") {
-				if (!userInput.empty() && (writingPos < (int)userInput.size())) {
-					userInput.erase(writingPos, 1);
-				}
-				break;
-			}
-			else if (action.command == "edit_home") {
-				writingPos = 0;
-				break;
-			}
-			else if (action.command == "edit_end") {
-				writingPos = (int)userInput.length();
-				break;
-			}
-			else if (action.command == "edit_prev_char") {
-				writingPos = std::max(0, std::min((int)userInput.length(), writingPos - 1));
-				break;
-			}
-			else if (action.command == "edit_next_char") {
-				writingPos = std::max(0, std::min((int)userInput.length(), writingPos + 1));
-				break;
-			}
-			else if (action.command == "edit_prev_word") {
-				// prev word
-				const char* s = userInput.c_str();
-				int p = writingPos;
-				while ((p > 0) && !isalnum(s[p - 1])) { p--; }
-				while ((p > 0) &&  isalnum(s[p - 1])) { p--; }
-				writingPos = p;
-				break;
-			}
-			else if (action.command == "edit_next_word") {
-				const int len = (int)userInput.length();
-				const char* s = userInput.c_str();
-				int p = writingPos;
-				while ((p < len) && !isalnum(s[p])) { p++; }
-				while ((p < len) &&  isalnum(s[p])) { p++; }
-				writingPos = p;
-				break;
-			}
-			else if ((action.command == "edit_prev_line") && chatting) {
-				userInput = consoleHistory->PrevLine(userInput);
-				writingPos = (int)userInput.length();
-				break;
-			}
-			else if ((action.command == "edit_next_line") && chatting) {
-				userInput = consoleHistory->NextLine(userInput);
-				writingPos = (int)userInput.length();
-				break;
-			}
-		}
-
-		if (actionIndex != actionList.size()) {
-			ignoreNextChar = true; // the key was used, ignore it  (ex: alt+a)
 		}
 
 		return 0;
@@ -900,15 +754,15 @@ int CGame::KeyPressed(unsigned short k, bool isRepeat)
 	std::deque<CInputReceiver*>& inputReceivers = GetInputReceivers();
 	std::deque<CInputReceiver*>::iterator ri;
 	for (ri = inputReceivers.begin(); ri != inputReceivers.end(); ++ri) {
-		CInputReceiver* recv=*ri;
-		if (recv && recv->KeyPressed(k, isRepeat)) {
+		CInputReceiver* recv = *ri;
+		if (recv && recv->KeyPressed(key, isRepeat)) {
 			return 0;
 		}
 	}
 
 	// try our list of actions
-	for (int i = 0; i < (int)actionList.size(); ++i) {
-		if (ActionPressed(actionList[i], ks, isRepeat)) {
+	for (unsigned int i = 0; i < actionList.size(); ++i) {
+		if (ActionPressed(key, actionList[i], isRepeat)) {
 			return 0;
 		}
 	}
@@ -1093,8 +947,11 @@ bool CGame::DrawWorld()
 		SCOPED_TIMER("Water");
 
 		if (!water->drawSolid) {
+			//! Water rendering will overwrite features, so save them
+			featureDrawer->SwapFeatures();
 			water->UpdateBaseWater(this);
 			water->Draw();
+			featureDrawer->SwapFeatures();
 		}
 	}
 
@@ -1271,35 +1128,40 @@ bool CGame::Draw() {
 		if (lastSimFrame != gs->frameNum && !skipping) {
 			projectileDrawer->UpdateTextures();
 			sky->Update();
-
+			sky->GetLight()->Update();
 			water->Update();
-			globalRendering->Update();
 		}
 	}
+
 
 	if (lastSimFrame != gs->frameNum) {
 		CInputReceiver::CollectGarbage();
-		if (!skipping) {
-			// TODO call only when camera changed
-			sound->UpdateListener(camera->pos, camera->forward, camera->up, globalRendering->lastFrameTime);
-		}
 	}
 
-	//! update extra texture even if paused (you can still give orders)
-	if (!skipping && (lastSimFrame != gs->frameNum || gs->paused)) {
-		static unsigned next_upd = lastUpdate + 1000/30;
+	//! always update ExtraTexture & SoundListener with <=30Hz (even when paused)
+	if (!skipping) {
+		bool newSimFrame = (lastSimFrame != gs->frameNum);
+		if (newSimFrame || gs->paused) {
+			static unsigned lastUpdate = SDL_GetTicks();
+			unsigned deltaMSec = currentTime - lastUpdate;
 
-		if (!gs->paused || next_upd <= lastUpdate) {
-			next_upd = lastUpdate + 1000/30;
+			if (!gs->paused || deltaMSec >= 1000/30.f) {
+				lastUpdate = currentTime;
 
-			SCOPED_TIMER("ExtraTexture");
-			gd->UpdateExtraTexture();
+				{
+					SCOPED_TIMER("ExtraTexture");
+					gd->UpdateExtraTexture();
+				}
+
+				// TODO call only when camera changed
+				sound->UpdateListener(camera->pos, camera->forward, camera->up, deltaMSec / 1000.f);
+			}
 		}
 	}
 
 	lastSimFrame = gs->frameNum;
 
-	if(!skipping)
+	if (!skipping)
 		UpdateUI(true);
 
 	SetDrawMode(gameNormalDraw);
@@ -1348,25 +1210,27 @@ bool CGame::Draw() {
 	}
 
 	if (doDrawWorld) {
-		{
-			SCOPED_TIMER("Shadows/Reflections");
-			if (shadowHandler->shadowsLoaded && (gd->drawMode != CBaseGroundDrawer::drawLos)) {
-				// NOTE: shadows don't work in LOS mode, gain a few fps (until it's fixed)
-				SetDrawMode(gameShadowDraw);
-				shadowHandler->CreateShadows();
-				SetDrawMode(gameNormalDraw);
-			}
+		SCOPED_TIMER("Shadows/Reflections");
 
+		if (shadowHandler->shadowsLoaded && (gd->drawMode != CBaseGroundDrawer::drawLos)) {
+			// NOTE: shadows don't work in LOS mode, gain a few fps (until it's fixed)
+			SetDrawMode(gameShadowDraw);
+			shadowHandler->CreateShadows();
+			SetDrawMode(gameNormalDraw);
+		}
+
+		cubeMapHandler->UpdateReflectionTexture();
+
+		if (sky->GetLight()->IsDynamic()) {
 			cubeMapHandler->UpdateSpecularTexture();
-			cubeMapHandler->UpdateReflectionTexture();
 			sky->UpdateSkyTexture();
 			readmap->UpdateShadingTexture();
-
-			if (FBO::IsSupported())
-				FBO::Unbind();
-
-			glViewport(globalRendering->viewPosX, 0, globalRendering->viewSizeX, globalRendering->viewSizeY);
 		}
+
+		if (FBO::IsSupported())
+			FBO::Unbind();
+
+		glViewport(globalRendering->viewPosX, 0, globalRendering->viewSizeX, globalRendering->viewSizeY);
 	}
 
 	glDepthMask(GL_TRUE);
@@ -1755,9 +1619,12 @@ void CGame::SimFrame() {
 		m_validateAllAllocUnits();
 #endif
 
-	eventHandler.GameFrame(gs->frameNum);
-
-	gs->frameNum++;
+	// Important: gs->frameNum must be updated *before* GameFrame is called,
+	// or any call-outs called by Lua will see a stale gs->frameNum.
+	// (e.g. effective TTL of CEGs emitted in GameFrame will be reduced...)
+	// It must still be passed the old frameNum because Lua may depend on it.
+	// (e.g. initialization in frame 0...)
+	eventHandler.GameFrame(gs->frameNum++);
 
 	if (!skipping) {
 		infoConsole->Update();
@@ -1773,7 +1640,6 @@ void CGame::SimFrame() {
 		(playerHandler->Player(gu->myPlayerNum)->fpsController).SendStateUpdate(camMove);
 
 		CTeamHighlight::Update(gs->frameNum);
-		globalRendering->UpdateSun();
 	}
 
 	// everything from here is simulation

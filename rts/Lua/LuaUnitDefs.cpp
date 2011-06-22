@@ -186,7 +186,7 @@ static int UnitDefIndex(lua_State* L)
 			return 1;
 		}
 		case STRING_TYPE: {
-			lua_pushstring(L, ((string*)p)->c_str());
+			lua_pushsstring(L, *((string*)p));
 			return 1;
 		}
 		case FUNCTION_TYPE: {
@@ -318,7 +318,7 @@ static int SafeIconType(lua_State* L, const void* data)
 	// the iconType is unsynced because LuaUI has SetUnitDefIcon()
 	if (!CLuaHandle::GetActiveHandle()->GetSynced()) {
 		const icon::CIcon& iconType = *((const icon::CIcon*)data);
-		lua_pushstring(L, iconType->GetName().c_str());
+		lua_pushsstring(L, iconType->GetName());
 		return 1;
 	}
 	return 0;
@@ -331,8 +331,8 @@ static int CustomParamsTable(lua_State* L, const void* data)
 	lua_newtable(L);
 	map<string, string>::const_iterator it;
 	for (it = params.begin(); it != params.end(); ++it) {
-		lua_pushstring(L, it->first.c_str());
-		lua_pushstring(L, it->second.c_str());
+		lua_pushsstring(L, it->first);
+		lua_pushsstring(L, it->second);
 		lua_rawset(L, -3);
 	}
 	return 1;
@@ -366,7 +366,7 @@ static inline int BuildCategorySet(lua_State* L, const vector<string>& cats)
 	lua_newtable(L);
 	const int count = (int)cats.size();
 	for (int i = 0; i < count; i++) {
-		lua_pushstring(L, cats[i].c_str());
+		lua_pushsstring(L, cats[i]);
 		lua_pushboolean(L, true);
 		lua_rawset(L, -3);
 	}
@@ -434,7 +434,7 @@ static void PushGuiSoundSet(lua_State* L, const string& name,
                             const GuiSoundSet& soundSet)
 {
 	const int soundCount = (int)soundSet.sounds.size();
-	lua_pushstring(L, name.c_str());
+	lua_pushsstring(L, name);
 	lua_newtable(L);
 	for (int i = 0; i < soundCount; i++) {
 		lua_pushnumber(L, i + 1);
@@ -559,19 +559,20 @@ static int TotalEnergyOut(lua_State* L, const void* data)
 
 
 
-#define TYPE_BOOL_FUNC(FuncName)                        \
+#define TYPE_FUNC(FuncName, LuaType)                    \
 	static int FuncName(lua_State* L, const void* data) \
 	{                                                   \
 		const UnitDef* ud = (const UnitDef*) data;      \
-		lua_pushboolean(L, ud->FuncName());             \
+		lua_push ## LuaType(L, ud->FuncName());         \
 		return 1;                                       \
 	}
 
-TYPE_BOOL_FUNC(IsImmobileUnit);
-TYPE_BOOL_FUNC(IsFactoryUnit);
-TYPE_BOOL_FUNC(IsFighterUnit);
-TYPE_BOOL_FUNC(IsBomberUnit);
-TYPE_BOOL_FUNC(IsGroundUnit);
+TYPE_FUNC(GetTypeString, string);
+TYPE_FUNC(IsBuildingUnit, boolean);
+TYPE_FUNC(IsFactoryUnit, boolean);
+TYPE_FUNC(IsFighterUnit, boolean);
+TYPE_FUNC(IsBomberUnit, boolean);
+TYPE_FUNC(IsGroundUnit, boolean);
 
 
 
@@ -636,11 +637,12 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_FUNCTION("stockpileWeaponDef", ud.stockpileWeaponDef, WeaponDefToID);
 	ADD_FUNCTION("iconType",           ud.iconType,           SafeIconType);
 
-	ADD_FUNCTION("isBuilding",       ud, IsImmobileUnit); // !
-	ADD_FUNCTION("isFactory",        ud, IsFactoryUnit);
-	ADD_FUNCTION("isFighter",        ud, IsFighterUnit);
-	ADD_FUNCTION("isBomber",         ud, IsBomberUnit);
-	ADD_FUNCTION("isGroundUnit",     ud, IsGroundUnit);
+	ADD_FUNCTION("type",         ud, GetTypeString); // NOTE: deprecated, remove after 0.83.*
+	ADD_FUNCTION("isBuilding",   ud, IsBuildingUnit);
+	ADD_FUNCTION("isFactory",    ud, IsFactoryUnit);
+	ADD_FUNCTION("isFighter",    ud, IsFighterUnit);
+	ADD_FUNCTION("isBomber",     ud, IsBomberUnit);
+	ADD_FUNCTION("isGroundUnit", ud, IsGroundUnit);
 
 	ADD_FUNCTION("height",  ud, ModelHeight);
 	ADD_FUNCTION("radius",  ud, ModelRadius);

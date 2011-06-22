@@ -10,6 +10,7 @@ ADD_SUBDIRECTORY(md5)
 ADD_SUBDIRECTORY(lobby)
 ADD_SUBDIRECTORY(cutils)
 ADD_SUBDIRECTORY(headlessStubs)
+ADD_SUBDIRECTORY(assimp)
 
 if    (NOT HEADLESS_SYSTEM)
 	Add_Subdirectory(gml)

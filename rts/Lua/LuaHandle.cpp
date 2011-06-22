@@ -1251,7 +1251,7 @@ bool CLuaHandle::RecvLuaMsg(const string& msg, int playerID)
 		return false;
 	}
 
-	lua_pushlstring(L, msg.data(), msg.size()); // allow embedded 0's
+	lua_pushsstring(L, msg); // allow embedded 0's
 	lua_pushnumber(L, playerID);
 
 	// call the routine
@@ -1381,6 +1381,8 @@ void CLuaHandle::ViewResize()
 		return;
 	}
 
+	const int winPosY_bl = globalRendering->screenSizeY - globalRendering->winSizeY - globalRendering->winPosY; //! origin BOTTOMLEFT
+
 	lua_newtable(L);
 	LuaPushNamedNumber(L, "screenSizeX", globalRendering->screenSizeX);
 	LuaPushNamedNumber(L, "screenSizeY", globalRendering->screenSizeY);
@@ -1389,7 +1391,7 @@ void CLuaHandle::ViewResize()
 	LuaPushNamedNumber(L, "windowSizeX", globalRendering->winSizeX);
 	LuaPushNamedNumber(L, "windowSizeY", globalRendering->winSizeY);
 	LuaPushNamedNumber(L, "windowPosX",  globalRendering->winPosX);
-	LuaPushNamedNumber(L, "windowPosY",  globalRendering->winPosY);
+	LuaPushNamedNumber(L, "windowPosY",  winPosY_bl);
 	LuaPushNamedNumber(L, "viewSizeX",   globalRendering->viewSizeX);
 	LuaPushNamedNumber(L, "viewSizeY",   globalRendering->viewSizeY);
 	LuaPushNamedNumber(L, "viewPosX",    globalRendering->viewPosX);
@@ -1638,7 +1640,7 @@ bool CLuaHandle::KeyPress(unsigned short key, bool isRepeat)
 
 	lua_pushnumber(L, key);
 
-	lua_newtable(L);
+	lua_createtable(L, 0, 4);
 	HSTR_PUSH_BOOL(L, "alt",   !!keyInput->GetKeyState(SDLK_LALT));
 	HSTR_PUSH_BOOL(L, "ctrl",  !!keyInput->GetKeyState(SDLK_LCTRL));
 	HSTR_PUSH_BOOL(L, "meta",  !!keyInput->GetKeyState(SDLK_LMETA));
@@ -1647,7 +1649,7 @@ bool CLuaHandle::KeyPress(unsigned short key, bool isRepeat)
 	lua_pushboolean(L, isRepeat);
 
 	CKeySet ks(key, false);
-	lua_pushstring(L, ks.GetString(true).c_str());
+	lua_pushsstring(L, ks.GetString(true));
 
 	lua_pushnumber(L, keyInput->GetCurrentKeyUnicodeChar());
 
@@ -1681,14 +1683,14 @@ bool CLuaHandle::KeyRelease(unsigned short key)
 
 	lua_pushnumber(L, key);
 
-	lua_newtable(L);
+	lua_createtable(L, 0, 4);
 	HSTR_PUSH_BOOL(L, "alt",   !!keyInput->GetKeyState(SDLK_LALT));
 	HSTR_PUSH_BOOL(L, "ctrl",  !!keyInput->GetKeyState(SDLK_LCTRL));
 	HSTR_PUSH_BOOL(L, "meta",  !!keyInput->GetKeyState(SDLK_LMETA));
 	HSTR_PUSH_BOOL(L, "shift", !!keyInput->GetKeyState(SDLK_LSHIFT));
 
 	CKeySet ks(key, false);
-	lua_pushstring(L, ks.GetString(true).c_str());
+	lua_pushsstring(L, ks.GetString(true));
 
 	lua_pushnumber(L, keyInput->GetCurrentKeyUnicodeChar());
 
@@ -1932,7 +1934,7 @@ bool CLuaHandle::ConfigCommand(const string& command)
 		return true; // the call is not defined
 	}
 
-	lua_pushstring(L, command.c_str());
+	lua_pushsstring(L, command);
 
 	// call the routine
 	if (!RunCallInUnsynced(cmdStr, 1, 0)) {
@@ -1958,15 +1960,14 @@ bool CLuaHandle::CommandNotify(const Command& cmd)
 	lua_pushnumber(L, cmd.id);
 
 	// push the params list
-	lua_newtable(L);
+	lua_createtable(L, cmd.params.size(), 0);
 	for (int p = 0; p < (int)cmd.params.size(); p++) {
-		lua_pushnumber(L, p + 1);
 		lua_pushnumber(L, cmd.params[p]);
-		lua_rawset(L, -3);
+		lua_rawseti(L, -2, p + 1);
 	}
 
 	// push the options table
-	lua_newtable(L);
+	lua_createtable(L, 0, 6);
 	HSTR_PUSH_NUMBER(L, "coded", cmd.options);
 	HSTR_PUSH_BOOL(L, "alt",   !!(cmd.options & ALT_KEY));
 	HSTR_PUSH_BOOL(L, "ctrl",  !!(cmd.options & CONTROL_KEY));
@@ -2004,7 +2005,7 @@ bool CLuaHandle::AddConsoleLine(const string& msg, const CLogSubsystem& /**/)
 		return true; // the call is not defined
 	}
 
-	lua_pushstring(L, msg.c_str());
+	lua_pushsstring(L, msg);
 	// FIXME: makes no sense now, but *gets might expect this
 	lua_pushnumber(L, 0);
 
@@ -2118,7 +2119,7 @@ bool CLuaHandle::MapDrawCmd(int playerID, int type,
 		lua_pushnumber(L, pos0->x);
 		lua_pushnumber(L, pos0->y);
 		lua_pushnumber(L, pos0->z);
-		lua_pushstring(L, label->c_str());
+		lua_pushsstring(L, *label);
 		args = 6;
 	}
 	else if (type == MAPDRAW_LINE) {
@@ -2174,7 +2175,7 @@ bool CLuaHandle::GameSetup(const string& state, bool& ready,
 		return false;
 	}
 
-	lua_pushstring(L, state.c_str());
+	lua_pushsstring(L, state);
 
 	lua_pushboolean(L, ready);
 
@@ -2182,7 +2183,7 @@ bool CLuaHandle::GameSetup(const string& state, bool& ready,
 	map<int, string>::const_iterator it;
 	for (it = playerStates.begin(); it != playerStates.end(); ++it) {
 		lua_pushnumber(L, it->first);
-		lua_pushstring(L, it->second.c_str());
+		lua_pushsstring(L, it->second);
 		lua_rawset(L, -3);
 	}
 
@@ -2241,7 +2242,7 @@ bool CLuaHandle::AddBasicCalls()
 
 int CLuaHandle::CallOutGetName(lua_State* L)
 {
-	lua_pushstring(L, activeHandle->GetName().c_str());
+	lua_pushsstring(L, activeHandle->GetName());
 	return 1;
 }
 
@@ -2321,7 +2322,7 @@ int CLuaHandle::CallOutGetCallInList(lua_State* L)
 	eventHandler.GetEventList(list);
 	lua_createtable(L, 0, list.size());
 	for (unsigned int i = 0; i < list.size(); i++) {
-		lua_pushstring(L, list[i].c_str());
+		lua_pushsstring(L, list[i]);
 		lua_newtable(L); {
 			lua_pushliteral(L, "unsynced");
 			lua_pushboolean(L, eventHandler.IsUnsynced(list[i]));

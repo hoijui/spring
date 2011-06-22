@@ -42,6 +42,7 @@
 #include "Rendering/IconHandler.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/UnitDrawer.h"
+#include "Rendering/Env/BaseSky.h"
 #include "Rendering/Env/BaseWater.h"
 #include "Rendering/Env/CubeMapHandler.h"
 #include "Rendering/GL/glExtra.h"
@@ -802,7 +803,7 @@ void LuaOpenGL::ResetDrawInMiniMap()
 void LuaOpenGL::SetupWorldLighting()
 {
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-	glLightfv(GL_LIGHT1, GL_POSITION, globalRendering->sunDir);
+	glLightfv(GL_LIGHT1, GL_POSITION, sky->GetLight()->GetLightDir());
 	glEnable(GL_LIGHT1);
 }
 
@@ -819,10 +820,11 @@ void LuaOpenGL::SetupScreenMatrices()
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
+	const int winPosY_bl = globalRendering->screenSizeY - globalRendering->winSizeY - globalRendering->winPosY; //! origin BOTTOMLEFT
 	const float dist   = screenDistance;         // eye-to-screen (meters)
 	const float width  = screenWidth;            // screen width (meters)
 	const float vppx   = float(globalRendering->winPosX + globalRendering->viewPosX); // view pixel pos x
-	const float vppy   = float(globalRendering->winPosY + globalRendering->viewPosY); // view pixel pos y
+	const float vppy   = float(winPosY_bl + globalRendering->viewPosY); // view pixel pos y
 	const float vpsx   = float(globalRendering->viewSizeX);   // view pixel size x
 	const float vpsy   = float(globalRendering->viewSizeY);   // view pixel size y
 	const float spsx   = float(globalRendering->screenSizeX); // screen pixel size x
@@ -882,7 +884,7 @@ void LuaOpenGL::SetupScreenLighting()
 	// sun light -- needs the camera transformation
 	glPushMatrix();
 	glLoadMatrixd(camera->GetViewMat());
-	glLightfv(GL_LIGHT1, GL_POSITION, globalRendering->sunDir);
+	glLightfv(GL_LIGHT1, GL_POSITION, sky->GetLight()->GetLightDir());
 
 	const float sunFactor = 1.0f;
 	const float sf = sunFactor;
@@ -3605,7 +3607,7 @@ int LuaOpenGL::CreateTexture(lua_State* L)
 		return 0;
 	}
 
-	lua_pushstring(L, name.c_str());
+	lua_pushsstring(L, name);
 	return 1;
 }
 
@@ -3647,7 +3649,7 @@ int LuaOpenGL::DeleteTextureFBO(lua_State* L)
 static bool PushUnitTextureInfo(lua_State* L, const string& texture)
 {
 	if (texture[1] == 0) {
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", texturehandler3DO->GetAtlasTexSizeX());
 		HSTR_PUSH_NUMBER(L, "ysize", texturehandler3DO->GetAtlasTexSizeY());
 		return 1;
@@ -3676,13 +3678,13 @@ static bool PushUnitTextureInfo(lua_State* L, const string& texture)
 
 	endPtr++; // skip the ':'
 	if (*endPtr == '0') {
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", stex->tex1SizeX);
 		HSTR_PUSH_NUMBER(L, "ysize", stex->tex1SizeY);
 		return 1;
 	}
 	else if (*endPtr == '1') {
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", stex->tex2SizeX);
 		HSTR_PUSH_NUMBER(L, "ysize", stex->tex2SizeY);
 		return 1;
@@ -3712,7 +3714,7 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 		if (ud == NULL) {
 			return 0;
 		}
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		unitDefHandler->GetUnitDefImage(ud); // forced existance
 		HSTR_PUSH_NUMBER(L, "xsize", ud->buildPic->imageSizeX);
 		HSTR_PUSH_NUMBER(L, "ysize", ud->buildPic->imageSizeY);
@@ -3728,7 +3730,7 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 		if (ud == NULL) {
 			return 0;
 		}
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", ud->iconType->GetSizeX());
 		HSTR_PUSH_NUMBER(L, "ysize", ud->iconType->GetSizeY());
 	}
@@ -3741,28 +3743,28 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 		if (tex == NULL) {
 			return 0;
 		}
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", tex->xsize);
 		HSTR_PUSH_NUMBER(L, "ysize", tex->ysize);
 	}
 	else if (texture[0] == '$') {
 		if (texture == "$units") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", texturehandler3DO->GetAtlasTexSizeX());
 			HSTR_PUSH_NUMBER(L, "ysize", texturehandler3DO->GetAtlasTexSizeY());
 		}
 		else if (texture == "$shadow") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", shadowHandler->shadowMapSize);
 			HSTR_PUSH_NUMBER(L, "ysize", shadowHandler->shadowMapSize);
 		}
 		else if (texture == "$reflection") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", cubeMapHandler->GetReflectionTextureSize());
 			HSTR_PUSH_NUMBER(L, "ysize", cubeMapHandler->GetReflectionTextureSize());
 		}
 		else if (texture == "$specular") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", cubeMapHandler->GetSpecularTextureSize());
 			HSTR_PUSH_NUMBER(L, "ysize", cubeMapHandler->GetSpecularTextureSize());
 		}
@@ -3770,28 +3772,28 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 			if (!heightMapTexture.CheckTextureID()) {
 				return 0;
 			} else {
-				lua_newtable(L);
+				lua_createtable(L, 0, 2);
 				HSTR_PUSH_NUMBER(L, "xsize", heightMapTexture.GetSizeX());
 				HSTR_PUSH_NUMBER(L, "ysize", heightMapTexture.GetSizeY());
 			}
 		}
 		else if (texture == "$shading") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", gs->pwr2mapx);
 			HSTR_PUSH_NUMBER(L, "ysize", gs->pwr2mapy);
 		}
 		else if (texture == "$grass") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", 1024);
 			HSTR_PUSH_NUMBER(L, "ysize", 1024);
 		}
 		else if (texture == "$font") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", font->GetTexWidth());
 			HSTR_PUSH_NUMBER(L, "ysize", font->GetTexHeight());
 		}
 		else if (texture == "$smallfont") {
-			lua_newtable(L);
+			lua_createtable(L, 0, 2);
 			HSTR_PUSH_NUMBER(L, "xsize", smallFont->GetTexWidth());
 			HSTR_PUSH_NUMBER(L, "ysize", smallFont->GetTexHeight());
 		}
@@ -3802,7 +3804,7 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 		if (texInfo == NULL) {
 			return 0;
 		}
-		lua_newtable(L);
+		lua_createtable(L, 0, 2);
 		HSTR_PUSH_NUMBER(L, "xsize", texInfo->xsize);
 		HSTR_PUSH_NUMBER(L, "ysize", texInfo->ysize);
 		// HSTR_PUSH_BOOL(L,   "alpha", texInfo->alpha);  FIXME
@@ -4574,7 +4576,12 @@ int LuaOpenGL::GetMatrixData(lua_State* L)
 int LuaOpenGL::PushAttrib(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
-	glPushAttrib((GLbitfield)luaL_optnumber(L, 1, GL_ALL_ATTRIB_BITS));
+	int mask = luaL_optnumber(L, 1, GL_ALL_ATTRIB_BITS);
+	if (mask < 0) {
+		mask = -mask;
+		mask |= GL_ALL_ATTRIB_BITS;
+	}
+	glPushAttrib((GLbitfield)mask);
 	return 0;
 }
 
@@ -4976,18 +4983,14 @@ int LuaOpenGL::GetGlobalTexNames(lua_State* L)
 	const map<string, C3DOTextureHandler::UnitTexture*>& textures =
 		texturehandler3DO->GetAtlasTextures();
 
-	lua_newtable(L);
+	lua_createtable(L, textures.size(), 0);
 	int count = 0;
 	for (it = textures.begin(); it != textures.end(); ++it) {
 		count++;
 		lua_pushnumber(L, count);
-		lua_pushstring(L, it->first.c_str());
+		lua_pushsstring(L, it->first);
 		lua_rawset(L, -3);
 	}
-	lua_pushstring(L, "n");
-	lua_pushnumber(L, count);
-	lua_rawset(L, -3);
-
 	return 1;
 }
 
@@ -5025,17 +5028,17 @@ int LuaOpenGL::GetSun(lua_State* L)
 {
 	const int args = lua_gettop(L); // number of arguments
 	if (args == 0) {
-		lua_pushnumber(L, globalRendering->sunDir[0]);
-		lua_pushnumber(L, globalRendering->sunDir[1]);
-		lua_pushnumber(L, globalRendering->sunDir[2]);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().x);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().y);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().z);
 		return 3;
 	}
 
 	const string param = luaL_checkstring(L, 1);
 	if (param == "pos") {
-		lua_pushnumber(L, globalRendering->sunDir[0]);
-		lua_pushnumber(L, globalRendering->sunDir[1]);
-		lua_pushnumber(L, globalRendering->sunDir[2]);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().x);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().y);
+		lua_pushnumber(L, sky->GetLight()->GetLightDir().z);
 		return 3;
 	}
 
@@ -5046,9 +5049,9 @@ int LuaOpenGL::GetSun(lua_State* L)
 
 	if (param == "shadowDensity") {
 		if (!unitMode) {
-			lua_pushnumber(L, globalRendering->groundShadowDensity);
+			lua_pushnumber(L, sky->GetLight()->GetGroundShadowDensity());
 		} else {
-			lua_pushnumber(L, globalRendering->unitShadowDensity);
+			lua_pushnumber(L, sky->GetLight()->GetUnitShadowDensity());
 		}
 		return 1;
 	}

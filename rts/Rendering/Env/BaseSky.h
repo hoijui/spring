@@ -3,33 +3,48 @@
 #ifndef __BASE_SKY_H__
 #define __BASE_SKY_H__
 
-#include "float3.h"
+#include "SkyLight.h"
 
-class CBaseSky
+#define CLOUD_SIZE 256 // must be divisible by 4 and 8
+
+class IBaseSky
 {
 public:
-	CBaseSky();
-	virtual ~CBaseSky();
+	static IBaseSky* GetSky();
 
+	virtual ~IBaseSky();
 	virtual void Update() = 0;
 	virtual void Draw() = 0;
 	virtual void DrawSun() = 0;
+
 	virtual void UpdateSunDir() = 0;
 	virtual void UpdateSkyTexture() = 0;
 
-	static CBaseSky* GetSky();
+	void IncreaseCloudDensity() { cloudDensity *= 1.05f; }
+	void DecreaseCloudDensity() { cloudDensity *= 0.95f; }
+	float GetCloudDensity() const { return cloudDensity; }
 
-	bool dynamicSky;
-	float cloudDensity;
+	ISkyLight* GetLight() { return skyLight; }
+	void SetLight(bool);
 
 	bool wireframe;
+	bool dynamicSky;
 
-	float fogStart;
+	float3 sundir1, sundir2; // (xvec, yvec) TODO: move these to SkyLight
+	float3 modSunDir;
 	float3 skyColor;
 	float3 sunColor;
 	float3 cloudColor;
+	float fogStart;
+
+protected:
+	IBaseSky();
+
+	ISkyLight* skyLight;
+
+	float cloudDensity;
 };
 
-extern CBaseSky* sky;
+extern IBaseSky* sky;
 
 #endif // __BASE_SKY_H__

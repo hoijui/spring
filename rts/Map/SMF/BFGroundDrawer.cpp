@@ -11,6 +11,7 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ProjectileDrawer.hpp"
 #include "Rendering/ShadowHandler.h"
+#include "Rendering/Env/BaseSky.h"
 #include "Rendering/Env/CubeMapHandler.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
@@ -156,6 +157,9 @@ bool CBFGroundDrawer::LoadMapShaders() {
 				extraDefs += (map->GetDetailNormalTexture() != 0)?
 					"#define SMF_DETAIL_NORMALS 1\n":
 					"#define SMF_DETAIL_NORMALS 0\n";
+				extraDefs += (map->GetLightEmissionTexture() != 0)?
+					"#define SMF_LIGHT_EMISSION 1\n":
+					"#define SMF_LIGHT_EMISSION 0\n";
 				extraDefs +=
 					("#define BASE_DYNAMIC_MAP_LIGHT " + IntToString(lightHandler.GetBaseLight()) + "\n") +
 					("#define MAX_DYNAMIC_MAP_LIGHTS " + IntToString(lightHandler.GetMaxLights()) + "\n");
@@ -203,7 +207,8 @@ bool CBFGroundDrawer::LoadMapShaders() {
 				smfShaders[i]->SetUniformLocation("skyReflectTex");       // idx 25
 				smfShaders[i]->SetUniformLocation("skyReflectModTex");    // idx 26
 				smfShaders[i]->SetUniformLocation("detailNormalTex");     // idx 27
-				smfShaders[i]->SetUniformLocation("numMapDynLights");     // idx 28
+				smfShaders[i]->SetUniformLocation("lightEmissionTex");    // idx 28
+				smfShaders[i]->SetUniformLocation("numMapDynLights");     // idx 29
 
 				smfShaders[i]->Enable();
 				smfShaders[i]->SetUniform1i(0, 0); // diffuseTex  (idx 0, texunit 0)
@@ -213,11 +218,11 @@ bool CBFGroundDrawer::LoadMapShaders() {
 				smfShaders[i]->SetUniform1i(4, 6); // specularTex (idx 4, texunit 6)
 				smfShaders[i]->SetUniform2f(5, (gs->pwr2mapx * SQUARE_SIZE), (gs->pwr2mapy * SQUARE_SIZE));
 				smfShaders[i]->SetUniform2f(6, (gs->mapx * SQUARE_SIZE), (gs->mapy * SQUARE_SIZE));
-				smfShaders[i]->SetUniform4fv(9, &globalRendering->sunDir[0]);
+				smfShaders[i]->SetUniform4fv(9, &sky->GetLight()->GetLightDir().x);
 				smfShaders[i]->SetUniform3fv(14, &mapInfo->light.groundAmbientColor[0]);
 				smfShaders[i]->SetUniform3fv(15, &mapInfo->light.groundSunColor[0]);
 				smfShaders[i]->SetUniform3fv(16, &mapInfo->light.groundSpecularColor[0]);
-				smfShaders[i]->SetUniform1f(17, globalRendering->groundShadowDensity);
+				smfShaders[i]->SetUniform1f(17, sky->GetLight()->GetGroundShadowDensity());
 				smfShaders[i]->SetUniform3fv(18, &mapInfo->water.minColor[0]);
 				smfShaders[i]->SetUniform3fv(19, &mapInfo->water.baseColor[0]);
 				smfShaders[i]->SetUniform3fv(20, &mapInfo->water.absorb[0]);
@@ -228,7 +233,8 @@ bool CBFGroundDrawer::LoadMapShaders() {
 				smfShaders[i]->SetUniform1i(25,  9); // skyReflectTex (idx 25, texunit 9)
 				smfShaders[i]->SetUniform1i(26, 10); // skyReflectModTex (idx 26, texunit 10)
 				smfShaders[i]->SetUniform1i(27, 11); // detailNormalTex (idx 27, texunit 11)
-				smfShaders[i]->SetUniform1i(28, 0); // numMapDynLights (unused)
+				smfShaders[i]->SetUniform1i(28, 12); // lightEmisionTex (idx 28, texunit 12)
+				smfShaders[i]->SetUniform1i(29,  0); // numMapDynLights (unused)
 				smfShaders[i]->Disable();
 			}
 		}
@@ -246,13 +252,13 @@ void CBFGroundDrawer::UpdateSunDir() {
 
 	if (smfShaderCurGLSL != NULL) {
 		smfShaderCurGLSL->Enable();
-		smfShaderCurGLSL->SetUniform4fv(9, &globalRendering->sunDir[0]);
-		smfShaderCurGLSL->SetUniform1f(17, globalRendering->groundShadowDensity);
+		smfShaderCurGLSL->SetUniform4fv(9, &sky->GetLight()->GetLightDir().x);
+		smfShaderCurGLSL->SetUniform1f(17, sky->GetLight()->GetGroundShadowDensity());
 		smfShaderCurGLSL->Disable();
 	} else {
 		if (smfShaderCurrARB != NULL) {
 			smfShaderCurrARB->Enable();
-			smfShaderCurrARB->SetUniform4f(11, 0, 0, 0, globalRendering->groundShadowDensity);
+			smfShaderCurrARB->SetUniform4f(11, 0, 0, 0, sky->GetLight()->GetGroundShadowDensity());
 			smfShaderCurrARB->Disable();
 		}
 	}
@@ -1398,6 +1404,7 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 					glBindTexture(GL_TEXTURE_CUBE_MAP_ARB, cubeMapHandler->GetSkyReflectionTextureID());
 				glActiveTexture(GL_TEXTURE10); glBindTexture(GL_TEXTURE_2D, map->GetSkyReflectModTexture());
 				glActiveTexture(GL_TEXTURE11); glBindTexture(GL_TEXTURE_2D, map->GetDetailNormalTexture());
+				glActiveTexture(GL_TEXTURE12); glBindTexture(GL_TEXTURE_2D, map->GetLightEmissionTexture());
 
 				// setup for shadow2DProj
 				glActiveTexture(GL_TEXTURE4);
@@ -1415,7 +1422,7 @@ void CBFGroundDrawer::SetupTextureUnits(bool drawReflection)
 				smfShaderCurrARB->SetUniform4f(14, 0.02f, 0.02f, 0, 1);
 				smfShaderCurrARB->SetUniformTarget(GL_FRAGMENT_PROGRAM_ARB);
 				smfShaderCurrARB->SetUniform4f(10, ambientColor.x, ambientColor.y, ambientColor.z, 1);
-				smfShaderCurrARB->SetUniform4f(11, 0, 0, 0, globalRendering->groundShadowDensity);
+				smfShaderCurrARB->SetUniform4f(11, 0, 0, 0, sky->GetLight()->GetGroundShadowDensity());
 
 				glMatrixMode(GL_MATRIX0_ARB);
 				glLoadMatrixf(shadowHandler->shadowMatrix.m);
@@ -1534,6 +1541,7 @@ void CBFGroundDrawer::ResetTextureUnits(bool drawReflection)
 			glBindTexture(GL_TEXTURE_CUBE_MAP_ARB, 0);
 		glActiveTexture(GL_TEXTURE10); glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(GL_TEXTURE11); glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE12); glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(GL_TEXTURE0);
 
 		if (smfShaderCurGLSL != NULL) {

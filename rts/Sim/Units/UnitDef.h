@@ -63,20 +63,44 @@ public:
 	void SetNoCost(bool noCost);
 	bool IsAllowedTerrainHeight(float rawHeight, float* clampedHeight = NULL) const;
 
-	bool IsExtractorUnit()      const { return (extractsMetal > 0.0f); }
 	bool IsTransportUnit()      const { return (transportCapacity > 0 && transportMass > 0.0f); }
 	bool IsImmobileUnit()       const { return (movedata == NULL && !canfly && speed <= 0.0f); }
+	bool IsBuildingUnit()       const { return (IsImmobileUnit() && !yardmaps[0].empty()); }
 	bool IsMobileBuilderUnit()  const { return (builder && !IsImmobileUnit()); }
 	bool IsStaticBuilderUnit()  const { return (builder &&  IsImmobileUnit()); }
-	bool IsFactoryUnit()        const { return (IsStaticBuilderUnit() && !yardmaps[0].empty()); }
+	bool IsFactoryUnit()        const { return (builder &&  IsBuildingUnit()); }
+	bool IsExtractorUnit()      const { return (extractsMetal > 0.0f); }
 	bool IsGroundUnit()         const { return (movedata != NULL && !canfly); }
 	bool IsAirUnit()            const { return (movedata == NULL &&  canfly); }
-	bool IsFighterUnit()        const { return (IsAirUnit() && !hoverAttack && !HasBomberWeapon()); }
-	bool IsBomberUnit()         const { return (IsAirUnit() && !hoverAttack &&  HasBomberWeapon()); }
+	bool IsNonHoveringAirUnit() const { return (IsAirUnit() && !hoverAttack); }
+	bool IsFighterUnit()        const { return (IsNonHoveringAirUnit() && !HasBomberWeapon()); }
+	bool IsBomberUnit()         const { return (IsNonHoveringAirUnit() &&  HasBomberWeapon()); }
 
-	bool WantsMoveType() const { return (canmove && speed > 0.0f); }
+	bool WantsMoveData() const { return (canmove && speed > 0.0f && !canfly); }
 	bool HasBomberWeapon() const;
 	const std::vector<unsigned char>& GetYardMap(unsigned int facing) const { return (yardmaps[facing % /*NUM_FACINGS*/ 4]); }
+
+	// NOTE: deprecated, remove after 0.83.*
+	const char* GetTypeString() const {
+		if (IsTransportUnit()) { return "Transport"; }
+
+		if (IsBuildingUnit()) {
+			if (IsFactoryUnit()) { return "Factory"; }
+			if (IsExtractorUnit()) { return "MetalExtractor"; }
+			return "Building";
+		}
+
+		if (IsMobileBuilderUnit() || IsStaticBuilderUnit()) { return "Builder"; }
+
+		if (IsGroundUnit()) { return "GroundUnit"; }
+		if (IsAirUnit()) {
+			if (IsFighterUnit()) { return "Fighter"; }
+			if (IsBomberUnit()) { return "Bomber"; }
+			return "Aircraft";
+		}
+
+		return "Unknown";
+	}
 
 	std::string name;
 	std::string humanName;
@@ -184,13 +208,12 @@ public:
 	float  flankingBonusMin; ///< damage factor for the most protected direction
 	float  flankingBonusMobilityAdd; ///< how much the ability of the flanking bonus direction to move builds up each frame
 
-	UnitModelDef modelDef;
-
 	std::string objectName;     ///< raw name of the unit's model without objects3d prefix, eg. "armjeth.s3o"
 	std::string scriptName;     ///< the name of the unit's script, e.g. "armjeth.cob"
 	std::string scriptPath;     ///< the path of the unit's script, e.g. "scripts/armjeth.cob"
 
-	float3 modelCenterOffset;	///< offset from the unit model's default center point
+	mutable UnitModelDef modelDef;
+	mutable float3 modelCenterOffset;	///< offset from the unit model's default center point
 
 	bool usePieceCollisionVolumes;		///< if true, projectile collisions are checked per-piece
 

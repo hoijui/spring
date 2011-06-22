@@ -3,20 +3,20 @@
 #ifndef SKYBOX_H
 #define SKYBOX_H
 
-#include "BaseSky.h"
 #include <string>
+#include "BaseSky.h"
 
-class CSkyBox : public CBaseSky
+class CSkyBox : public IBaseSky
 {
 public:
 	CSkyBox(const std::string&);
-	~CSkyBox(void);
+	~CSkyBox();
 
 	void Draw();
 	void Update() {}
-	void DrawSun(void) {}
 	void UpdateSunDir() {}
 	void UpdateSkyTexture() {}
+	void DrawSun() {}
 
 private:
 	unsigned int tex;

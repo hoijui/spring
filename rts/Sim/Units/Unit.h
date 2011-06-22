@@ -3,6 +3,8 @@
 #ifndef UNIT_H
 #define UNIT_H
 
+#include "lib/gml/gml.h" // for GML_ENABLE_SIM
+
 #include <map>
 #include <vector>
 #include <string>
@@ -80,6 +82,7 @@ public:
 	                      const float3& impulse, int weaponId = -1);
 	virtual void DoWaterDamage();
 	virtual void Kill(const float3& impulse);
+	virtual void AddImpulse(const float3&);
 	virtual void FinishedBuilding();
 
 	bool AttackGround(const float3& pos, bool wantDGun, bool fpsMode = false);
@@ -147,6 +150,7 @@ public:
 	void UpdateTerrainType();
 
 	void UpdateMidPos();
+	void MoveMidPos(const float3&);
 
 	bool IsNeutral() const {
 		return neutral;

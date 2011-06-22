@@ -271,6 +271,8 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 , techLevel(-1)
 , buildPic(NULL)
 , movedata(NULL)
+, trackType(0)
+, buildingDecalType(-1)
 {
 	humanName = udTable.GetString("name", "");
 	if (humanName.empty()) {
@@ -473,7 +475,7 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 	minTransportMass  = udTable.GetFloat("minTransportMass", 0.0f);
 	holdSteady        = udTable.GetBool("holdSteady",        false);
 	releaseHeld       = udTable.GetBool("releaseHeld",       false);
-	cantBeTransported = udTable.GetBool("cantBeTransported", !WantsMoveType());
+	cantBeTransported = udTable.GetBool("cantBeTransported", !WantsMoveData());
 	transportByEnemy  = udTable.GetBool("transportByEnemy",  true);
 	fallSpeed         = udTable.GetFloat("fallSpeed",    0.2);
 	unitFallSpeed     = udTable.GetFloat("unitFallSpeed",  0);
@@ -541,7 +543,7 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 	// aircraft have MoveTypes but no MoveData;
 	// static structures have no use for either
 	// (but get StaticMoveType instances)
-	if (WantsMoveType() && !canfly) {
+	if (WantsMoveData()) {
 		const std::string& moveClass = StringToLower(udTable.GetString("movementClass", ""));
 		const std::string errMsg = "WARNING: Couldn't find a MoveClass named " + moveClass + " (used in UnitDef: " + unitName + ")";
 
@@ -751,16 +753,13 @@ UnitDef::~UnitDef()
 
 S3DModel* UnitDef::LoadModel() const
 {
-	// not exactly kosher, but...
-	UnitDef* udef = const_cast<UnitDef*>(this);
-
-	if (udef->modelDef.model == NULL) {
-		udef->modelDef.model = modelParser->Load3DModel(udef->modelDef.modelPath, udef->modelCenterOffset);
-		udef->modelDef.modelTextures["tex1"] = udef->modelDef.model->tex1;
-		udef->modelDef.modelTextures["tex2"] = udef->modelDef.model->tex2;
+	if (this->modelDef.model == NULL) {
+		this->modelDef.model = modelParser->Load3DModel(this->modelDef.modelPath, this->modelCenterOffset);
+		this->modelDef.modelTextures["tex1"] = this->modelDef.model->tex1;
+		this->modelDef.modelTextures["tex2"] = this->modelDef.model->tex2;
 	}
 
-	return (udef->modelDef.model);
+	return (this->modelDef.model);
 }
 
 
@@ -904,6 +903,7 @@ void UnitDef::CreateYardMap(std::string yardMapStr)
 void UnitDef::SetNoCost(bool noCost)
 {
 	if (noCost) {
+		// initialized from UnitDefHandler::PushNewUnitDef
 		realMetalCost    = metalCost;
 		realEnergyCost   = energyCost;
 		realMetalUpkeep  = metalUpkeep;
