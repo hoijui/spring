@@ -15,8 +15,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _LOG_H
-#define _LOG_H
+#ifndef _SIMPLE_LOG_H
+#define _SIMPLE_LOG_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,4 +67,4 @@ const char* simpleLog_levelToStr(int logLevel);
 } // extern "C"
 #endif
 
-#endif // _LOG_H
+#endif // _SIMPLE_LOG_H
