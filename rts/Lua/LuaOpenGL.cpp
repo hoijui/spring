@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 // TODO:
 // - go back to counting matrix push/pops (just for modelview?)
@@ -16,7 +16,7 @@
 #include <SDL_mouse.h>
 #include <SDL_timer.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaOpenGL.h"
 
@@ -30,16 +30,19 @@
 #include "LuaFBOs.h"
 #include "LuaRBOs.h"
 #include "LuaFonts.h"
+#include "LuaOpenGLUtils.h"
 #include "LuaDisplayLists.h"
 #include "Game/Camera.h"
 #include "Game/UI/CommandColors.h"
 #include "Game/UI/MiniMap.h"
+#include "lib/gml/gmlmut.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Map/HeightMapTexture.h"
 #include "Rendering/glFont.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/IconHandler.h"
+#include "Rendering/LineDrawer.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/Env/BaseSky.h"
@@ -63,11 +66,9 @@
 #include "Sim/Units/UnitDefImage.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitTypes/TransportUnit.h"
-#include "Sim/Units/CommandAI/LineDrawer.h"
 #include "System/LogOutput.h"
 #include "System/Matrix44f.h"
 #include "System/ConfigHandler.h"
-#include "System/GlobalUnsynced.h"
 
 using std::max;
 using std::string;
@@ -91,7 +92,6 @@ set<unsigned int> LuaOpenGL::occlusionQueries;
 LuaOpenGL::DrawMode LuaOpenGL::drawMode = LuaOpenGL::DRAW_NONE;
 LuaOpenGL::DrawMode LuaOpenGL::prevDrawMode = LuaOpenGL::DRAW_NONE;
 
-bool  LuaOpenGL::drawingEnabled = false;
 bool  LuaOpenGL::safeMode = true;
 bool  LuaOpenGL::canUseShaders = false;
 float LuaOpenGL::screenWidth = 0.36f;
@@ -211,7 +211,7 @@ bool LuaOpenGL::PushEntries(lua_State* L)
 		REGISTER_LUA_CFUNC(DeleteTextureFBO);
 		REGISTER_LUA_CFUNC(RenderToTexture);
 	}
-	if (glGenerateMipmapEXT_NONGML) {
+	if (IS_GL_FUNCTION_AVAILABLE(glGenerateMipmapEXT)) {
 		REGISTER_LUA_CFUNC(GenerateMipmap);
 	}
 	REGISTER_LUA_CFUNC(ActiveTexture);
@@ -349,7 +349,7 @@ void LuaOpenGL::ResetGLState()
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
 	glEnable(GL_BLEND);
-	if (glBlendEquation_NONGML != NULL) {
+	if (IS_GL_FUNCTION_AVAILABLE(glBlendEquation)) {
 		glBlendEquation(GL_FUNC_ADD);
 	}
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -421,7 +421,7 @@ void LuaOpenGL::ResetGLState()
 	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, black);
 	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
 
-	if (glUseProgram_NONGML) {
+	if (IS_GL_FUNCTION_AVAILABLE(glUseProgram)) {
 		glUseProgram(0);
 	}
 }
@@ -448,7 +448,7 @@ inline void LuaOpenGL::EnableCommon(DrawMode mode)
 {
 	assert(drawMode == DRAW_NONE);
 	drawMode = mode;
-	drawingEnabled = true;
+	SetDrawingEnabled(true);
 	if (safeMode) {
 		glPushAttrib(AttribBits);
 		glCallList(resetStateList);
@@ -465,11 +465,11 @@ inline void LuaOpenGL::DisableCommon(DrawMode mode)
 	// FIXME  --  not needed by shadow or minimap
 	glLightModeli(GL_LIGHT_MODEL_COLOR_CONTROL, GL_SINGLE_COLOR);
 	drawMode = DRAW_NONE;
-	drawingEnabled = false;
+	SetDrawingEnabled(false);
 	if (safeMode) {
 		glPopAttrib();
 	}
-	if (glUseProgram_NONGML) {
+	if (IS_GL_FUNCTION_AVAILABLE(glUseProgram)) {
 		glUseProgram(0);
 	}
 }
@@ -883,7 +883,7 @@ void LuaOpenGL::SetupScreenLighting()
 
 	// sun light -- needs the camera transformation
 	glPushMatrix();
-	glLoadMatrixd(camera->GetViewMat());
+	glLoadMatrixf(camera->GetViewMatrix());
 	glLightfv(GL_LIGHT1, GL_POSITION, sky->GetLight()->GetLightDir());
 
 	const float sunFactor = 1.0f;
@@ -943,11 +943,11 @@ void LuaOpenGL::ResetWorldMatrices()
 	}
 	glMatrixMode(GL_PROJECTION); {
 		ClearMatrixStack(GL_PROJECTION_STACK_DEPTH);
-		glLoadMatrixd(camera->GetProjMat());
+		glLoadMatrixf(camera->GetProjectionMatrix());
 	}
 	glMatrixMode(GL_MODELVIEW); {
 		ClearMatrixStack(GL_MODELVIEW_STACK_DEPTH);
-		glLoadMatrixd(camera->GetViewMat());
+		glLoadMatrixf(camera->GetViewMatrix());
 	}
 }
 
@@ -1017,13 +1017,13 @@ void LuaOpenGL::ResetMiniMapMatrices()
 static inline bool CheckModUICtrl()
 {
 	return CLuaHandle::GetModUICtrl() ||
-	       CLuaHandle::GetActiveHandle()->GetUserMode();
+	       ActiveHandle()->GetUserMode();
 }
 
 
 inline void LuaOpenGL::CheckDrawingEnabled(lua_State* L, const char* caller)
 {
-	if (!drawingEnabled) {
+	if (!IsDrawingEnabled()) {
 		luaL_error(L, "%s(): OpenGL calls can only be used in Draw() "
 		              "call-ins, or while creating display lists", caller);
 	}
@@ -1079,7 +1079,14 @@ int LuaOpenGL::GetNumber(lua_State* L)
 int LuaOpenGL::GetString(lua_State* L)
 {
 	const GLenum pname = (GLenum) luaL_checknumber(L, 1);
-	lua_pushstring(L, (const char*)glGetString(pname));
+	const char* pstring = (const char*) glGetString(pname);
+
+	if (pstring != NULL) {
+		lua_pushstring(L, pstring);
+	} else {
+		lua_pushstring(L, "[NULL]");
+	}
+
 	return 1;
 }
 
@@ -1313,8 +1320,7 @@ static inline CUnit* ParseUnit(lua_State* L, const char* caller, int index)
 		return NULL;
 	}
 
-	const CLuaHandle* lh = CLuaHandle::GetActiveHandle();
-	const int readAllyTeam = lh->GetReadAllyTeam();
+	const int readAllyTeam = CLuaHandle::GetReadAllyTeam(L);
 	if (readAllyTeam < 0) {
 		if (readAllyTeam == CEventClient::NoAccessTeam) {
 			return NULL;
@@ -1341,6 +1347,8 @@ int LuaOpenGL::Unit(lua_State* L)
 	}
 
 	const bool rawDraw = lua_isboolean(L, 2) && lua_toboolean(L, 2);
+
+	GML_LODMUTEX_LOCK(unit); // Unit
 
 	bool useLOD = true;
 	if (unit->lodCount <= 0) {
@@ -1402,6 +1410,8 @@ int LuaOpenGL::UnitRaw(lua_State* L)
 	}
 
 	const bool rawDraw = lua_isboolean(L, 2) && lua_toboolean(L, 2);
+
+	GML_LODMUTEX_LOCK(unit); // UnitRaw
 
 	bool useLOD = true;
 	if (unit->lodCount <= 0) {
@@ -1554,7 +1564,7 @@ int LuaOpenGL::UnitPieceMultMatrix(lua_State* L)
 		return 0;
 	}
 
-	localModel->ApplyRawPieceTransform(piece);
+	localModel->ApplyRawPieceTransformUnsynced(piece);
 
 	return 0;
 }
@@ -1562,13 +1572,12 @@ int LuaOpenGL::UnitPieceMultMatrix(lua_State* L)
 
 /******************************************************************************/
 
-static inline bool IsFeatureVisible(const CFeature* feature)
+static inline bool IsFeatureVisible(const lua_State *L, const CFeature* feature)
 {
-	if (CLuaHandle::GetActiveFullRead())
+	if (ActiveFullRead())
 		return true;
 
-	const CLuaHandle* lh = CLuaHandle::GetActiveHandle();
-	const int readAllyTeam = lh->GetReadAllyTeam();
+	const int readAllyTeam = CLuaHandle::GetReadAllyTeam(L);
 	if (readAllyTeam < 0) {
 		return (readAllyTeam == CEventClient::AllAccessTeam);
 	}
@@ -1588,7 +1597,7 @@ static CFeature* ParseFeature(lua_State* L, const char* caller, int index)
 	if (!feature)
 		return NULL;
 
-	if (!IsFeatureVisible(feature)) {
+	if (!IsFeatureVisible(L, feature)) {
 		return NULL;
 	}
 	return feature;
@@ -1632,7 +1641,7 @@ int LuaOpenGL::FeatureShape(lua_State* L)
 	if (model == NULL) {
 		return 0;
 	}
-	//todo: teamcolor?
+	// TODO teamcolor?
 	model->DrawStatic(); // FIXME: finish this, 3do/s3o, copy DrawIndividual...
 
 	return 0;
@@ -1642,8 +1651,6 @@ int LuaOpenGL::FeatureShape(lua_State* L)
 /******************************************************************************/
 /******************************************************************************/
 
-static const bool& fullRead     = CLuaHandle::GetActiveFullRead();
-static const int&  readAllyTeam = CLuaHandle::GetActiveReadAllyTeam();
 
 
 static inline CUnit* ParseDrawUnit(lua_State* L, const char* caller, int index)
@@ -1663,12 +1670,12 @@ static inline CUnit* ParseDrawUnit(lua_State* L, const char* caller, int index)
 	if (unit == NULL) {
 		return NULL;
 	}
-	if (readAllyTeam < 0) {
-		if (!fullRead) {
+	if (ActiveReadAllyTeam() < 0) {
+		if (!ActiveFullRead()) {
 			return NULL;
 		}
 	} else {
-		if ((unit->losStatus[readAllyTeam] & LOS_INLOS) == 0) {
+		if ((unit->losStatus[ActiveReadAllyTeam()] & LOS_INLOS) == 0) {
 			return NULL;
 		}
 	}
@@ -1707,7 +1714,7 @@ int LuaOpenGL::DrawListAtUnit(lua_State* L)
 		return 0;
 	}
 	const unsigned int listIndex = (unsigned int)lua_tonumber(L, 2);
-	CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists();
+	CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists(L);
 	const unsigned int dlist = displayLists.GetDList(listIndex);
 	if (dlist == 0) {
 		return 0;
@@ -1855,9 +1862,14 @@ int LuaOpenGL::DrawGroundQuad(lua_State* L)
 			}
 		}
 	}
-	const int mapxi = (gs->mapx + 1);
-	const int mapzi = (gs->mapy + 1);
-	const float* heightmap = readmap->GetHeightmap();
+	const int mapxi = gs->mapxp1;
+	const int mapzi = gs->mapyp1;
+	const float* heightmap =
+		#ifdef USE_UNSYNCED_HEIGHTMAP
+		readmap->GetCornerHeightMapUnsynced();
+		#else
+		readmap->GetCornerHeightMapSynced();
+		#endif
 
 	const float xs = std::max(0.0f, std::min(float3::maxxpos, x0)); // x start
 	const float xe = std::max(0.0f, std::min(float3::maxxpos, x1)); // x end
@@ -3472,7 +3484,7 @@ int LuaOpenGL::Texture(lua_State* L)
 	}
 	else if (texture[0] == LuaTextures::prefix) { // '!'
 		// dynamic texture
-		LuaTextures& textures = CLuaHandle::GetActiveTextures();
+		LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 		if (textures.Bind(texture)) {
 			glEnable(GL_TEXTURE_2D);
 			lua_pushboolean(L, true);
@@ -3601,7 +3613,7 @@ int LuaOpenGL::CreateTexture(lua_State* L)
 		}
 	}
 
-	LuaTextures& textures = CLuaHandle::GetActiveTextures();
+	LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 	const string name = textures.Create(tex);
 	if (name.empty()) {
 		return 0;
@@ -3623,7 +3635,7 @@ int LuaOpenGL::DeleteTexture(lua_State* L)
 	}
 	const string texture = lua_tostring(L, 1);
 	if (texture[0] == LuaTextures::prefix) { // '!'
-		LuaTextures& textures = CLuaHandle::GetActiveTextures();
+		LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 		lua_pushboolean(L, textures.Free(texture));
 	} else {
 		lua_pushboolean(L, CNamedTextures::Free(texture));
@@ -3639,7 +3651,7 @@ int LuaOpenGL::DeleteTextureFBO(lua_State* L)
 		return 0;
 	}
 	const string texture = luaL_checkstring(L, 1);
-	LuaTextures& textures = CLuaHandle::GetActiveTextures();
+	LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 	lua_pushboolean(L, textures.FreeFBO(texture));
 	return 1;
 }
@@ -3738,7 +3750,7 @@ int LuaOpenGL::TextureInfo(lua_State* L)
 		return PushUnitTextureInfo(L, texture);
 	}
 	else if (texture[0] == LuaTextures::prefix) { // '!'
-		LuaTextures& textures = CLuaHandle::GetActiveTextures();
+		LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 		const LuaTextures::Texture* tex = textures.GetInfo(texture);
 		if (tex == NULL) {
 			return 0;
@@ -3822,7 +3834,7 @@ int LuaOpenGL::CopyToTexture(lua_State* L)
 	if (texture[0] != LuaTextures::prefix) { // '!'
 		luaL_error(L, "gl.CopyToTexture() can only write to lua textures");
 	}
-	LuaTextures& textures = CLuaHandle::GetActiveTextures();
+	LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 	const LuaTextures::Texture* tex = textures.GetInfo(texture);
 	if (tex == NULL) {
 		return 0;
@@ -3859,7 +3871,7 @@ int LuaOpenGL::RenderToTexture(lua_State* L)
 	if (!lua_isfunction(L, 2)) {
 		luaL_error(L, "Incorrect arguments to gl.RenderToTexture()");
 	}
-	LuaTextures& textures = CLuaHandle::GetActiveTextures();
+	LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 	const LuaTextures::Texture* tex = textures.GetInfo(texture);
 	if ((tex == NULL) || (tex->fbo == 0)) {
 		return 0;
@@ -3902,7 +3914,7 @@ int LuaOpenGL::GenerateMipmap(lua_State* L)
 	if (texStr[0] != LuaTextures::prefix) { // '!'
 		return 0;
 	}
-	LuaTextures& textures = CLuaHandle::GetActiveTextures();
+	LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 	const LuaTextures::Texture* tex = textures.GetInfo(texStr);
 	if (tex == NULL) {
 		return 0;
@@ -4236,8 +4248,7 @@ int LuaOpenGL::Frustum(lua_State* L)
 int LuaOpenGL::Billboard(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
-//	glMultMatrixd(camera->billboard);
-	glCallList(CCamera::billboardList);
+	glMultMatrixf(camera->GetBillBoardMatrix());
 	return 0;
 }
 
@@ -4359,58 +4370,33 @@ int LuaOpenGL::LoadIdentity(lua_State* L)
 }
 
 
-static const double* GetNamedMatrix(const string& name)
-{
-	if (name == "shadow") {
-		static double mat[16];
-		for (int i =0; i <16; i++) {
-			mat[i] = shadowHandler->shadowMatrix.m[i];
-		}
-		return mat;
-	}
-	else if (name == "camera") {
-		return camera->GetViewMat();
-	}
-	else if (name == "caminv") {
-		return camera->GetViewMatInv();
-	}
-	else if (name == "camprj") {
-		return camera->GetProjMat();
-	}
-	else if (name == "billboard") {
-		return camera->GetBBoardMat();
-	}
-	return NULL;
-}
-
-
 int LuaOpenGL::LoadMatrix(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
 
-	GLfloat matrix[16];
-
 	const int luaType = lua_type(L, 1);
 	if (luaType == LUA_TSTRING) {
-		const double* matptr = GetNamedMatrix(lua_tostring(L, 1));
+		const CMatrix44f* matptr = LuaOpenGLUtils::GetNamedMatrix(lua_tostring(L, 1));
 		if (matptr != NULL) {
-			glLoadMatrixd(matptr);
+			glLoadMatrixf(*matptr);
 		} else {
 			luaL_error(L, "Incorrect arguments to gl.LoadMatrix()");
 		}
 		return 0;
-	}
-	else if (luaType == LUA_TTABLE) {
-		if (ParseFloatArray(L, matrix, 16) != 16) {
-			luaL_error(L, "gl.LoadMatrix requires all 16 values");
+	} else {
+		GLfloat matrix[16];
+		if (luaType == LUA_TTABLE) {
+			if (ParseFloatArray(L, matrix, 16) != 16) {
+				luaL_error(L, "gl.LoadMatrix requires all 16 values");
+			}
 		}
-	}
-	else {
-		for (int i = 1; i <= 16; i++) {
-			matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
+		else {
+			for (int i = 1; i <= 16; i++) {
+				matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
+			}
 		}
+		glLoadMatrixf(matrix);
 	}
-	glLoadMatrixf(matrix);
 	return 0;
 }
 
@@ -4419,29 +4405,29 @@ int LuaOpenGL::MultMatrix(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
 
-	GLfloat matrix[16];
-
 	const int luaType = lua_type(L, 1);
 	if (luaType == LUA_TSTRING) {
-		const double* matptr = GetNamedMatrix(lua_tostring(L, 1));
+		const CMatrix44f* matptr = LuaOpenGLUtils::GetNamedMatrix(lua_tostring(L, 1));
 		if (matptr != NULL) {
-			glMultMatrixd(matptr);
+			glMultMatrixf(*matptr);
 		} else {
 			luaL_error(L, "Incorrect arguments to gl.MultMatrix()");
 		}
 		return 0;
-	}
-	else if (luaType == LUA_TTABLE) {
-		if (ParseFloatArray(L, matrix, 16) != 16) {
-			luaL_error(L, "gl.MultMatrix requires all 16 values");
+	} else {
+		GLfloat matrix[16];
+		if (luaType == LUA_TTABLE) {
+			if (ParseFloatArray(L, matrix, 16) != 16) {
+				luaL_error(L, "gl.LoadMatrix requires all 16 values");
+			}
 		}
-	}
-	else {
-		for (int i = 1; i <= 16; i++) {
-			matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
+		else {
+			for (int i = 1; i <= 16; i++) {
+				matrix[i-1] = (GLfloat)luaL_checknumber(L, i);
+			}
 		}
+		glMultMatrixf(matrix);
 	}
-	glMultMatrixf(matrix);
 	return 0;
 }
 
@@ -4556,15 +4542,25 @@ int LuaOpenGL::GetMatrixData(lua_State* L)
 		return 16;
 	}
 	else if (luaType == LUA_TSTRING) {
-		const double* matptr = GetNamedMatrix(lua_tostring(L, 1));
-		if (matptr != NULL) {
-			for (int i = 0; i < 16; i++) {
-				lua_pushnumber(L, matptr[i]);
-			}
-		}
-		else {
+		const CMatrix44f* matptr = LuaOpenGLUtils::GetNamedMatrix(lua_tostring(L, 1));
+
+		if (!matptr) {
 			luaL_error(L, "Incorrect arguments to gl.GetMatrixData(name)");
 		}
+
+		if (lua_isnumber(L, 2)) {
+			const int index = lua_toint(L, 2);
+			if ((index < 0) || (index >= 16)) {
+				return 0;
+			}
+			lua_pushnumber(L, (*matptr)[index]);
+			return 1;
+		}
+
+		for (int i = 0; i < 16; i++) {
+			lua_pushnumber(L, (*matptr)[i]);
+		}
+
 		return 16;
 	}
 
@@ -4639,8 +4635,8 @@ int LuaOpenGL::CreateList(lua_State* L)
 	}
 
 	// save the current state
-	const bool origDrawingEnabled = drawingEnabled;
-	drawingEnabled = true;
+	const bool origDrawingEnabled = IsDrawingEnabled();
+	SetDrawingEnabled(true);
 
 	// build the list with the specified lua call/args
 	glNewList(list, GL_COMPILE);
@@ -4654,13 +4650,13 @@ int LuaOpenGL::CreateList(lua_State* L)
 		lua_pushnumber(L, 0);
 	}
 	else {
-		CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists();
+		CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists(L);
 		const unsigned int index = displayLists.NewDList(list);
 		lua_pushnumber(L, index);
 	}
 
 	// restore the state
-	drawingEnabled = origDrawingEnabled;
+	SetDrawingEnabled(origDrawingEnabled);
 
 	return 1;
 }
@@ -4669,15 +4665,10 @@ int LuaOpenGL::CreateList(lua_State* L)
 int LuaOpenGL::CallList(lua_State* L)
 {
 	CheckDrawingEnabled(L, __FUNCTION__);
-
-	const int args = lua_gettop(L); // number of arguments
-	if ((args < 1) || !lua_isnumber(L, 1)) {
-		luaL_error(L, "Incorrect arguments to gl.CallList(list)");
-	}
-	const unsigned int listIndex = (unsigned int)lua_tonumber(L, 1);
-	CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists();
-	const unsigned int dlist = displayLists.GetDList(listIndex);
-	if (dlist != 0) {
+	const unsigned int listIndex = luaL_checkint(L, 1);
+	const CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists(L);
+	const unsigned int& dlist = displayLists.GetDList(listIndex);
+	if (dlist) {
 		glCallList(dlist);
 	}
 	return 0;
@@ -4694,7 +4685,7 @@ int LuaOpenGL::DeleteList(lua_State* L)
 		luaL_error(L, "Incorrect arguments to gl.DeleteList(list)");
 	}
 	const unsigned int listIndex = (unsigned int)lua_tonumber(L, 1);
-	CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists();
+	CLuaDisplayLists& displayLists = CLuaHandle::GetActiveDisplayLists(L);
 	const unsigned int dlist = displayLists.GetDList(listIndex);
 	displayLists.FreeDList(listIndex);
 	if (dlist != 0) {

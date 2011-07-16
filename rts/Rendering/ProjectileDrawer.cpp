@@ -1,8 +1,9 @@
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "ProjectileDrawer.hpp"
 
 #include "Game/Camera.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/LoadScreen.h"
 #include "Lua/LuaParser.h"
 #include "Map/MapInfo.h"
@@ -10,6 +11,7 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/UnitDrawer.h"
+#include "Rendering/Env/BaseSky.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
@@ -32,7 +34,6 @@
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/Util.h"
 
@@ -486,7 +487,7 @@ void CProjectileDrawer::DrawProjectile(CProjectile* pro, bool drawReflection, bo
 			float dif = pro->pos.y - camera->pos.y;
 			float3 zeroPos = camera->pos * (pro->pos.y / dif) + pro->pos * (-camera->pos.y / dif);
 
-			if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z) > 3 + 0.5f * pro->drawRadius) {
+			if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z, false) > 3 + 0.5f * pro->drawRadius) {
 				return;
 			}
 		}
@@ -525,8 +526,9 @@ void CProjectileDrawer::DrawProjectilesSetShadow(std::set<CProjectile*>& project
 
 void CProjectileDrawer::DrawProjectileShadow(CProjectile* p)
 {
+	const CUnit* owner = p->owner();
 	if ((gu->spectatingFullView || loshandler->InLos(p, gu->myAllyTeam) ||
-		(p->owner() && teamHandler->Ally(p->owner()->allyteam, gu->myAllyTeam)))) {
+		(owner && teamHandler->Ally(owner->allyteam, gu->myAllyTeam)))) {
 
 		if (!DrawProjectileModel(p, true)) {
 			if (p->castShadow) {
@@ -542,7 +544,7 @@ void CProjectileDrawer::DrawProjectileShadow(CProjectile* p)
 
 void CProjectileDrawer::DrawProjectilesMiniMap()
 {
-	GML_STDMUTEX_LOCK(proj); // DrawProjectilesMiniMap
+	GML_RECMUTEX_LOCK(proj); // DrawProjectilesMiniMap
 
 	typedef std::set<CProjectile*> ProjectileSet;
 	typedef std::set<CProjectile*>::const_iterator ProjectileSetIt;
@@ -593,7 +595,8 @@ void CProjectileDrawer::DrawProjectilesMiniMap()
 		for (std::set<CProjectile*>::iterator it = renderProjectiles.begin(); it != renderProjectiles.end(); ++it) {
 			CProjectile* p = *it;
 
-			if ((p->owner() && (p->owner()->allyteam == gu->myAllyTeam)) ||
+			const CUnit* owner = p->owner();
+			if ((owner && (owner->allyteam == gu->myAllyTeam)) ||
 				gu->spectatingFullView || loshandler->InLos(p, gu->myAllyTeam)) {
 				p->DrawOnMinimap(*lines, *points);
 			}
@@ -644,10 +647,7 @@ void CProjectileDrawer::Draw(bool drawReflection, bool drawRefraction) {
 	glEnable(GL_TEXTURE_2D);
 	glDepthMask(1);
 
-	if (globalRendering->drawFog) {
-		glEnable(GL_FOG);
-		glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
-	}
+	IBaseSky::SetFog();
 
 	{
 		GML_STDMUTEX_LOCK(rpiece); // Draw
@@ -666,7 +666,7 @@ void CProjectileDrawer::Draw(bool drawReflection, bool drawRefraction) {
 	Update();
 
 	{
-		GML_STDMUTEX_LOCK(proj); // Draw
+		GML_RECMUTEX_LOCK(proj); // Draw
 
 		unitDrawer->SetupForUnitDrawing();
 
@@ -742,7 +742,7 @@ void CProjectileDrawer::DrawShadowPass()
 	CProjectile::va->Initialize();
 
 	{
-		GML_STDMUTEX_LOCK(proj); // DrawShadowPass
+		GML_RECMUTEX_LOCK(proj); // DrawShadowPass
 
 		for (int modelType = MODELTYPE_3DO; modelType < MODELTYPE_OTHER; modelType++) {
 			DrawProjectilesShadow(modelType);
@@ -1041,7 +1041,9 @@ void CProjectileDrawer::GenerateNoiseTex(unsigned int tex, int size)
 
 void CProjectileDrawer::RenderProjectileCreated(const CProjectile* p)
 {
-#if defined(USE_GML) && GML_ENABLE_SIM
+	texturehandlerS3O->UpdateDraw();
+
+#if defined(USE_GML) && GML_ENABLE_SIM && !GML_SHARE_LISTS
 	if(p->model && TEX_TYPE(p) < 0)
 		TEX_TYPE(p) = texturehandlerS3O->LoadS3OTextureNow(p->model);
 #endif

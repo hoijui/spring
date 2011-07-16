@@ -5,36 +5,42 @@
  * Error handling based on platform.
  */
 
-#include <StdAfx.h>
-#include <sstream>
+#include "System/StdAfx.h"
+
 #include "errorhandler.h"
 
+#include <string>
+#include <sstream>
+#include <boost/bind.hpp>
+
 #include "Game/GameServer.h"
-#include "System/GlobalUnsynced.h"
+#include "Game/GlobalUnsynced.h"
+#include "System/Log/ILog.h"
 #include "System/LogOutput.h"
 #include "System/Util.h"
 
 #ifndef DEDICATED
-	#include "SpringApp.h"
+	#include "System/SpringApp.h"
 	#include "System/Platform/Threading.h"
 
-    #ifndef HEADLESS
-	#ifdef WIN32
-		#include <windows.h>
-	#else
-		// from X_MessageBox.cpp:
-		void X_MessageBox(const char* msg, const char* caption, unsigned int flags);
-	#endif
-    #endif // ifndef HEADLESS
+	#ifndef HEADLESS
+		#ifdef WIN32
+			#include <windows.h>
+		#else
+			// from X_MessageBox.cpp:
+			void X_MessageBox(const char* msg, const char* caption, unsigned int flags);
+		#endif
+	#endif // ifndef HEADLESS
 #endif // ifndef DEDICATED
 
 
 static void ExitMessage(const std::string& msg, const std::string& caption, unsigned int flags, bool forced)
 {
 	logOutput.SetSubscribersEnabled(false);
-	if (forced)
-		LogObject() << "WARNING: failed to shutdown normally, exit forced";
-	LogObject() << caption << " " << msg;
+	if (forced) {
+		LOG_L(L_ERROR, "failed to shutdown normally, exit forced");
+	}
+	LOG_L(L_ERROR, "%s %s", caption.c_str(), msg.c_str());
 
 #if !defined(DEDICATED) && !defined(HEADLESS)
   #ifdef WIN32
@@ -44,12 +50,15 @@ static void ExitMessage(const std::string& msg, const std::string& caption, unsi
 	unsigned int winFlags = MB_TOPMOST;		
 
 	// MB_OK is default (0)
-	if (flags & MBF_EXCL)
+	if (flags & MBF_EXCL) {
 		winFlags |= MB_ICONEXCLAMATION;
-	if (flags & MBF_INFO)
+	}
+	if (flags & MBF_INFO) {
 		winFlags |= MB_ICONINFORMATION;
-	if (flags & MBF_CRASH)
+	}
+	if (flags & MBF_CRASH) {
 		winFlags |= MB_ICONERROR;
+	}
 
 	MessageBox(GetActiveWindow(), msg.c_str(), caption.c_str(), winFlags);
 
@@ -64,43 +73,48 @@ static void ExitMessage(const std::string& msg, const std::string& caption, unsi
 #ifdef _MSC_VER
 	TerminateProcess(GetCurrentProcess(), -1);
 #else
-	exit(-1); // continuing execution when SDL_Quit has already been run will result in a crash
+	// continuing execution when SDL_Quit has already been run
+	// would result in a crash
+	exit(-1);
 #endif
 }
 
 volatile bool shutdownSucceeded = false;
 
 void ForcedExit(const std::string& msg, const std::string& caption, unsigned int flags) {
-	for (unsigned int n = 0; !shutdownSucceeded && n < 10; ++n)
-		boost::this_thread::sleep(boost::posix_time::seconds(1));
 
-	if (!shutdownSucceeded)
+	for (unsigned int n = 0; !shutdownSucceeded && (n < 10); ++n) {
+		boost::this_thread::sleep(boost::posix_time::seconds(1));
+	}
+
+	if (!shutdownSucceeded) {
 		ExitMessage(msg, caption, flags, true);
+	}
 }
 
 void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigned int flags)
 {
-#ifndef DEDICATED
+#if       !defined(DEDICATED)
+//#ifdef USE_GML
+	//! SpringApp::Shutdown is extremely likely to deadlock or end up waiting indefinitely if any 
+	//! MT thread has crashed or deviated from its normal execution path by throwing an exception
+	boost::thread* forcedExitThread = new boost::thread(boost::bind(&ForcedExit, msg, caption, flags));
+//#endif
+
 	//! Non-MainThread. Inform main one and then interrupt it.
 	if (!Threading::IsMainThread()) {
 		gu->globalQuit = true;
 		Threading::Error err(caption, msg, flags);
 		Threading::SetThreadError(err);
 
-		//! terminate thread
+		//! terminate thread // FIXME: only the (separate) loading thread can catch thread_interrupted
 		throw boost::thread_interrupted();
 	}
+#endif // !defined(DEDICATED)
 
-//#ifdef USE_GML
-	//! SpringApp::Shutdown is extremely likely to deadlock or end up waiting indefinitely if any 
-	//! MT thread has crashed or deviated from its normal execution path by throwing an exception
-	boost::thread* forcedExitThread = new boost::thread(boost::bind(&ForcedExit, msg, caption, flags));
-//#endif
-#endif
-
-#ifdef DEDICATED
+#if       defined(DEDICATED)
 	SafeDelete(gameServer);
-#else
+#else  // defined(DEDICATED)
 	//! exiting any possibly threads
 	//! (else they would still run while the error messagebox is shown)
 	SpringApp::Shutdown();
@@ -110,8 +124,7 @@ void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigne
 	forcedExitThread->join();
 	delete forcedExitThread;
 //#endif
-
-#endif
+#endif // defined(DEDICATED)
 
 	ExitMessage(msg, caption, flags, false);
 }

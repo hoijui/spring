@@ -1,16 +1,14 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/myGL.h"
 #include "RefractWater.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
-#include "LogOutput.h"
-#include "GlobalUnsynced.h"
-#include "bitops.h"
+#include "System/bitops.h"
 
 CRefractWater::CRefractWater() : CAdvWater(false)
 {

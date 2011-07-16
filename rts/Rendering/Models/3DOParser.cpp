@@ -1,22 +1,22 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <vector>
 #include <set>
 #include <algorithm>
 #include <cctype>
 #include <locale>
 #include <stdexcept>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "3DOParser.h"
+#include "Game/GlobalUnsynced.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "System/Util.h"
 #include "System/Exceptions.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/Matrix44f.h"
 #include "System/FileSystem/VFSHandler.h"

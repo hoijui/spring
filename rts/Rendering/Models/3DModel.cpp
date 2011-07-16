@@ -1,10 +1,10 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <algorithm>
 #include <cctype>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "3DModel.h"
 #include "3DOParser.h"
@@ -35,13 +35,22 @@ S3DModelPiece* S3DModel::FindPiece( std::string name )
 
 void S3DModelPiece::DrawStatic() const
 {
-	glPushMatrix();
-	glTranslatef(offset.x, offset.y, offset.z);
-	glCallList(dispListID);
-	for (std::vector<S3DModelPiece*>::const_iterator ci = childs.begin(); ci != childs.end(); ++ci) {
-		(*ci)->DrawStatic();
+	const bool needTrafo = (offset.SqLength() != 0.f);
+	if (needTrafo) {
+		glPushMatrix();
+		glTranslatef(offset.x, offset.y, offset.z);
 	}
-	glPopMatrix();
+
+		if (!isEmpty)
+			glCallList(dispListID);
+
+		for (std::vector<S3DModelPiece*>::const_iterator ci = childs.begin(); ci != childs.end(); ++ci) {
+			(*ci)->DrawStatic();
+		}
+
+	if (needTrafo) {
+		glPopMatrix();
+	}
 }
 
 
@@ -79,9 +88,9 @@ void LocalModel::SetLODCount(unsigned int count)
 }
 
 
-void LocalModel::ApplyRawPieceTransform(int piecenum) const
+void LocalModel::ApplyRawPieceTransformUnsynced(int piecenum) const
 {
-	pieces[piecenum]->ApplyTransform();
+	pieces[piecenum]->ApplyTransformUnsynced();
 }
 
 
@@ -117,80 +126,103 @@ float3 LocalModel::GetRawPieceDirection(int piecenum) const
 static const float RADTOANG  = 180 / PI;
 
 LocalModelPiece::LocalModelPiece(const S3DModelPiece* piece)
+	: numUpdatesSynced(1)
+	, lastMatrixUpdate(0)
 {
 	assert(piece);
 	original   =  piece;
+	parent     =  NULL; // set later
 	dispListID =  piece->dispListID;
 	visible    = !piece->isEmpty;
+	identity   =  true;
 	pos        =  piece->offset;
 	colvol     =  new CollisionVolume(piece->GetCollisionVolume());
 	childs.reserve(piece->childs.size());
-
-	parent = NULL; //FIXME?
 }
-
 
 LocalModelPiece::~LocalModelPiece() {
-	delete colvol;
+	delete colvol; colvol = NULL;
 }
 
 
-void LocalModelPiece::Draw() const
+inline void LocalModelPiece::CheckUpdateMatrixUnsynced()
 {
-	if (!visible && childs.size()==0)
-		return;
+	if (lastMatrixUpdate != numUpdatesSynced) {
+		lastMatrixUpdate = numUpdatesSynced;
+		identity = true;
 
-	glPushMatrix();
+		transfMat.LoadIdentity();
 
-	if (pos.x || pos.y || pos.z) { glTranslatef(pos.x, pos.y, pos.z); }
-	if (rot[1]) { glRotatef(rot[1] * RADTOANG, 0.0f, 1.0f, 0.0f); }
-	if (rot[0]) { glRotatef(rot[0] * RADTOANG, 1.0f, 0.0f, 0.0f); }
-	if (rot[2]) { glRotatef(rot[2] * RADTOANG, 0.0f, 0.0f, 1.0f); }
-
-	if (visible)
-		glCallList(dispListID);
-
-	for (unsigned int i = 0; i < childs.size(); i++) {
-		childs[i]->Draw();
+		if (pos.SqLength() > 0.0f) { transfMat.Translate(pos.x, pos.y, pos.z); identity = false; }
+		if (rot[1] != 0.0f) { transfMat.RotateY(-rot[1]); identity = false; }
+		if (rot[0] != 0.0f) { transfMat.RotateX(-rot[0]); identity = false; }
+		if (rot[2] != 0.0f) { transfMat.RotateZ(-rot[2]); identity = false; }
 	}
-
-	glPopMatrix();
 }
 
 
-void LocalModelPiece::DrawLOD(unsigned int lod) const
+
+void LocalModelPiece::Draw()
 {
 	if (!visible && childs.empty())
 		return;
 
-	glPushMatrix();
+	CheckUpdateMatrixUnsynced();
 
-	if (pos.x || pos.y || pos.z) { glTranslatef(pos.x, pos.y, pos.z); }
-	if (rot[1]) { glRotatef(rot[1] * RADTOANG, 0.0f, 1.0f, 0.0f); }
-	if (rot[0]) { glRotatef(rot[0] * RADTOANG, 1.0f, 0.0f, 0.0f); }
-	if (rot[2]) { glRotatef(rot[2] * RADTOANG, 0.0f, 0.0f, 1.0f); }
-
-	if (visible)
-		glCallList(lodDispLists[lod]);
-
-	for (unsigned int i = 0; i < childs.size(); i++) {
-		childs[i]->DrawLOD(lod);
+	if (!identity) {
+		glPushMatrix();
+		glMultMatrixf(transfMat);
 	}
 
-	glPopMatrix();
+		if (visible)
+			glCallList(dispListID);
+
+		for (unsigned int i = 0; i < childs.size(); i++) {
+			childs[i]->Draw();
+		}
+	
+	if (!identity) {
+		glPopMatrix();
+	}
 }
 
 
-void LocalModelPiece::ApplyTransform() const
+void LocalModelPiece::DrawLOD(unsigned int lod)
 {
-	if (parent) {
-		parent->ApplyTransform();
+	if (!visible && childs.empty())
+		return;
+
+	CheckUpdateMatrixUnsynced();
+	
+	if (!identity) {
+		glPushMatrix();
+		glMultMatrixf(transfMat);
 	}
 
-	if (pos.x || pos.y || pos.z) { glTranslatef(pos.x, pos.y, pos.z); }
-	if (rot[1]) { glRotatef(rot[1] * RADTOANG, 0.0f, 1.0f, 0.0f); }
-	if (rot[0]) { glRotatef(rot[0] * RADTOANG, 1.0f, 0.0f, 0.0f); }
-	if (rot[2]) { glRotatef(rot[2] * RADTOANG, 0.0f, 0.0f, 1.0f); }
+		if (visible)
+			glCallList(lodDispLists[lod]);
+
+		for (unsigned int i = 0; i < childs.size(); i++) {
+			childs[i]->DrawLOD(lod);
+		}
+	
+	if (!identity) {
+		glPopMatrix();
+	}
+}
+
+
+void LocalModelPiece::ApplyTransformUnsynced()
+{
+	if (parent) {
+		parent->ApplyTransformUnsynced();
+	}
+
+	CheckUpdateMatrixUnsynced();
+
+	if (!identity) {
+		glMultMatrixf(transfMat);
+	}
 }
 
 
@@ -200,10 +232,13 @@ void LocalModelPiece::GetPiecePosIter(CMatrix44f* mat) const
 		parent->GetPiecePosIter(mat);
 	}
 
-	if (pos.x || pos.y || pos.z) { mat->Translate(pos.x, pos.y, pos.z); }
+/**/
+	if (pos.SqLength()) { mat->Translate(pos.x, pos.y, pos.z); }
 	if (rot[1]) { mat->RotateY(-rot[1]); }
 	if (rot[0]) { mat->RotateX(-rot[0]); }
 	if (rot[2]) { mat->RotateZ(-rot[2]); }
+/**/
+	//(*mat) *= transMat; //! Translate & Rotate are faster than matrix-mul!
 }
 
 

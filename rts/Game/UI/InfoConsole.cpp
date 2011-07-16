@@ -1,21 +1,21 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <fstream>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "InfoConsole.h"
 #include "GuiHandler.h"
 #include "Rendering/glFont.h"
 
 #ifdef WIN32
-#  include "Platform/Win/win32.h"
+	#include "System/Platform/Win/win32.h"
 #endif
 
-#include "Sync/SyncTracer.h"
-#include "ConfigHandler.h"
+#include "System/Sync/SyncTracer.h"
+#include "System/ConfigHandler.h"
 #include "InputReceiver.h"
 
 #define border 7
@@ -29,7 +29,7 @@ const size_t CInfoConsole::maxLastMsgPos = 10;
 
 CInfoConsole::CInfoConsole() :
 	  fontScale(1.0f)
-	, disabled(false)
+	, enabled(true)
 	, lastMsgIter(lastMsgPositions.begin())
 	, newLines(0)
 	, rawId(0)
@@ -40,7 +40,7 @@ CInfoConsole::CInfoConsole() :
 	lifetime = configHandler->Get("InfoMessageTime", 400);
 
 	const std::string geo = configHandler->GetString("InfoConsoleGeometry",
-                                                  "0.26 0.96 0.41 0.205");
+			"0.26 0.96 0.41 0.205");
 	const int vars = sscanf(geo.c_str(), "%f %f %f %f",
 	                        &xpos, &ypos, &width, &height);
 	if (vars != 4) {
@@ -62,10 +62,10 @@ CInfoConsole::~CInfoConsole()
 
 void CInfoConsole::Draw()
 {
-	if (disabled) return;
+	if (!enabled) return;
 	if (!smallFont) return;
 
-	boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex); //is this really needed?
+	boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex); // XXX is this really needed?
 
 	if(!data.empty() && (guihandler && !guihandler->GetOutlineFonts())){
 		glDisable(GL_TEXTURE_2D);

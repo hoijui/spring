@@ -5,8 +5,8 @@
 
 #include <map>
 
-#include "creg/creg_cond.h"
-#include "float3.h"
+#include "System/creg/creg_cond.h"
+#include "System/float3.h"
 
 class CSolidObject;
 typedef std::map<int, CSolidObject*> BlockingMapCell;
@@ -35,6 +35,7 @@ public:
 	// same as GroundBlocked(), but does not bounds-check mapSquare
 	CSolidObject* GroundBlockedUnsafe(int mapSquare, bool topMost = true);
 
+	// for full thread safety, access via GetCell would need to be mutexed, but it appears only sim thread uses it
 	const BlockingMapCell& GetCell(int mapSquare) const { return groundBlockingMap[mapSquare]; }
 
 private:

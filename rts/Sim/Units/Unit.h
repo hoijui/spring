@@ -12,8 +12,8 @@
 #include "Lua/LuaRulesParams.h"
 #include "Lua/LuaUnitMaterial.h"
 #include "Sim/Objects/SolidObject.h"
-#include "Matrix44f.h"
-#include "Vec2.h"
+#include "System/Matrix44f.h"
+#include "System/Vec2.h"
 
 class CPlayer;
 class CCommandAI;
@@ -85,8 +85,8 @@ public:
 	virtual void AddImpulse(const float3&);
 	virtual void FinishedBuilding();
 
-	bool AttackGround(const float3& pos, bool wantDGun, bool fpsMode = false);
-	bool AttackUnit(CUnit* unit, bool wantDGun, bool fpsMode = false);
+	bool AttackGround(const float3& pos, bool wantManualFire, bool fpsMode = false);
+	bool AttackUnit(CUnit* unit, bool wantManualFire, bool fpsMode = false);
 
 	int GetBlockingMapID() const { return id; }
 
@@ -270,7 +270,7 @@ public:
 	float maxRange;
 	bool haveTarget;
 	bool haveUserTarget;
-	bool haveDGunRequest;
+	bool haveManualFireRequest;
 	/// used to determine muzzle flare size
 	float lastMuzzleFlameSize;
 	float3 lastMuzzleFlameDir;
@@ -291,8 +291,10 @@ public:
 
 	int losRadius;
 	int airLosRadius;
-	float losHeight;
 	int lastLosUpdate;
+
+	float losHeight;
+	float radarHeight;
 
 	int radarRadius;
 	int sonarRadius;
@@ -495,6 +497,7 @@ public:
 #ifdef USE_GML
 	/// last draw frame
 	int lastDrawFrame;
+	boost::recursive_mutex lodmutex;
 #endif
 #if defined(USE_GML) && GML_ENABLE_SIM
 	unsigned lastUnitUpdate;

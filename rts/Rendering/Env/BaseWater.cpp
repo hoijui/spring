@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "BaseWater.h"
 #include "BasicWater.h"
@@ -9,20 +9,29 @@
 #include "BumpWater.h"
 #include "DynWater.h"
 #include "RefractWater.h"
+#include "Map/ReadMap.h" // struct HeightMapUpdate
+#include "Sim/Projectiles/ExplosionListener.h"
+#include "Game/GameHelper.h"
 #include "System/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/LogOutput.h"
 
 CBaseWater* water = NULL;
-std::vector<int> CBaseWater::waterModes;
-std::vector<HeightmapChange> CBaseWater::heightmapChanges;
+static std::vector<int> waterModes;
+static std::vector<HeightMapUpdate> heightmapChanges;
 bool CBaseWater::noWakeProjectiles = false;
 
-CBaseWater::CBaseWater(void)
+CBaseWater::CBaseWater()
+	: drawReflection(false)
+	, drawRefraction(false)
+ 	, drawSolid(false)
 {
-	drawReflection = false;
-	drawRefraction = false;
- 	drawSolid = false;
+	helper->AddExplosionListener(this);
+}
+
+CBaseWater::~CBaseWater()
+{
+	if (helper != NULL) helper->RemoveExplosionListener(this);
 }
 
 
@@ -35,44 +44,41 @@ void CBaseWater::PushWaterMode(int nextWaterRenderMode) {
 void CBaseWater::PushHeightmapChange(const int x1, const int y1, const int x2, const int y2) {
 	GML_STDMUTEX_LOCK(water); // PushHeightMapChange
 
-	heightmapChanges.push_back(HeightmapChange(x1,y1,x2,y2));
+	heightmapChanges.push_back(HeightMapUpdate(x1, x2,  y1, y2));
 }
 
-void CBaseWater::UpdateBaseWater(CGame* game) {
+
+void CBaseWater::ApplyPushedChanges(CGame* game) {
 	std::vector<int> wm;
+	std::vector<HeightMapUpdate> hc;
+
 	{
 		GML_STDMUTEX_LOCK(water); // UpdateBaseWater
 
 		wm.swap(waterModes);
+		hc.swap(heightmapChanges);
 	}
 
-	for(std::vector<int>::iterator i = wm.begin(); i != wm.end(); ++i) {
+	for (std::vector<int>::iterator i = wm.begin(); i != wm.end(); ++i) {
 		int nextWaterRendererMode = *i;
-		if(nextWaterRendererMode < 0)
+
+		if (nextWaterRendererMode < 0)
 			nextWaterRendererMode = (std::max(0, water->GetID()) + 1) % CBaseWater::NUM_WATER_RENDERERS;
+
 		water = GetWater(water, nextWaterRendererMode);
 		logOutput.Print("Set water rendering mode to %i (%s)", nextWaterRendererMode, water->GetName());
 	}
 
-	std::vector<HeightmapChange> hc;
-	{
-		GML_STDMUTEX_LOCK(water); // UpdateBaseWater
-
-		hc.swap(heightmapChanges);
+	for (std::vector<HeightMapUpdate>::iterator i = hc.begin(); i != hc.end(); ++i) {
+		const HeightMapUpdate& h = *i;
+		water->HeightmapChanged(h.x1, h.y1, h.x2, h.y2);
 	}
-
-	for(std::vector<HeightmapChange>::iterator i = hc.begin(); i != hc.end(); ++i) {
-		HeightmapChange &h = *i;
-		water->HeightmapChanged(h.x1,h.y1,h.x2,h.y2);
-	}
-
-	water->UpdateWater(game);
 }
 
 CBaseWater* CBaseWater::GetWater(CBaseWater* currWaterRenderer, int nextWaterRendererMode)
 {
-	static CBaseWater  baseWaterRenderer;
-	       CBaseWater* nextWaterRenderer = NULL;
+	static CBaseWater baseWaterRenderer;
+	CBaseWater* nextWaterRenderer = NULL;
 
 	if (currWaterRenderer != NULL) {
 		assert(water == currWaterRenderer);
@@ -176,4 +182,8 @@ CBaseWater* CBaseWater::GetWater(CBaseWater* currWaterRenderer, int nextWaterRen
 
 	configHandler->Set("ReflectiveWater", nextWaterRenderer->GetID());
 	return nextWaterRenderer;
+}
+
+void CBaseWater::ExplosionOccurred(const CExplosionEvent& event) {
+	AddExplosion(event.GetPos(), event.GetDamage(), event.GetRadius());
 }

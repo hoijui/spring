@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include "lib/gml/gml.h"
 
 #include "UnitDef.h"
@@ -27,6 +27,7 @@
 #include "ExternalAI/EngineOutHandler.h"
 #include "Game/GameHelper.h"
 #include "Game/GameSetup.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/Player.h"
 #include "Game/SelectedUnits.h"
 #include "Lua/LuaRules.h"
@@ -59,7 +60,6 @@
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
 #include "System/EventHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/Matrix44f.h"
 #include "System/myMath.h"
@@ -131,7 +131,7 @@ CUnit::CUnit() : CSolidObject(),
 	maxRange(0.0f),
 	haveTarget(false),
 	haveUserTarget(false),
-	haveDGunRequest(false),
+	haveManualFireRequest(false),
 	lastMuzzleFlameSize(0.0f),
 	lastMuzzleFlameDir(0.0f, 1.0f, 0.0f),
 	armorType(0),
@@ -141,8 +141,9 @@ CUnit::CUnit() : CSolidObject(),
 	mapSquare(-1),
 	losRadius(0),
 	airLosRadius(0),
-	losHeight(0.0f),
 	lastLosUpdate(0),
+	losHeight(0.0f),
+	radarHeight(0.0f),
 	radarRadius(0),
 	sonarRadius(0),
 	jammerRadius(0),
@@ -259,7 +260,7 @@ CUnit::~CUnit()
 	DisableScriptMoveType();
 
 	if (delayedWreckLevel >= 0) {
-		// note: could also do this in Update() or even in CUnitKilledCB()
+		// NOTE: could also do this in Update() or even in CUnitKilledCB()
 		// where we wouldn't need deathSpeed, but not in KillUnit() since
 		// we have to wait for deathScriptFinished (but we want the delay
 		// in frames between CUnitKilledCB() and the CreateWreckage() call
@@ -386,8 +387,9 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	mass = (beingBuilt)? mass: unitDef->mass;
 	power = unitDef->power;
 	maxHealth = unitDef->health;
-	health = unitDef->health;
+	health = beingBuilt? 0.1f: unitDef->health;
 	losHeight = unitDef->losHeight;
+	radarHeight = unitDef->radarHeight;
 	metalCost = unitDef->metalCost;
 	energyCost = unitDef->energyCost;
 	buildTime = unitDef->buildTime;
@@ -441,28 +443,17 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 
 	useHighTrajectory = (unitDef->highTrajectoryType == 1);
 
-	if (build) {
-		ChangeLos(1, 1);
-		health = 0.1f;
-	} else {
-		ChangeLos(realLosRadius, realAirLosRadius);
-	}
-
 	energyTickMake =
 		unitDef->energyMake +
 		unitDef->tidalGenerator * mapInfo->map.tidalStrength;
 
+	ChangeLos(realLosRadius, realAirLosRadius);
 	SetRadius((model = unitDef->LoadModel())->radius);
 	modelParser->CreateLocalModel(this);
 
 	// copy the UnitDef volume instance
-	//
-	// aircraft still get half-size spheres for coldet purposes
-	// iif no custom volume is defined (unit->model->radius and
-	// unit->radius themselves are no longer altered)
-	//
-	// note: gets deleted in ~CSolidObject
-	collisionVolume = new CollisionVolume(unitDef->collisionVolume, model->radius * ((unitDef->canfly)? 0.5f: 1.0f));
+	// NOTE: gets deleted in ~CSolidObject
+	collisionVolume = new CollisionVolume(unitDef->collisionVolume, model->radius);
 	moveType = MoveTypeFactory::GetMoveType(this, unitDef);
 	script = CUnitScriptFactory::CreateScript(unitDef->scriptPath, this);
 }
@@ -479,7 +470,6 @@ void CUnit::PostInit(const CUnit* builder)
 	script->Create();
 
 	relMidPos = model->relMidPos;
-	losHeight = relMidPos.y + (radius * 0.5f);
 	height = model->height;
 
 	UpdateMidPos();
@@ -498,8 +488,8 @@ void CUnit::PostInit(const CUnit* builder)
 	// all units are blocking (ie. register on the blk-map
 	// when not flying) except mines, since their position
 	// would be given away otherwise by the PF, etc.
-	// note: this does mean that mines can be stacked (would
-	// need an extra yardmap character to prevent)
+	// NOTE: this does mean that mines can be stacked (an
+	// extra yardmap character is needed to prevent this)
 	immobile = unitDef->IsImmobileUnit();
 	blocking = !(immobile && unitDef->canKamikaze);
 
@@ -525,8 +515,7 @@ void CUnit::PostInit(const CUnit* builder)
 			moveState = unitDef->moveState;
 		}
 
-		Command c;
-		c.id = CMD_MOVE_STATE;
+		Command c(CMD_MOVE_STATE);
 		c.params.push_back(moveState);
 		commandAI->GiveCommand(c);
 	}
@@ -543,12 +532,12 @@ void CUnit::PostInit(const CUnit* builder)
 			fireState = unitDef->fireState;
 		}
 
-		Command c;
-		c.id = CMD_FIRE_STATE;
+		Command c(CMD_FIRE_STATE);
 		c.params.push_back(fireState);
 		commandAI->GiveCommand(c);
 	}
 
+	// these must precede UnitFinished from FinishedBuilding
 	eventHandler.UnitCreated(this, builder);
 	eoh->UnitCreated(*this, builder);
 
@@ -869,11 +858,14 @@ void CUnit::SlowUpdate()
 
 	repairAmount = 0.0f;
 
-	if (paralyzeDamage > 0) {
-		paralyzeDamage -= maxHealth * 0.5f * CUnit::empDecline;
-		if (paralyzeDamage < 0) {
-			paralyzeDamage = 0;
-		}
+	if (paralyzeDamage > 0.0f) {
+		// NOTE: the paralysis degradation-rate has to vary, because
+		// when units are paralyzed based on their current health (in
+		// DoDamage) we potentially start decaying from a lower damage
+		// level and would otherwise be de-paralyzed more quickly than
+		// specified by <paralyzeTime>
+		paralyzeDamage -= ((modInfo.paralyzeOnMaxHealth? maxHealth: health) * 0.5f * CUnit::empDecline);
+		paralyzeDamage = std::max(paralyzeDamage, 0.0f);
 	}
 
 	UpdateResources();
@@ -1033,7 +1025,7 @@ void CUnit::SlowUpdateWeapons() {
 			CWeapon* w = *wi;
 
 			if (!w->haveUserTarget) {
-				if ((haveDGunRequest == (unitDef->canDGun && w->weaponDef->manualfire))) {
+				if ((haveManualFireRequest == (unitDef->canManualFire && w->weaponDef->manualfire))) {
 					if (userTarget) {
 						w->AttackUnit(userTarget, true);
 					} else if (userAttackGround) {
@@ -1065,7 +1057,7 @@ void CUnit::DoWaterDamage()
 	const int  pz            = pos.z / (SQUARE_SIZE * 2);
 	const bool isFloating    = (physicalState == CSolidObject::Floating);
 	const bool onGround      = (physicalState == CSolidObject::OnGround);
-	const bool isWaterSquare = (readmap->mipHeightmap[1][pz * gs->hmapx + px] <= 0.0f);
+	const bool isWaterSquare = (readmap->GetMIPHeightMapSynced(1)[pz * gs->hmapx + px] <= 0.0f);
 
 	if ((pos.y <= 0.0f) && isWaterSquare && (isFloating || onGround)) {
 		DoDamage(DamageArray(mapInfo->water.damage), 0, ZeroVector, -1);
@@ -1132,7 +1124,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 
 	if (paralyzeTime == 0) { // real damage
 		if (damage > 0.0f) {
-			// Dont log overkill damage (so dguns/nukes etc dont inflate values)
+			// Dont log overkill damage (so nukes etc dont inflate values)
 			const float statsdamage = std::max(0.0f, std::min(maxHealth - health, damage));
 			if (attacker) {
 				teamHandler->Team(attacker->team)->currentStats->damageDealt += statsdamage;
@@ -1149,39 +1141,48 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 				stunned = false;
 			}
 		}
-	} else { // paralyzation
-		experienceMod *= 0.1f; // reduced experience
+	} else {
+		// paralyzation damage (adds reduced experience for the attacker)
+		experienceMod *= 0.1f;
+
+		// paralyzeDamage may not get higher than baseHealth * (paralyzeTime + 1),
+		// which means the unit will be destunned after <paralyzeTime> seconds.
+		// (maximum paralyzeTime of all paralyzer weapons which recently hit it ofc)
+		//
+		// rate of paralysis-damage reduction is lower if the unit has less than
+		// maximum health to ensure stun-time is always equal to <paralyzeTime>
+		const float baseHealth = (modInfo.paralyzeOnMaxHealth? maxHealth: health);
+		const float paralysisDecayRate = baseHealth * CUnit::empDecline;
+		const float sumParalysisDamage = paralysisDecayRate * paralyzeTime;
+		const float maxParalysisDamage = baseHealth + sumParalysisDamage - paralyzeDamage;
+
 		if (damage > 0.0f) {
-			// paralyzeDamage may not get higher than maxHealth * (paralyzeTime + 1),
-			// which means the unit will be destunned after paralyzeTime seconds.
-			// (maximum paralyzeTime of all paralyzer weapons which recently hit it ofc)
-			const float maxParaDmg = (modInfo.paralyzeOnMaxHealth? maxHealth: health) + maxHealth * CUnit::empDecline * paralyzeTime - paralyzeDamage;
-			if (damage > maxParaDmg) {
-				if (maxParaDmg > 0.0f) {
-					damage = maxParaDmg;
-				} else {
-					damage = 0.0f;
-				}
-			}
+			// clamp the dealt paralysis-damage to [0, maxParalysisDamage]
+			damage = std::min(damage, std::max(0.0f, maxParalysisDamage));
+
 			if (stunned) {
+				// no attacker gains experience from a stunned target
 				experienceMod = 0.0f;
 			}
-			paralyzeDamage += damage;
-			if (paralyzeDamage > (modInfo.paralyzeOnMaxHealth? maxHealth: health)) {
-				stunned = true;
-			}
-		}
-		else { // paralyzation healing
-			if (paralyzeDamage <= 0.0f) {
-				experienceMod = 0.0f;
-			}
+
+			// increase the current level of paralysis-damage
 			paralyzeDamage += damage;
 
-			if (paralyzeDamage < (modInfo.paralyzeOnMaxHealth? maxHealth: health)) {
+			if (paralyzeDamage >= baseHealth) {
+				stunned = true;
+			}
+		} else {
+			if (paralyzeDamage <= 0.0f) {
+				// no experience from healing a non-stunned target
+				experienceMod = 0.0f;
+			}
+
+			// decrease ("heal") the current level of paralysis-damage
+			paralyzeDamage += damage;
+			paralyzeDamage = std::max(paralyzeDamage, 0.0f);
+
+			if (paralyzeDamage <= baseHealth) {
 				stunned = false;
-				if (paralyzeDamage < 0.0f) {
-					paralyzeDamage = 0.0f;
-				}
 			}
 		}
 	}
@@ -1456,76 +1457,72 @@ bool CUnit::ChangeTeam(int newteam, ChangeType type)
 
 void CUnit::ChangeTeamReset()
 {
-	Command c;
-
 	// clear the commands (newUnitCommands for factories)
-	c.id = CMD_STOP;
+	Command c(CMD_STOP);
 	commandAI->GiveCommand(c);
 
 	// clear the build commands for factories
 	CFactoryCAI* facAI = dynamic_cast<CFactoryCAI*>(commandAI);
 	if (facAI) {
-		c.options = RIGHT_MOUSE_KEY; // clear option
+		const unsigned char options = RIGHT_MOUSE_KEY; // clear option
 		CCommandQueue& buildCommands = facAI->commandQue;
 		CCommandQueue::iterator it;
 		std::vector<Command> clearCommands;
 		clearCommands.reserve(buildCommands.size());
 		for (it = buildCommands.begin(); it != buildCommands.end(); ++it) {
-			c.id = it->id;
-			clearCommands.push_back(c);
+			clearCommands.push_back(Command(it->GetID(), options));
 		}
 		for (int i = 0; i < (int)clearCommands.size(); i++) {
 			facAI->GiveCommand(clearCommands[i]);
 		}
 	}
 
+	//FIXME reset to unitdef defaults
+
 	// deactivate to prevent the old give metal maker trick
-	c.id = CMD_ONOFF;
+	// TODO remove, because it is *A specific
+	c = Command(CMD_ONOFF);
 	c.params.push_back(0); // always off
 	commandAI->GiveCommand(c);
-	c.params.clear();
+
 	// reset repeat state
-	c.id = CMD_REPEAT;
+	c = Command(CMD_REPEAT);
 	c.params.push_back(0);
 	commandAI->GiveCommand(c);
-	c.params.clear();
+
 	// reset cloak state
 	if (unitDef->canCloak) {
-		c.id = CMD_CLOAK;
+		c = Command(CMD_CLOAK);
 		c.params.push_back(0); // always off
 		commandAI->GiveCommand(c);
-		c.params.clear();
 	}
 	// reset move state
 	if (unitDef->canmove || unitDef->builder) {
-		c.id = CMD_MOVE_STATE;
+		c = Command(CMD_MOVE_STATE);
 		c.params.push_back(MOVESTATE_MANEUVER);
 		commandAI->GiveCommand(c);
-		c.params.clear();
 	}
 	// reset fire state
 	if (commandAI->CanChangeFireState()) {
-		c.id = CMD_FIRE_STATE;
+		c = Command(CMD_FIRE_STATE);
 		c.params.push_back(FIRESTATE_FIREATWILL);
 		commandAI->GiveCommand(c);
-		c.params.clear();
 	}
 	// reset trajectory state
 	if (unitDef->highTrajectoryType > 1) {
-		c.id = CMD_TRAJECTORY;
+		c = Command(CMD_TRAJECTORY);
 		c.params.push_back(0);
 		commandAI->GiveCommand(c);
-		c.params.clear();
 	}
 }
 
 
 
-bool CUnit::AttackUnit(CUnit* targetUnit, bool wantDGun, bool fpsMode)
+bool CUnit::AttackUnit(CUnit* targetUnit, bool wantManualFire, bool fpsMode)
 {
 	bool ret = false;
 
-	haveDGunRequest = wantDGun;
+	haveManualFireRequest = wantManualFire;
 	userAttackGround = false;
 	commandShotCount = 0;
 
@@ -1536,7 +1533,7 @@ bool CUnit::AttackUnit(CUnit* targetUnit, bool wantDGun, bool fpsMode)
 
 		w->targetType = Target_None;
 
-		if ((wantDGun == (unitDef->canDGun && w->weaponDef->manualfire)) || fpsMode) {
+		if ((wantManualFire == (unitDef->canManualFire && w->weaponDef->manualfire)) || fpsMode) {
 			if (w->AttackUnit(targetUnit, true)) {
 				ret = true;
 			}
@@ -1546,11 +1543,11 @@ bool CUnit::AttackUnit(CUnit* targetUnit, bool wantDGun, bool fpsMode)
 	return ret;
 }
 
-bool CUnit::AttackGround(const float3& pos, bool wantDGun, bool fpsMode)
+bool CUnit::AttackGround(const float3& pos, bool wantManualFire, bool fpsMode)
 {
 	bool ret = false;
 
-	haveDGunRequest = wantDGun;
+	haveManualFireRequest = wantManualFire;
 	userAttackPos = pos;
 	userAttackGround = true;
 	commandShotCount = 0;
@@ -1560,7 +1557,7 @@ bool CUnit::AttackGround(const float3& pos, bool wantDGun, bool fpsMode)
 	for (std::vector<CWeapon*>::iterator wi = weapons.begin(); wi != weapons.end(); ++wi) {
 		CWeapon* w = *wi;
 
-		if ((wantDGun == (unitDef->canDGun && w->weaponDef->manualfire)) || fpsMode) {
+		if ((wantManualFire == (unitDef->canManualFire && w->weaponDef->manualfire)) || fpsMode) {
 			if (w->AttackGround(pos, true)) {
 				ret = true;
 			}
@@ -1872,26 +1869,37 @@ void CUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker, bool sh
 
 	if (showDeathSequence && (!reclaimed && !beingBuilt)) {
 		const std::string& exp = (selfDestruct) ? unitDef->selfDExplosion : unitDef->deathExplosion;
+		const WeaponDef* wd = weaponDefHandler->GetWeapon(exp);
 
-		if (!exp.empty()) {
-			const WeaponDef* wd = weaponDefHandler->GetWeapon(exp);
-			if (wd) {
-				helper->Explosion(
-					midPos, wd->damages, wd->areaOfEffect, wd->edgeEffectiveness,
-					wd->explosionSpeed, this, true, wd->damages[0] > 500 ? 1 : 2,
-					false, false, wd->explosionGenerator, 0, ZeroVector, wd->id
-				);
+		if (wd != NULL) {
+			CGameHelper::ExplosionParams params = {
+				pos,
+				ZeroVector,
+				wd->damages,
+				wd,
+				this,                              // owner
+				NULL,                              // hitUnit
+				NULL,                              // hitFeature
+				wd->areaOfEffect,
+				wd->edgeEffectiveness,
+				wd->explosionSpeed,
+				wd->damages[0] > 500? 1.0f: 2.0f,  // gfxMod
+				false,                             // impactOnly
+				false,                             // ignoreOwner
+				true,                              // damageGround
+			};
 
-				#if (PLAY_SOUNDS == 1)
-				// play explosion sound
-				if (wd->soundhit.getID(0) > 0) {
-					// HACK: loading code doesn't set sane defaults for explosion sounds, so we do it here
-					// NOTE: actually no longer true, loading code always ensures that sound volume != -1
-					const float volume = wd->soundhit.getVolume(0);
-					Channels::Battle.PlaySample(wd->soundhit.getID(0), pos, (volume == -1) ? 1.0f : volume);
-				}
-				#endif
+			helper->Explosion(params);
+
+			#if (PLAY_SOUNDS == 1)
+			// play explosion sound
+			if (wd->soundhit.getID(0) > 0) {
+				// HACK: loading code doesn't set sane defaults for explosion sounds, so we do it here
+				// NOTE: actually no longer true, loading code always ensures that sound volume != -1
+				const float volume = wd->soundhit.getVolume(0);
+				Channels::Battle.PlaySample(wd->soundhit.getID(0), pos, (volume == -1) ? 1.0f : volume);
 			}
+			#endif
 		}
 
 		if (selfDestruct) {
@@ -2267,7 +2275,7 @@ CR_REG_METADATA(CUnit, (
 	CR_MEMBER(maxRange),
 	CR_MEMBER(haveTarget),
 	CR_MEMBER(haveUserTarget),
-	CR_MEMBER(haveDGunRequest),
+	CR_MEMBER(haveManualFireRequest),
 	CR_MEMBER(lastMuzzleFlameSize),
 	CR_MEMBER(lastMuzzleFlameDir),
 	CR_MEMBER(armorType),
@@ -2278,8 +2286,9 @@ CR_REG_METADATA(CUnit, (
 	CR_MEMBER(mapSquare),
 	CR_MEMBER(losRadius),
 	CR_MEMBER(airLosRadius),
-	CR_MEMBER(losHeight),
 	CR_MEMBER(lastLosUpdate),
+	CR_MEMBER(losHeight),
+	CR_MEMBER(radarHeight),
 	CR_MEMBER(radarRadius),
 	CR_MEMBER(sonarRadius),
 	CR_MEMBER(jammerRadius),

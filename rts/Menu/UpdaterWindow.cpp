@@ -1,13 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #ifdef _MSC_VER
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #endif
 #include "UpdaterWindow.h"
 
 #include <boost/bind.hpp>
 
-#include "ConfigHandler.h"
+#include "System/ConfigHandler.h"
 #include "lib/lobby/Connection.h"
 #include "aGui/LineEdit.h"
 #include "aGui/VerticalLayout.h"
@@ -77,7 +77,7 @@ void UpdaterWindow::ShowAggreement(const std::string& text)
 	agreement = new agui::Window("Agreement");
 	agreement->SetSize(0.6, 0.7);
 	agui::VerticalLayout* vLay = new agui::VerticalLayout(agreement);
-	agui::TextElement* textEl = new agui::TextElement(text, vLay);
+	/*agui::TextElement* textEl = */new agui::TextElement(text, vLay);
 
 	agui::HorizontalLayout* bttnLayout = new agui::HorizontalLayout(vLay);
 	bttnLayout->SetSize(0.0f, 0.04f, true);

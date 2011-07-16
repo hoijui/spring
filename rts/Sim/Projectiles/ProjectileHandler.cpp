@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <algorithm>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Projectile.h"
 #include "ProjectileHandler.h"
@@ -19,7 +19,6 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "System/ConfigHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/EventHandler.h"
 #include "System/LogOutput.h"
 #include "System/TimeProfiler.h"
@@ -66,6 +65,7 @@ bool piececmp::operator() (const FlyingPiece* fp1, const FlyingPiece* fp2) const
 	return (fp1 > fp2);
 }
 
+void projdetach::Detach(CProjectile *p) { p->Detach(); }
 
 
 //////////////////////////////////////////////////////////////////////
@@ -95,6 +95,7 @@ CProjectileHandler::CProjectileHandler()
 
 CProjectileHandler::~CProjectileHandler()
 {
+	syncedProjectiles.detach_all();
 	syncedProjectiles.clear(); // synced first, to avoid callback crashes
 	unsyncedProjectiles.clear();
 
@@ -185,10 +186,16 @@ void CProjectileHandler::UpdateProjectileContainer(ProjectileContainer& pc, bool
 
 				freeUnsyncedIDs.push_back(p->id);
 #endif
+#if DETACH_SYNCED
+				pci = pc.erase_detach(pci);
+#else
 				pci = pc.erase_delete(pci);
+#endif
 			}
 		} else {
 			p->Update();
+			qf->MovedProjectile(p);
+
 			GML_GET_TICKS(p->lastProjUpdate);
 			++pci;
 		}
@@ -199,14 +206,10 @@ void CProjectileHandler::UpdateProjectileContainer(ProjectileContainer& pc, bool
 
 void CProjectileHandler::Update()
 {
-	{
-		SCOPED_TIMER("Projectile Collisions");
-		CheckCollisions();
-	}
+	CheckCollisions();
 
 	{
-		SCOPED_TIMER("Projectile Update");
-
+		SCOPED_TIMER("ProjectileHandler::Update");
 		GML_UPDATE_TICKS();
 
 		UpdateProjectileContainer(syncedProjectiles, true);
@@ -217,12 +220,18 @@ void CProjectileHandler::Update()
 			GML_STDMUTEX_LOCK(rproj); // Update
 
 			if (syncedProjectiles.can_delete_synced()) {
-				GML_STDMUTEX_LOCK(proj); // Update
+#if !DETACH_SYNCED
+				GML_RECMUTEX_LOCK(proj); // Update
+#endif
 
 				eventHandler.DeleteSyncedProjectiles();
 				//! delete all projectiles that were
 				//! queued (push_back'ed) for deletion
+#if DETACH_SYNCED
+				syncedProjectiles.detach_erased_synced();
+#else
 				syncedProjectiles.delete_erased_synced();
+#endif
 			}
 
 			eventHandler.UpdateProjectiles();
@@ -313,7 +322,7 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 	}
 
 	if ((*maxUsedID) > (1 << 24)) {
-		logOutput.Print("LUA %s projectile IDs are now out of range", (p->synced? "synced": "unsynced"));
+		logOutput.Print("Lua %s projectile IDs are now out of range", (p->synced? "synced": "unsynced"));
 	}
 
 	ProjectileMapPair pp(p, p->owner() ? p->owner()->allyteam : -1);
@@ -339,17 +348,21 @@ void CProjectileHandler::CheckUnitCollisions(
 	for (CUnit** ui = &tempUnits[0]; ui != endUnit; ++ui) {
 		CUnit* unit = *ui;
 
-		const bool friendlyShot = (p->owner() && (unit->allyteam == p->owner()->allyteam));
+		const CUnit* attacker = p->owner();
 		const bool raytraced = (unit->collisionVolume->GetTestType() == CollisionVolume::COLVOL_HITTEST_CONT);
 
-		// if this unit fired this projectile or (this unit is in the
-		// same allyteam as the unit that shot this projectile and we
-		// are ignoring friendly collisions)
-		if (p->owner() == unit || ((p->collisionFlags & Collision::NOFRIENDLIES) && friendlyShot)) {
+		// if this unit fired this projectile, always ignore
+		if (attacker == unit) {
 			continue;
 		}
 
-		if (p->collisionFlags & Collision::NONEUTRALS) {
+		if (p->GetCollisionFlags() & Collision::NOFRIENDLIES) {
+			if (attacker != NULL && (unit->allyteam == attacker->allyteam)) { continue; }
+		}
+		if (p->GetCollisionFlags() & Collision::NOENEMIES) {
+			if (attacker != NULL && (unit->allyteam != attacker->allyteam)) { continue; }
+		}
+		if (p->GetCollisionFlags() & Collision::NONEUTRALS) {
 			if (unit->IsNeutral()) { continue; }
 		}
 
@@ -389,7 +402,7 @@ void CProjectileHandler::CheckFeatureCollisions(
 {
 	CollisionQuery q;
 
-	if (p->collisionFlags & Collision::NOFEATURES) {
+	if (p->GetCollisionFlags() & Collision::NOFEATURES) {
 		return;
 	}
 
@@ -449,18 +462,38 @@ void CProjectileHandler::CheckGroundCollisions(ProjectileContainer& pc) {
 	for (pci = pc.begin(); pci != pc.end(); ++pci) {
 		CProjectile* p = *pci;
 
-		if (p->checkCol) {
-			// too many projectiles seem to impact the ground before
-			// actually hitting so don't subtract the projectile radius
-			if (ground->GetHeightAboveWater(p->pos.x, p->pos.z) > p->pos.y /* - p->radius*/) {
-				p->Collision();
-			}
+		if (!p->checkCol) {
+			continue;
+		}
+
+		// NOTE: if <p> is a MissileProjectile and does not
+		// have selfExplode set, it will never be removed (!)
+		if (p->GetCollisionFlags() & Collision::NOGROUND) {
+			continue;
+		}
+
+		// NOTE: don't add p->radius to groundHeight, or most
+		// projectiles will collide with the ground too early
+		const float groundHeight = ground->GetHeightReal(p->pos.x, p->pos.z);
+		const bool belowGround = (p->pos.y < groundHeight);
+		const bool insideWater = (p->pos.y <= 0.0f && !belowGround);
+		const bool ignoreWater = p->ignoreWater;
+
+		if (belowGround || (insideWater && !ignoreWater)) {
+			// if position has dropped below terrain or into water
+			// where we cannot live, adjust it and explode us now
+			// (if the projectile does not set deleteMe = true, it
+			// will keep hugging the terrain)
+			p->pos.y = belowGround? groundHeight: 0.0f;
+			p->Collision();
 		}
 	}
 }
 
 void CProjectileHandler::CheckCollisions()
 {
+	SCOPED_TIMER("ProjectileHandler::CheckCollisions");
+
 	CheckUnitFeatureCollisions(syncedProjectiles); //! changes simulation state
 	CheckUnitFeatureCollisions(unsyncedProjectiles); //! does not change simulation state
 

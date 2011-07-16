@@ -10,20 +10,22 @@
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include "mmgr.h"
-#include "lib/gml/gml.h"
+#include "System/mmgr.h"
 
-#include "NetProtocol.h"
-
-#include "Game/GameData.h"
-#include "Sim/Misc/GlobalConstants.h"
+// NOTE: these _must_ be included before NetProtocol.h due to some ambiguity in
+// Boost hash_float.hpp ("call of overloaded ‘ldexp(float&, int&)’ is ambiguous")
 #include "System/Net/UDPConnection.h"
 #include "System/Net/LocalConnection.h"
+#include "System/NetProtocol.h"
+
+#include "Game/GameData.h"
+#include "Game/GlobalUnsynced.h"
+#include "Sim/Misc/GlobalConstants.h"
 #include "System/Net/UnpackPacket.h"
 #include "System/LoadSave/DemoRecorder.h"
 #include "System/ConfigHandler.h"
-#include "System/LogOutput.h"
-#include "System/GlobalUnsynced.h"
+#include "System/Log/ILog.h"
+#include "lib/gml/gmlmut.h"
 
 
 CNetProtocol::CNetProtocol() : loading(false), disableDemo(false)
@@ -33,19 +35,19 @@ CNetProtocol::CNetProtocol() : loading(false), disableDemo(false)
 CNetProtocol::~CNetProtocol()
 {
 	Send(CBaseNetProtocol::Get().SendQuit(""));
-	logOutput.Print(serverConn->Statistics());
+	LOG("%s", serverConn->Statistics().c_str());
 }
 
 void CNetProtocol::InitClient(const char* server_addr, unsigned portnum, const std::string& myName, const std::string& myPasswd, const std::string& myVersion)
 {
 	GML_STDMUTEX_LOCK(net); // InitClient
-	
+
 	netcode::UDPConnection* conn = new netcode::UDPConnection(configHandler->Get("SourcePort", 0), server_addr, portnum);
 	serverConn.reset(conn);
 	serverConn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion));
 	serverConn->Flush(true);
-	
-	logOutput.Print("Connecting to %s:%i using name %s", server_addr, portnum, myName.c_str());
+
+	LOG("Connecting to %s:%i using name %s", server_addr, portnum, myName.c_str());
 }
 
 void CNetProtocol::AttemptReconnect(const std::string& myName, const std::string& myPasswd, const std::string& myVersion) {
@@ -55,7 +57,7 @@ void CNetProtocol::AttemptReconnect(const std::string& myName, const std::string
 	conn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion, true));
 	conn->Flush(true);
 
-	logOutput.Print("Reconnecting to server... %ds", dynamic_cast<netcode::UDPConnection&>(*serverConn).GetReconnectSecs());
+	LOG("Reconnecting to server... %ds", dynamic_cast<netcode::UDPConnection&>(*serverConn).GetReconnectSecs());
 
 	delete conn;
 }
@@ -70,8 +72,8 @@ void CNetProtocol::InitLocalClient()
 
 	serverConn.reset(new netcode::CLocalConnection);
 	serverConn->Flush();
-	
-	logOutput.Print("Connecting to local server");
+
+	LOG("Connecting to local server");
 }
 
 bool CNetProtocol::CheckTimeout(int nsecs, bool initial) const {
@@ -95,6 +97,13 @@ boost::shared_ptr<const netcode::RawPacket> CNetProtocol::Peek(unsigned ahead) c
 	return serverConn->Peek(ahead);
 }
 
+void CNetProtocol::DeleteBufferPacketAt(unsigned index)
+{
+	GML_STDMUTEX_LOCK(net); // DeleteBufferPacketAt
+
+	return serverConn->DeleteBufferPacketAt(index);
+}
+
 boost::shared_ptr<const netcode::RawPacket> CNetProtocol::GetData(int framenum)
 {
 	GML_STDMUTEX_LOCK(net); // GetData
@@ -109,12 +118,12 @@ boost::shared_ptr<const netcode::RawPacket> CNetProtocol::GetData(int framenum)
 			try {
 				GameData gd(ret);
 
-				logOutput.Print("Starting demo recording");
+				LOG("Starting demo recording");
 				record.reset(new CDemoRecorder());
 				record->WriteSetupText(gd.GetSetup());
 				record->SaveToDemo(ret->data, ret->length, demoTime);
 			} catch (netcode::UnpackPacketException &e) {
-				logOutput.Print("Invalid GameData received: %s", e.err.c_str());
+				LOG_L(L_WARNING, "Invalid GameData received: %s", e.err.c_str());
 			}
 		}
 	}
@@ -157,3 +166,4 @@ void CNetProtocol::DisableDemoRecording()
 }
 
 CNetProtocol* net = NULL;
+

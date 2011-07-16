@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "SkyBox.h"
 #include "Rendering/GlobalRendering.h"
@@ -12,7 +12,6 @@
 #include "Map/ReadMap.h"
 #include "System/Exceptions.h"
 #include "System/float3.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 
 CSkyBox::CSkyBox(const std::string& texture)
@@ -96,13 +95,5 @@ void CSkyBox::Draw()
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
-	glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
-	glFogi(GL_FOG_MODE, GL_LINEAR);
-	glFogf(GL_FOG_START, globalRendering->viewRange*fogStart);
-	glFogf(GL_FOG_END, globalRendering->viewRange);
-	glFogf(GL_FOG_DENSITY, 1.0f);
-
-	if (globalRendering->drawFog) {
-		glEnable(GL_FOG);
-	}
+	SetFog();
 }

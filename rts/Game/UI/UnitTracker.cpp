@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "UnitTracker.h"
 #include "Game/Camera/FPSController.h"
@@ -12,9 +12,8 @@
 #include "Rendering/GlobalRendering.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
-#include "ConfigHandler.h"
-#include "GlobalUnsynced.h"
-#include "LogOutput.h"
+#include "System/ConfigHandler.h"
+#include "System/LogOutput.h"
 
 
 CUnitTracker unitTracker;
@@ -295,7 +294,7 @@ void CUnitTracker::SetCam()
 		lastUpdateTime = gs->frameNum + globalRendering->timeOffset;
 
 		float3 modPlanePos(u->drawPos - (u->frontdir * u->radius * 3));
-		const float minHeight = ground->GetHeightReal(modPlanePos.x, modPlanePos.z) + (u->radius * 2);
+		const float minHeight = ground->GetHeightReal(modPlanePos.x, modPlanePos.z, false) + (u->radius * 2);
 		if (modPlanePos.y < minHeight) {
   			modPlanePos.y = minHeight;
 		}

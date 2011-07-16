@@ -1,16 +1,17 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "BaseSky.h"
 #include "BasicSky.h"
 #include "AdvSky.h"
-#include "ConfigHandler.h"
 #include "SkyBox.h"
 #include "Map/MapInfo.h"
-#include "Exceptions.h"
-#include "LogOutput.h"
+#include "Rendering/GlobalRendering.h"
+#include "System/ConfigHandler.h"
+#include "System/Exceptions.h"
+#include "System/LogOutput.h"
 
 IBaseSky* sky = NULL;
 
@@ -21,12 +22,28 @@ IBaseSky::IBaseSky()
 	, skyLight(NULL)
 	, cloudDensity(0.0f)
 {
-	SetLight(configHandler->Get("DynamicSun", true));
+	SetLight(configHandler->Get("DynamicSun", false));
 }
 
 IBaseSky::~IBaseSky()
 {
 	delete skyLight;
+}
+
+
+
+void IBaseSky::SetFog() {
+	if (globalRendering->drawFog) {
+		glEnable(GL_FOG);
+	} else {
+		glDisable(GL_FOG);
+	}
+
+	glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
+	glFogi(GL_FOG_MODE,   GL_LINEAR);
+	glFogf(GL_FOG_START,  globalRendering->viewRange * mapInfo->atmosphere.fogStart);
+	glFogf(GL_FOG_END,    globalRendering->viewRange * mapInfo->atmosphere.fogEnd);
+	glFogf(GL_FOG_DENSITY, 1.0f);
 }
 
 

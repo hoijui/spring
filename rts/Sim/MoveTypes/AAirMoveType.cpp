@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "AAirMoveType.h"
 #include "MoveMath/MoveMath.h"
 
@@ -59,13 +59,9 @@ bool AAirMoveType::UseSmoothMesh() const {
 	if (useSmoothMesh) {
 		const bool onTransportMission =
 			!owner->commandAI->commandQue.empty() &&
-			((owner->commandAI->commandQue.front().id == CMD_LOAD_UNITS) || (owner->commandAI->commandQue.front().id == CMD_UNLOAD_UNIT));
+			((owner->commandAI->commandQue.front().GetID() == CMD_LOAD_UNITS) || (owner->commandAI->commandQue.front().GetID() == CMD_UNLOAD_UNIT));
 		const bool repairing = reservedPad ? padStatus >= 1 : false;
-		const bool forceDisableSmooth =
-			repairing ||
-			aircraftState == AIRCRAFT_LANDING ||
-			aircraftState == AIRCRAFT_LANDED ||
-			onTransportMission;
+		const bool forceDisableSmooth = repairing || onTransportMission || (aircraftState != AIRCRAFT_FLYING);
 		return !forceDisableSmooth;
 	} else {
 		return false;

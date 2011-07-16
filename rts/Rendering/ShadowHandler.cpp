@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include <cfloat>
 
 #include "ShadowHandler.h"
@@ -14,7 +14,7 @@
 #include "Rendering/ProjectileDrawer.hpp"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/Env/BaseSky.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
+#include "Rendering/Env/ITreeDrawer.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
@@ -22,7 +22,6 @@
 #include "Rendering/Shaders/ShaderHandler.hpp"
 #include "System/ConfigHandler.h"
 #include "System/EventHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Matrix44f.h"
 #include "System/LogOutput.h"
 
@@ -35,7 +34,7 @@ bool CShadowHandler::shadowsSupported = false;
 bool CShadowHandler::firstInstance = true;
 
 
-CShadowHandler::CShadowHandler(void)
+CShadowHandler::CShadowHandler()
 {
 	const bool tmpFirstInstance = firstInstance;
 	firstInstance = false;
@@ -50,11 +49,6 @@ CShadowHandler::CShadowHandler(void)
 		return;
 	}
 
-	const bool haveShadowExts =
-		GLEW_ARB_vertex_program &&
-		GLEW_ARB_shadow &&
-		GLEW_ARB_depth_texture &&
-		GLEW_ARB_texture_env_combine;
 	//! Shadows possible values:
 	//! -1 : disable and don't try to initialize
 	//!  0 : disable, but still check if the hardware is able to run them
@@ -65,34 +59,32 @@ CShadowHandler::CShadowHandler(void)
 	if (configValue >= 2)
 		drawTerrainShadow = false;
 
-	if (configValue < 0 || !haveShadowExts) {
-		logOutput.Print("shadows disabled or required OpenGL extension missing");
+	if (configValue < 0) {
+		logOutput.Print("[%s] shadow rendering is disabled (config-value %d)", __FUNCTION__, configValue);
 		return;
+	}
+
+	if (!globalRendering->haveARB && !globalRendering->haveGLSL) {
+		logOutput.Print("[%s] GPU does not support either ARB or GLSL shaders for shadow rendering", __FUNCTION__);
+		return;
+	}
+
+	if (!globalRendering->haveGLSL) {
+		if (!GLEW_ARB_shadow || !GLEW_ARB_depth_texture || !GLEW_ARB_texture_env_combine) {
+			logOutput.Print("[%s] required OpenGL ARB-extensions missing for shadow rendering", __FUNCTION__);
+			// NOTE: these should only be relevant for FFP shadows
+			// return;
+		}
+		if (!GLEW_ARB_shadow_ambient) {
+			// can't use arbitrary texvals in case the depth comparison op fails (only 0)
+			logOutput.Print("[%s] \"ARB_shadow_ambient\" extension missing (will probably make shadows darker than they should be)", __FUNCTION__);
+		}
 	}
 
 	shadowMapSize = configHandler->Get("ShadowMapSize", DEFAULT_SHADOWMAPSIZE);
 
-	if (tmpFirstInstance) {
-		// this already checks for GLEW_ARB_fragment_program
-		if (!ProgramStringIsNative(GL_FRAGMENT_PROGRAM_ARB, "ARB/units3o.fp")) {
-			logOutput.Print("Your GFX card does not support the fragment programs needed for shadows");
-			return;
-		}
-
-		// this was previously set to true (redundantly since
-		// it was actually never made false anywhere) if either
-		//      1. (!GLEW_ARB_texture_env_crossbar && haveShadowExts)
-		//      2. (!GLEW_ARB_shadow_ambient && GLEW_ARB_shadow)
-		// but the non-FP result isn't nice anyway so just always
-		// use the program if we are guaranteed of shadow support
-
-		if (!GLEW_ARB_shadow_ambient) {
-			// can't use arbitrary texvals in case the depth comparison op fails (only 0)
-			logOutput.Print("You are missing the \"ARB_shadow_ambient\" extension (this will probably make shadows darker than they should be)");
-		}
-	}
-
 	if (!InitDepthTarget()) {
+		logOutput.Print("[%s] failed to initialize depth-texture FBO", __FUNCTION__);
 		return;
 	}
 
@@ -112,7 +104,7 @@ CShadowHandler::CShadowHandler(void)
 	LoadShadowGenShaderProgs();
 }
 
-CShadowHandler::~CShadowHandler(void)
+CShadowHandler::~CShadowHandler()
 {
 	if (shadowsLoaded) {
 		glDeleteTextures(1, &shadowTexture);
@@ -198,7 +190,7 @@ bool CShadowHandler::InitDepthTarget()
 	// it turns the shadow render buffer in a buffer with color
 	bool useColorTexture = false;
 	if (!fb.IsValid()) {
-		logOutput.Print("Warning: ShadowHandler: framebuffer not valid!");
+		logOutput.Print("[%s] framebuffer not valid!", __FUNCTION__);
 		return false;
 	}
 	glGenTextures(1,&shadowTexture);
@@ -245,7 +237,7 @@ bool CShadowHandler::InitDepthTarget()
 	return status;
 }
 
-void CShadowHandler::DrawShadowPasses(void)
+void CShadowHandler::DrawShadowPasses()
 {
 	inShadowPass = true;
 
@@ -284,7 +276,7 @@ void CShadowHandler::SetShadowMapSizeFactors()
 	#endif
 }
 
-void CShadowHandler::CreateShadows(void)
+void CShadowHandler::CreateShadows()
 {
 	fb.Bind();
 
@@ -314,10 +306,11 @@ void CShadowHandler::CreateShadows(void)
 
 
 	const ISkyLight* L = sky->GetLight();
-	const float3& D = L->GetLightDir();
 
-	cross1 = (D.cross(UpVector)).ANormalize();
-	cross2 = cross1.cross(D);
+	// sun direction is in world-space, invert it
+	sunDirZ = -L->GetLightDir();
+	sunDirX = (sunDirZ.cross(UpVector)).ANormalize();
+	sunDirY = sunDirX.cross(sunDirZ);
 	centerPos = camera->pos;
 
 	//! derive the size of the shadow-map from the
@@ -327,7 +320,10 @@ void CShadowHandler::CreateShadows(void)
 	SetShadowMapSizeFactors();
 
 	// it should be possible to tweak a bit more shadow map resolution from this
-	const float maxLength = 12000.0f;
+	static const float Z_DIVIDE = 12000.0f;
+	static const float Z_OFFSET = 0.00001f;
+	static const float Z_LENGTH = 8000.0f;
+
 	const float maxLengthX = (shadowProjMinMax.y - shadowProjMinMax.x) * 1.5f;
 	const float maxLengthY = (shadowProjMinMax.w - shadowProjMinMax.z) * 1.5f;
 
@@ -344,18 +340,22 @@ void CShadowHandler::CreateShadows(void)
 	shadowProjCenter.y = 0.5f;
 	#endif
 
-	shadowMatrix[ 0] =   cross1.x / maxLengthX;
-	shadowMatrix[ 4] =   cross1.y / maxLengthX;
-	shadowMatrix[ 8] =   cross1.z / maxLengthX;
-	shadowMatrix[12] = -(cross1.dot(centerPos)) / maxLengthX;
-	shadowMatrix[ 1] =   cross2.x / maxLengthY;
-	shadowMatrix[ 5] =   cross2.y / maxLengthY;
-	shadowMatrix[ 9] =   cross2.z / maxLengthY;
-	shadowMatrix[13] = -(cross2.dot(centerPos)) / maxLengthY;
-	shadowMatrix[ 2] = -D.x / maxLength;
-	shadowMatrix[ 6] = -D.y / maxLength;
-	shadowMatrix[10] = -D.z / maxLength;
-	shadowMatrix[14] = ((centerPos.x * D.x + centerPos.z * D.z) / maxLength) + 0.5f;
+	shadowMatrix[ 0] = sunDirX.x / maxLengthX;
+	shadowMatrix[ 1] = sunDirY.x / maxLengthY;
+	shadowMatrix[ 2] = sunDirZ.x / Z_DIVIDE;
+
+	shadowMatrix[ 4] = sunDirX.y / maxLengthX;
+	shadowMatrix[ 5] = sunDirY.y / maxLengthY;
+	shadowMatrix[ 6] = sunDirZ.y / Z_DIVIDE;
+
+	shadowMatrix[ 8] = sunDirX.z / maxLengthX;
+	shadowMatrix[ 9] = sunDirY.z / maxLengthY;
+	shadowMatrix[10] = sunDirZ.z / Z_DIVIDE;
+
+	// rotate the camera position into sun-space for the translation
+	shadowMatrix[12] = -(sunDirX.dot(centerPos)) / maxLengthX;
+	shadowMatrix[13] = -(sunDirY.dot(centerPos)) / maxLengthY;
+	shadowMatrix[14] = -(sunDirZ.dot(centerPos)  / Z_DIVIDE) + 0.5f;
 
 	glLoadMatrixf(shadowMatrix.m);
 
@@ -379,9 +379,9 @@ void CShadowHandler::CreateShadows(void)
 		//! move view into sun-space
 		const float3 oldup = camera->up;
 
-		camera->right = cross1;
-		camera->up = cross2;
-		camera->pos2 = camera->pos + D * 8000.0f;
+		camera->right = sunDirX;
+		camera->up = sunDirY;
+		camera->pos2 = camera->pos - sunDirZ * Z_LENGTH;
 
 		DrawShadowPasses();
 
@@ -389,7 +389,7 @@ void CShadowHandler::CreateShadows(void)
 		camera->pos2 = camera->pos;
 	}
 
-	shadowMatrix[14] -= 0.00001f;
+	shadowMatrix[14] -= Z_OFFSET;
 
 	glShadeModel(GL_SMOOTH);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -400,7 +400,7 @@ void CShadowHandler::CreateShadows(void)
 }
 
 
-void CShadowHandler::CalcMinMaxView(void)
+void CShadowHandler::CalcMinMaxView()
 {
 	left.clear();
 
@@ -453,13 +453,13 @@ void CShadowHandler::CalcMinMaxView(void)
 				float3 p[5];
 				p[0] = float3(fli->base + fli->dir * fli->minz, 0.0, fli->minz);
 				p[1] = float3(fli->base + fli->dir * fli->maxz, 0.0f, fli->maxz);
-				p[2] = float3(fli->base + fli->dir * fli->minz, readmap->maxheight + 200, fli->minz);
-				p[3] = float3(fli->base + fli->dir * fli->maxz, readmap->maxheight + 200, fli->maxz);
+				p[2] = float3(fli->base + fli->dir * fli->minz, readmap->initMaxHeight + 200, fli->minz);
+				p[3] = float3(fli->base + fli->dir * fli->maxz, readmap->initMaxHeight + 200, fli->maxz);
 				p[4] = float3(camera->pos.x, 0.0f, camera->pos.z);
 
 				for (int a = 0; a < 5; ++a) {
-					const float xd = (p[a] - centerPos).dot(cross1);
-					const float yd = (p[a] - centerPos).dot(cross2);
+					const float xd = (p[a] - centerPos).dot(sunDirX);
+					const float yd = (p[a] - centerPos).dot(sunDirY);
 
 					if (xd + borderSize > shadowProjMinMax.y) { shadowProjMinMax.y = xd + borderSize; }
 					if (xd - borderSize < shadowProjMinMax.x) { shadowProjMinMax.x = xd - borderSize; }

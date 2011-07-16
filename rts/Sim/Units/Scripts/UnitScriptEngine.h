@@ -5,7 +5,7 @@
 #ifndef UNITSCRIPTENGINE_H
 #define UNITSCRIPTENGINE_H
 
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 
 #include <list>
 
@@ -25,6 +25,9 @@ public:
 	void AddInstance(CUnitScript* instance);
 	void RemoveInstance(CUnitScript* instance);
 	void Tick(int deltaTime);
+
+private:
+	CUnitScript *currentScript;
 };
 
 extern CUnitScriptEngine GUnitScriptEngine;

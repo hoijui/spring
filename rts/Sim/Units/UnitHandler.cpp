@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <cassert>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "lib/gml/gml.h"
 #include "UnitHandler.h"
@@ -11,6 +11,7 @@
 #include "CommandAI/BuilderCAI.h"
 #include "CommandAI/Command.h"
 #include "Game/GameSetup.h"
+#include "Game/GlobalUnsynced.h"
 #include "Lua/LuaUnsyncedCtrl.h"
 #include "Map/Ground.h"
 #include "Map/ReadMap.h"
@@ -23,7 +24,6 @@
 #include "Sim/MoveTypes/MoveType.h"
 #include "System/EventHandler.h"
 #include "System/EventBatchHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/TimeProfiler.h"
 #include "System/myMath.h"
@@ -31,8 +31,6 @@
 #include "System/creg/STL_Deque.h"
 #include "System/creg/STL_List.h"
 #include "System/creg/STL_Set.h"
-using std::min;
-using std::max;
 
 
 //////////////////////////////////////////////////////////////////////
@@ -47,7 +45,6 @@ CR_REG_METADATA(CUnitHandler, (
 	CR_MEMBER(units),
 	CR_MEMBER(freeUnitIDs),
 	CR_MEMBER(maxUnits),
-	CR_MEMBER(maxUnitsPerTeam),
 	CR_MEMBER(maxUnitRadius),
 	CR_MEMBER(unitsToBeRemoved),
 	CR_MEMBER(morphUnitToFeature),
@@ -69,19 +66,15 @@ void CUnitHandler::PostLoad()
 CUnitHandler::CUnitHandler()
 :
 	maxUnitRadius(0.0f),
-	morphUnitToFeature(true)
+	morphUnitToFeature(true),
+	maxUnits(0)
 {
-	assert(teamHandler->ActiveTeams() > 0);
-
 	// note: the number of active teams can change at run-time, so
 	// the team unit limit should be recalculated whenever one dies
-	// or spawns (but would get complicated)
-	maxUnits = std::min(gameSetup->maxUnits * teamHandler->ActiveTeams(), MAX_UNITS);
-	maxUnitsPerTeam = maxUnits / teamHandler->ActiveTeams();
-
-	// ensure each team can make at least one unit
-	assert(maxUnits >= teamHandler->ActiveTeams());
-	assert(maxUnitsPerTeam >= 1);
+	// or spawns (but that would get complicated)
+	for (unsigned int n = 0; n < teamHandler->ActiveTeams(); n++) {
+		maxUnits += teamHandler->Team(n)->maxUnits;
+	}
 
 	units.resize(maxUnits, NULL);
 	unitsByDefs.resize(teamHandler->ActiveTeams(), std::vector<CUnitSet>(unitDefHandler->unitDefs.size()));
@@ -91,7 +84,7 @@ CUnitHandler::CUnitHandler()
 
 		// id's are used as indices, so they must lie in [0, units.size() - 1]
 		// (furthermore all id's are treated equally, none have special status)
-		for (unsigned int id = 0; id < units.size(); id++) {
+		for (unsigned int id = 0; id < freeIDs.size(); id++) {
 			freeIDs[id] = id;
 		}
 
@@ -153,7 +146,7 @@ bool CUnitHandler::AddUnit(CUnit *unit)
 	teamHandler->Team(unit->team)->AddUnit(unit, CTeam::AddBuilt);
 	unitsByDefs[unit->team][unit->unitDef->id].insert(unit);
 
-	maxUnitRadius = max(unit->radius, maxUnitRadius);
+	maxUnitRadius = std::max(unit->radius, maxUnitRadius);
 	return true;
 }
 
@@ -191,7 +184,6 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 			teamHandler->Team(delTeam)->RemoveUnit(delUnit, CTeam::RemoveDied);
 
 			unitsByDefs[delTeam][delType].erase(delUnit);
-
 			delete delUnit;
 			break;
 		}
@@ -216,12 +208,18 @@ void CUnitHandler::Update()
 		GML_STDMUTEX_LOCK(runit); // Update
 
 		if (!unitsToBeRemoved.empty()) {
-			GML_RECMUTEX_LOCK(unit); // Update - for anti-deadlock purposes.
-			GML_RECMUTEX_LOCK(sel);  // Update - unit is removed from selectedUnits in ~CObject, which is too late.
-			GML_RECMUTEX_LOCK(quad); // Update - make sure unit does not get partially deleted before before being removed from the quadfield
-			GML_STDMUTEX_LOCK(proj); // Update - projectile drawing may access owner() and lead to crash
+			GML_RECMUTEX_LOCK(obj); // Update
+
+			eventHandler.DeleteSyncedObjects();
+
+			GML_RECMUTEX_LOCK(unit); // Update
 
 			eventHandler.DeleteSyncedUnits();
+
+			GML_RECMUTEX_LOCK(proj); // Update - projectile drawing may access owner() and lead to crash
+
+			GML_RECMUTEX_LOCK(sel);  // Update - unit is removed from selectedUnits in ~CObject, which is too late.
+			GML_RECMUTEX_LOCK(quad); // Update - make sure unit does not get partially deleted before before being removed from the quadfield
 
 			while (!unitsToBeRemoved.empty()) {
 				CUnit* delUnit = unitsToBeRemoved.back();
@@ -285,50 +283,70 @@ void CUnitHandler::Update()
 }
 
 
-float CUnitHandler::GetBuildHeight(const float3& pos, const UnitDef* unitdef)
+
+
+// find the reference height for a build-position
+// against which to compare all footprint squares
+float CUnitHandler::GetBuildHeight(const float3& pos, const UnitDef* unitdef, bool synced)
 {
-	float minh = -5000.0f;
-	float maxh =  5000.0f;
-	int numBorder=0;
-	float borderh=0;
-	const float* heightmap=readmap->GetHeightmap();
+	const float* orgHeightMap = readmap->GetOriginalHeightMapSynced();
+	const float* curHeightMap = readmap->GetCornerHeightMapSynced();
 
-	int xsize=1;
-	int zsize=1;
+	#ifdef USE_UNSYNCED_HEIGHTMAP
+	if (!synced) {
+		orgHeightMap = readmap->GetCornerHeightMapUnsynced();
+		curHeightMap = readmap->GetCornerHeightMapUnsynced();
+	}
+	#endif
 
-	float maxDif=unitdef->maxHeightDif;
-	int x1 = (int)max(0.f,(pos.x-(xsize*0.5f*SQUARE_SIZE))/SQUARE_SIZE);
-	int x2 = min(gs->mapx,x1+xsize);
-	int z1 = (int)max(0.f,(pos.z-(zsize*0.5f*SQUARE_SIZE))/SQUARE_SIZE);
-	int z2 = min(gs->mapy,z1+zsize);
+	const float difH = unitdef->maxHeightDif;
 
-	if (x1 > gs->mapx) x1 = gs->mapx;
-	if (x2 < 0) x2 = 0;
-	if (z1 > gs->mapy) z1 = gs->mapy;
-	if (z2 < 0) z2 = 0;
+	float minH = readmap->currMinHeight;
+	float maxH = readmap->currMaxHeight;
 
-	for(int x=x1; x<=x2; x++){
-		for(int z=z1; z<=z2; z++){
-			float orgh=readmap->orgheightmap[z*(gs->mapx+1)+x];
-			float h=heightmap[z*(gs->mapx+1)+x];
-			if(x==x1 || x==x2 || z==z1 || z==z2){
-				numBorder++;
-				borderh+=h;
+	unsigned int numBorderSquares = 0;
+	float sumBorderSquareHeight = 0.0f;
+
+	static const int xsize = 1;
+	static const int zsize = 1;
+
+	// top-left footprint corner (sans clamping)
+	const int px = (pos.x - (xsize * (SQUARE_SIZE >> 1))) / SQUARE_SIZE;
+	const int pz = (pos.z - (zsize * (SQUARE_SIZE >> 1))) / SQUARE_SIZE;
+	// top-left and bottom-right footprint corner (clamped)
+	const int x1 = std::min(gs->mapx, std::max(0, px));
+	const int z1 = std::min(gs->mapy, std::max(0, pz));
+	const int x2 = std::max(0, std::min(gs->mapx, x1 + xsize));
+	const int z2 = std::max(0, std::min(gs->mapy, z1 + zsize));
+
+	for (int x = x1; x <= x2; x++) {
+		for (int z = z1; z <= z2; z++) {
+			const float sqOrgH = orgHeightMap[z * gs->mapxp1 + x];
+			const float sqCurH = curHeightMap[z * gs->mapxp1 + x];
+			const float sqMinH = std::min(sqCurH, sqOrgH);
+			const float sqMaxH = std::max(sqCurH, sqOrgH);
+
+			if (x == x1 || x == x2 || z == z1 || z == z2) {
+				sumBorderSquareHeight += sqCurH;
+				numBorderSquares += 1;
 			}
-			if(minh<min(h,orgh)-maxDif)
-				minh=min(h,orgh)-maxDif;
-			if(maxh>max(h,orgh)+maxDif)
-				maxh=max(h,orgh)+maxDif;
+
+			// restrict the range of [minH, maxH] to
+			// the minimum and maximum square height
+			// within the footprint
+			if (minH < (sqMinH - difH)) { minH = sqMinH - difH; }
+			if (maxH > (sqMaxH + difH)) { maxH = sqMaxH + difH; }
 		}
 	}
-	float h=borderh/numBorder;
 
-	if(h<minh && minh<maxh)
-		h=minh+0.01f;
-	if(h>maxh && maxh>minh)
-		h=maxh-0.01f;
+	// find the average height of the footprint-border squares
+	const float avgH = sumBorderSquareHeight / numBorderSquares;
 
-	return h;
+	// and clamp it to [minH, maxH] if necessary
+	if (avgH < minH && minH < maxH) { return (minH + 0.01f); }
+	if (avgH > maxH && maxH > minH) { return (maxH - 0.01f); }
+
+	return avgH;
 }
 
 
@@ -336,6 +354,7 @@ int CUnitHandler::TestUnitBuildSquare(
 	const BuildInfo& buildInfo,
 	CFeature*& feature,
 	int allyteam,
+	bool synced,
 	std::vector<float3>* canbuildpos,
 	std::vector<float3>* featurepos,
 	std::vector<float3>* nobuildpos,
@@ -347,18 +366,19 @@ int CUnitHandler::TestUnitBuildSquare(
 	const int zsize = buildInfo.GetZSize();
 	const float3 pos = buildInfo.pos;
 
-	const int x1 = (int) (pos.x - (xsize * 0.5f * SQUARE_SIZE));
-	const int x2 = x1 + xsize * SQUARE_SIZE;
-	const int z1 = (int) (pos.z - (zsize * 0.5f * SQUARE_SIZE));
+	const int x1 = (pos.x - (xsize * 0.5f * SQUARE_SIZE));
+	const int z1 = (pos.z - (zsize * 0.5f * SQUARE_SIZE));
 	const int z2 = z1 + zsize * SQUARE_SIZE;
-	const float h = GetBuildHeight(pos, buildInfo.def);
+	const int x2 = x1 + xsize * SQUARE_SIZE;
+	const float bh = GetBuildHeight(pos, buildInfo.def, synced);
 
 	int canBuild = 2;
 
 	if (buildInfo.def->needGeo) {
 		canBuild = 0;
-		const std::vector<CFeature*> &features = qf->GetFeaturesExact(pos, max(xsize, zsize) * 6);
+		const std::vector<CFeature*>& features = qf->GetFeaturesExact(pos, std::max(xsize, zsize) * 6);
 
+		// look for a nearby geothermal feature if we need one
 		for (std::vector<CFeature*>::const_iterator fi = features.begin(); fi != features.end(); ++fi) {
 			if ((*fi)->def->geoThermal
 				&& fabs((*fi)->pos.x - pos.x) < (xsize * 4 - 4)
@@ -370,10 +390,12 @@ int CUnitHandler::TestUnitBuildSquare(
 	}
 
 	if (commands != NULL) {
-		//! unsynced code
+		//! this is only called in unsynced context (ShowUnitBuildSquare)
+		assert(!synced);
+
 		for (int x = x1; x < x2; x += SQUARE_SIZE) {
 			for (int z = z1; z < z2; z += SQUARE_SIZE) {
-				int tbs = TestBuildSquare(float3(x, pos.y, z), buildInfo.def, feature, gu->myAllyTeam);
+				int tbs = TestBuildSquare(float3(x, pos.y, z), buildInfo.def, feature, gu->myAllyTeam, synced);
 
 				if (tbs) {
 					std::vector<Command>::const_iterator ci = commands->begin();
@@ -388,25 +410,26 @@ int CUnitHandler::TestUnitBuildSquare(
 					}
 
 					if (!tbs) {
-						nobuildpos->push_back(float3(x, h, z));
+						nobuildpos->push_back(float3(x, bh, z));
 						canBuild = 0;
 					} else if (feature || tbs == 1) {
-						featurepos->push_back(float3(x, h, z));
+						featurepos->push_back(float3(x, bh, z));
 					} else {
-						canbuildpos->push_back(float3(x, h, z));
+						canbuildpos->push_back(float3(x, bh, z));
 					}
 
-					canBuild = min(canBuild, tbs);
+					canBuild = std::min(canBuild, tbs);
 				} else {
-					nobuildpos->push_back(float3(x, h, z));
+					nobuildpos->push_back(float3(x, bh, z));
 					canBuild = 0;
 				}
 			}
 		}
 	} else {
+		//! this can be called in either context
 		for (int x = x1; x < x2; x += SQUARE_SIZE) {
 			for (int z = z1; z < z2; z += SQUARE_SIZE) {
-				canBuild = min(canBuild, TestBuildSquare(float3(x, h, z), buildInfo.def, feature, allyteam));
+				canBuild = std::min(canBuild, TestBuildSquare(float3(x, bh, z), buildInfo.def, feature, allyteam, synced));
 
 				if (canBuild == 0) {
 					return 0;
@@ -419,7 +442,7 @@ int CUnitHandler::TestUnitBuildSquare(
 }
 
 
-int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFeature*& feature, int allyteam)
+int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFeature*& feature, int allyteam, bool synced)
 {
 	if (pos.x < 0 || pos.x >= gs->mapx * SQUARE_SIZE || pos.z < 0 || pos.z >= gs->mapy * SQUARE_SIZE) {
 		return 0;
@@ -449,20 +472,29 @@ int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFe
 		}
 	}
 
-	const float groundHeight = ground->GetHeightReal(pos.x, pos.z);
+	const float groundHeight = ground->GetHeightReal(pos.x, pos.z, synced);
 
 	if (!unitdef->floater || groundHeight > 0.0f) {
 		// if we are capable of floating, only test local
 		// height difference if terrain is above sea-level
-		const float* heightmap = readmap->GetHeightmap();
-		int x = (int) (pos.x / SQUARE_SIZE);
-		int z = (int) (pos.z / SQUARE_SIZE);
-		float orgh = readmap->orgheightmap[z * (gs->mapx + 1) + x];
-		float h = heightmap[z * (gs->mapx + 1) + x];
-		float hdif = unitdef->maxHeightDif;
+		const float* orgHeightMap = readmap->GetOriginalHeightMapSynced();
+		const float* curHeightMap = readmap->GetCornerHeightMapSynced();
 
-		if (pos.y > orgh + hdif && pos.y > h + hdif) { return 0; }
-		if (pos.y < orgh - hdif && pos.y < h - hdif) { return 0; }
+		#ifdef USE_UNSYNCED_HEIGHTMAP
+		if (!synced) {
+			orgHeightMap = readmap->GetCornerHeightMapUnsynced();
+			curHeightMap = readmap->GetCornerHeightMapUnsynced();
+		}
+		#endif
+
+		const int sqx = pos.x / SQUARE_SIZE;
+		const int sqz = pos.z / SQUARE_SIZE;
+		const float orgH = orgHeightMap[sqz * gs->mapxp1 + sqx];
+		const float curH = curHeightMap[sqz * gs->mapxp1 + sqx];
+		const float difH = unitdef->maxHeightDif;
+
+		if (pos.y > std::max(orgH + difH, curH + difH)) { return 0; }
+		if (pos.y < std::min(orgH - difH, curH - difH)) { return 0; }
 	}
 
 	if (!unitdef->IsAllowedTerrainHeight(groundHeight))
@@ -513,7 +545,7 @@ Command CUnitHandler::GetBuildCommand(const float3& pos, const float3& dir) {
 		for (; ci != unit->commandAI->commandQue.end(); ++ci) {
 			const Command& cmd = *ci;
 
-			if (cmd.id < 0 && cmd.params.size() >= 3) {
+			if (cmd.GetID() < 0 && cmd.params.size() >= 3) {
 				BuildInfo bi(cmd);
 				tempF1 = pos + dir * ((bi.pos.y - pos.y) / dir.y) - bi.pos;
 
@@ -524,15 +556,14 @@ Command CUnitHandler::GetBuildCommand(const float3& pos, const float3& dir) {
 		}
 	}
 
-	Command c;
-	c.id = CMD_STOP;
+	Command c(CMD_STOP);
 	return c;
 }
 
 
-bool CUnitHandler::CanBuildUnit(const UnitDef* unitdef, int team)
+bool CUnitHandler::CanBuildUnit(const UnitDef* unitdef, int team) const
 {
-	if (teamHandler->Team(team)->units.size() >= maxUnitsPerTeam) {
+	if (teamHandler->Team(team)->AtUnitLimit()) {
 		return false;
 	}
 	if (unitsByDefs[team][unitdef->id].size() >= unitdef->maxThisUnit) {

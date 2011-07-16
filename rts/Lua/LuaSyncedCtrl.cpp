@@ -1,12 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <set>
 #include <list>
 #include <cctype>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaSyncedCtrl.h"
 
@@ -29,7 +29,7 @@
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Rendering/GroundDecalHandler.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
+#include "Rendering/Env/ITreeDrawer.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
@@ -59,13 +59,13 @@
 #include "Sim/Units/CommandAI/Command.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/CommandAI/FactoryCAI.h"
-#include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Units/UnitTypes/ExtractorBuilding.h"
 #include "Sim/Weapons/PlasmaRepulser.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
-#include "myMath.h"
-#include "LogOutput.h"
+#include "System/myMath.h"
+#include "System/LogOutput.h"
+#include "LuaHelper.h"
 
 using namespace std;
 
@@ -95,8 +95,7 @@ static float smoothMeshAmountChanged;
 
 inline void LuaSyncedCtrl::CheckAllowGameChanges(lua_State* L)
 {
-	const CLuaHandleSynced* lhs =
-		dynamic_cast<const CLuaHandleSynced*>(CLuaHandle::GetActiveHandle());
+	const CLuaHandleSynced* lhs = CLuaHandleSynced::GetActiveHandle(L);
 
 	if (lhs == NULL) {
 		luaL_error(L, "Internal lua error, unsynced script using synced calls");
@@ -262,96 +261,6 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 /******************************************************************************/
 /******************************************************************************/
 //
-//  Access helpers
-//
-
-static inline bool FullCtrl()
-{
-	return CLuaHandle::GetActiveHandle()->GetFullCtrl();
-}
-
-
-static inline int CtrlTeam()
-{
-	return CLuaHandle::GetActiveHandle()->GetCtrlTeam();
-}
-
-
-static inline int CtrlAllyTeam()
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return ctrlTeam;
-	}
-	return teamHandler->AllyTeam(ctrlTeam);
-}
-
-
-static inline bool CanControlTeam(int teamID)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	return (ctrlTeam == teamID);
-}
-
-
-static inline bool CanControlAllyTeam(int allyTeamID)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	return (teamHandler->AllyTeam(ctrlTeam) == allyTeamID);
-}
-
-
-static inline bool CanControlUnit(const CUnit* unit)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	return (ctrlTeam == unit->team);
-}
-
-
-static inline bool CanControlFeatureAllyTeam(int allyTeamID)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	if (allyTeamID < 0) {
-		return (ctrlTeam == teamHandler->GaiaTeamID());
-	}
-	return (teamHandler->AllyTeam(ctrlTeam) == allyTeamID);
-}
-
-
-static inline bool CanControlFeature(const CFeature* feature)
-{
-	return CanControlFeatureAllyTeam(feature->allyteam);
-}
-
-
-static inline bool CanControlProjectileAllyTeam(int allyTeamID)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	if (allyTeamID < 0) {
-		return false;
-	}
-	return (teamHandler->AllyTeam(ctrlTeam) == allyTeamID);
-}
-
-
-/******************************************************************************/
-/******************************************************************************/
-//
 //  Parsing helpers
 //
 
@@ -378,7 +287,7 @@ static inline CUnit* ParseUnit(lua_State* L, const char* caller, int index)
 	if (unit == NULL) {
 		return NULL;
 	}
-	if (!CanControlUnit(unit)) {
+	if (!CanControlUnit(L, unit)) {
 		return NULL;
 	}
 	return unit;
@@ -397,7 +306,7 @@ static inline CFeature* ParseFeature(lua_State* L,
 	if (!f)
 		return NULL;
 
-	if (!CanControlFeature(f)) {
+	if (!CanControlFeature(L, f)) {
 		return NULL;
 	}
 	return f;
@@ -414,7 +323,7 @@ static inline CProjectile* ParseProjectile(lua_State* L,
 	if (pmp == NULL) {
 		return NULL;
 	}
-	if (!CanControlProjectileAllyTeam(pmp->second)) {
+	if (!CanControlProjectileAllyTeam(L, pmp->second)) {
 		return NULL;
 	}
 	return pmp->first;
@@ -465,21 +374,31 @@ int LuaSyncedCtrl::GameOver(lua_State* L)
 {
 	if (!lua_istable(L, 1)) {
 		luaL_error(L, "Incorrect arguments to GameOver()");
+		return 0;
 	}
+
 	std::vector<unsigned char> winningAllyTeams;
-	const int table = 1;
-	for (lua_pushnil(L); lua_next(L, table) != 0; lua_pop(L, 1)) {
+
+	static const int tableIdx = 1;
+
+	for (lua_pushnil(L); lua_next(L, tableIdx) != 0; lua_pop(L, 1)) {
 		if (!lua_israwnumber(L, -1)) {
 			continue;
 		}
-		unsigned char AllyTeamID = lua_toint( L, -1 );
-		if ( !teamHandler->ValidAllyTeam(AllyTeamID) ) {
+
+		const unsigned char allyTeamID = lua_toint(L, -1);
+
+		if (!teamHandler->ValidAllyTeam(allyTeamID)) {
 			continue;
 		}
-		winningAllyTeams.push_back( AllyTeamID );
+
+		winningAllyTeams.push_back(allyTeamID);
 	}
-	game->GameEnd( winningAllyTeams );
-	return 0;
+
+	game->GameEnd(winningAllyTeams);
+	// push the number of accepted allyteams
+	lua_pushnumber(L, winningAllyTeams.size());
+	return 1;
 }
 
 
@@ -489,7 +408,7 @@ int LuaSyncedCtrl::AddTeamResource(lua_State* L)
 	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
-	if (!CanControlTeam(teamID)) {
+	if (!CanControlTeam(L, teamID)) {
 		return 0;
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -517,7 +436,7 @@ int LuaSyncedCtrl::UseTeamResource(lua_State* L)
 	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
-	if (!CanControlTeam(teamID)) {
+	if (!CanControlTeam(L, teamID)) {
 		return 0;
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -580,7 +499,7 @@ int LuaSyncedCtrl::SetTeamResource(lua_State* L)
 	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
-	if (!CanControlTeam(teamID)) {
+	if (!CanControlTeam(L, teamID)) {
 		return 0;
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -616,7 +535,7 @@ int LuaSyncedCtrl::SetTeamShareLevel(lua_State* L)
 	if (!teamHandler->IsValidTeam(teamID)) {
 		return 0;
 	}
-	if (!CanControlTeam(teamID)) {
+	if (!CanControlTeam(L, teamID)) {
 		return 0;
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -644,7 +563,7 @@ int LuaSyncedCtrl::ShareTeamResource(lua_State* L)
 	if (!teamHandler->IsValidTeam(teamID1)) {
 		luaL_error(L, "Incorrect arguments to ShareTeamResource(teamID1, teamID2, type, amount)");
 	}
-	if (!CanControlTeam(teamID1)) {
+	if (!CanControlTeam(L, teamID1)) {
 		return 0;
 	}
 	CTeam* team1 = teamHandler->Team(teamID1);
@@ -956,7 +875,7 @@ int LuaSyncedCtrl::CreateUnit(lua_State* L)
 	const bool beingBuilt = (lua_isboolean(L, 7) && lua_toboolean(L, 7)); // default false
 	const bool flattenGround = (lua_isboolean(L, 8) && lua_toboolean(L, 8)) || lua_isnone(L, 8); // default true
 
-	int teamID = CtrlTeam();
+	int teamID = CtrlTeam(L);
 	if (lua_israwnumber(L, 6)) {
 		teamID = lua_toint(L, 6);
 	}
@@ -964,7 +883,7 @@ int LuaSyncedCtrl::CreateUnit(lua_State* L)
 		luaL_error(L, "[%s()]: invalid team number (%d)", __FUNCTION__, teamID);
 		return 0;
 	}
-	if (!FullCtrl() && (CtrlTeam() != teamID)) {
+	if (!FullCtrl(L) && (CtrlTeam(L) != teamID)) {
 		luaL_error(L, "[%s()]: not a controllable team (%d)", __FUNCTION__, teamID);
 		return 0;
 	}
@@ -1045,7 +964,7 @@ int LuaSyncedCtrl::TransferUnit(lua_State* L)
 	}
 
 	bool given = true;
-	if (FullCtrl() && lua_isboolean(L, 3)) {
+	if (FullCtrl(L) && lua_isboolean(L, 3)) {
 		given = lua_toboolean(L, 3);
 	}
 
@@ -1735,13 +1654,13 @@ int LuaSyncedCtrl::SetUnitTarget(lua_State* L)
 		const float3 pos(luaL_checkfloat(L, 2),
 		                 luaL_checkfloat(L, 3),
 		                 luaL_checkfloat(L, 4));
-		const bool dgun = lua_isboolean(L, 5) && lua_toboolean(L, 5);
-		unit->AttackGround(pos, dgun);
+		const bool manualFire = lua_isboolean(L, 5) && lua_toboolean(L, 5);
+		unit->AttackGround(pos, manualFire);
 	}
 	else if (args >= 2) {
 		CUnit* target = ParseRawUnit(L, __FUNCTION__, 2);
-		const bool dgun = lua_isboolean(L, 3) && lua_toboolean(L, 3);
-		unit->AttackUnit(target, dgun);
+		const bool manualFire = lua_isboolean(L, 3) && lua_toboolean(L, 3);
+		unit->AttackUnit(target, manualFire);
 	}
 	return 0;
 }
@@ -1781,7 +1700,7 @@ int LuaSyncedCtrl::SetUnitPieceCollisionVolumeData(lua_State* L)
 {
 	const int argc = lua_gettop(L);
 
-	if (argc != 11 || argc != 14) {
+	if ((argc != 11) && (argc != 14)) {
 		return 0;
 	}
 
@@ -2223,7 +2142,7 @@ int LuaSyncedCtrl::CreateFeature(lua_State* L)
 	}
 
 	int facing = GetFacingFromHeading(heading);
-	int team = CtrlTeam();
+	int team = CtrlTeam(L);
 	if (team < 0) {
 		team = -1; // default to global for AllAccessTeam
 	}
@@ -2240,7 +2159,7 @@ int LuaSyncedCtrl::CreateFeature(lua_State* L)
 	}
 
 	const int allyTeam = (team < 0) ? -1 : teamHandler->AllyTeam(team);
-	if (!CanControlFeatureAllyTeam(allyTeam)) {
+	if (!CanControlFeatureAllyTeam(L, allyTeam)) {
 		luaL_error(L, "CreateFeature() bad team permission %d", team);
 	}
 
@@ -2622,7 +2541,7 @@ int LuaSyncedCtrl::GiveOrderToUnit(lua_State* L)
 	Command cmd;
 	LuaUtils::ParseCommand(L, __FUNCTION__, 2, cmd);
 
-	if (!CanControlUnit(unit)) {
+	if (!CanControlUnit(L, unit)) {
 		lua_pushboolean(L, false);
 		return 1;
 	}
@@ -2665,7 +2584,7 @@ int LuaSyncedCtrl::GiveOrderToUnitMap(lua_State* L)
 	int count = 0;
 	for (int i = 0; i < unitCount; i++) {
 		CUnit* unit = units[i];
-		if (CanControlUnit(unit)) {
+		if (CanControlUnit(L, unit)) {
 			unit->commandAI->GiveCommand(cmd);
 			count++;
 		}
@@ -2702,7 +2621,7 @@ int LuaSyncedCtrl::GiveOrderToUnitArray(lua_State* L)
 	int count = 0;
 	for (int i = 0; i < unitCount; i++) {
 		CUnit* unit = units[i];
-		if (CanControlUnit(unit)) {
+		if (CanControlUnit(L, unit)) {
 			unit->commandAI->GiveCommand(cmd);
 			count++;
 		}
@@ -2742,7 +2661,7 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitMap(lua_State* L)
 	int count = 0;
 	for (int u = 0; u < unitCount; u++) {
 		CUnit* unit = units[u];
-		if (CanControlUnit(unit)) {
+		if (CanControlUnit(L, unit)) {
 			for (int c = 0; c < commandCount; c++) {
 				unit->commandAI->GiveCommand(commands[c]);
 			}
@@ -2783,7 +2702,7 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 	int count = 0;
 	for (int u = 0; u < unitCount; u++) {
 		CUnit* unit = units[u];
-		if (CanControlUnit(unit)) {
+		if (CanControlUnit(L, unit)) {
 			for (int c = 0; c < commandCount; c++) {
 				unit->commandAI->GiveCommand(commands[c]);
 			}
@@ -2856,7 +2775,7 @@ int LuaSyncedCtrl::LevelHeightMap(lua_State* L)
 
 	for (int z = z1; z <= z2; z++) {
 		for (int x = x1; x <= x2; x++) {
-			const int index = (z * (gs->mapx + 1)) + x;
+			const int index = (z * gs->mapxp1) + x;
 			readmap->SetHeight(index, height);
 		}
 	}
@@ -2877,7 +2796,7 @@ int LuaSyncedCtrl::AdjustHeightMap(lua_State* L)
 
 	for (int z = z1; z <= z2; z++) {
 		for (int x = x1; x <= x2; x++) {
-			const int index = (z * (gs->mapx + 1)) + x;
+			const int index = (z * gs->mapxp1) + x;
 			readmap->AddHeight(index, height);
 		}
 	}
@@ -2896,13 +2815,13 @@ int LuaSyncedCtrl::RevertHeightMap(lua_State* L)
 	int x1, x2, z1, z2;
 	ParseMapParams(L, __FUNCTION__, origFactor, x1, z1, x2, z2);
 
-	const float* origMap = readmap->orgheightmap;
-	const float* currMap = readmap->GetHeightmap();
+	const float* origMap = readmap->GetOriginalHeightMapSynced();
+	const float* currMap = readmap->GetCornerHeightMapSynced();
 
 	if (origFactor == 1.0f) {
 		for (int z = z1; z <= z2; z++) {
 			for (int x = x1; x <= x2; x++) {
-				const int idx = (z * (gs->mapx + 1)) + x;
+				const int idx = (z * gs->mapxp1) + x;
 
 				readmap->SetHeight(idx, origMap[idx]);
 			}
@@ -2912,7 +2831,7 @@ int LuaSyncedCtrl::RevertHeightMap(lua_State* L)
 		const float currFactor = (1.0f - origFactor);
 		for (int z = z1; z <= z2; z++) {
 			for (int x = x1; x <= x2; x++) {
-				const int index = (z * (gs->mapx + 1)) + x;
+				const int index = (z * gs->mapxp1) + x;
 				const float ofh = origFactor * origMap[index];
 				const float cfh = currFactor * currMap[index];
 				readmap->SetHeight(index, ofh + cfh);
@@ -2947,8 +2866,8 @@ int LuaSyncedCtrl::AddHeightMap(lua_State* L)
 		return 0;
 	}
 
-	const int index = (z * (gs->mapx + 1)) + x;
-	const float oldHeight = readmap->GetHeightmap()[index];
+	const int index = (z * gs->mapxp1) + x;
+	const float oldHeight = readmap->GetCornerHeightMapSynced()[index];
 	heightMapAmountChanged += streflop::fabsf(h);
 
 	// update RecalcArea()
@@ -2984,8 +2903,8 @@ int LuaSyncedCtrl::SetHeightMap(lua_State* L)
 		return 0;
 	}
 
-	const int index = (z * (gs->mapx + 1)) + x;
-	const float oldHeight = readmap->GetHeightmap()[index];
+	const int index = (z * gs->mapxp1) + x;
+	const float oldHeight = readmap->GetCornerHeightMapSynced()[index];
 	float height = oldHeight;
 
 	if (lua_israwnumber(L, 4)) {
@@ -3237,10 +3156,10 @@ int LuaSyncedCtrl::SetMapSquareTerrainType(lua_State* L)
 	const int tx = hx >> 1;
 	const int tz = hz >> 1;
 
-	const int ott = readmap->typemap[tz * gs->hmapx + tx];
+	const int ott = readmap->GetTypeMapSynced()[tz * gs->hmapx + tx];
 	const int ntt = luaL_checkint(L, 3);
 
-	readmap->typemap[tz * gs->hmapx + tx] = std::max(0, std::min(ntt, (CMapInfo::NUM_TERRAIN_TYPES - 1)));
+	readmap->GetTypeMapSynced()[tz * gs->hmapx + tx] = std::max(0, std::min(ntt, (CMapInfo::NUM_TERRAIN_TYPES - 1)));
 	pathManager->TerrainChange(hx, hz,  hx + 1, hz + 1);
 
 	lua_pushnumber(L, ott);
@@ -3275,10 +3194,12 @@ int LuaSyncedCtrl::SetTerrainTypeData(lua_State* L)
 	}
 	*/
 
+	const unsigned char* typeMap = readmap->GetTypeMapSynced();
+
 	// update all map-squares set to this terrain-type (slow)
 	for (int tx = 0; tx < gs->hmapx; tx++) {
 		for (int tz = 0; tz < gs->hmapy; tz++) {
-			if (readmap->typemap[tz * gs->hmapx + tx] == tti) {
+			if (typeMap[tz * gs->hmapx + tx] == tti) {
 				pathManager->TerrainChange((tx << 1), (tz << 1),  (tx << 1) + 1, (tz << 1) + 1);
 			}
 		}
@@ -3316,7 +3237,7 @@ int LuaSyncedCtrl::SpawnCEG(lua_State* L)
 
 int LuaSyncedCtrl::SetNoPause(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 	if (!lua_isboolean(L, 1)) {
@@ -3332,7 +3253,7 @@ int LuaSyncedCtrl::SetNoPause(lua_State* L)
 
 int LuaSyncedCtrl::SetUnitToFeature(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 	if (!lua_isboolean(L, 1)) {
@@ -3345,7 +3266,7 @@ int LuaSyncedCtrl::SetUnitToFeature(lua_State* L)
 
 int LuaSyncedCtrl::SetExperienceGrade(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 	const float expGrade = luaL_checkfloat(L, 1);
@@ -3475,7 +3396,7 @@ static bool ParseCommandDescription(lua_State* L, int table,
 
 int LuaSyncedCtrl::EditUnitCmdDesc(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 
@@ -3500,7 +3421,7 @@ int LuaSyncedCtrl::EditUnitCmdDesc(lua_State* L)
 
 int LuaSyncedCtrl::InsertUnitCmdDesc(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 	const int args = lua_gettop(L); // number of arguments
@@ -3547,7 +3468,7 @@ int LuaSyncedCtrl::InsertUnitCmdDesc(lua_State* L)
 
 int LuaSyncedCtrl::RemoveUnitCmdDesc(lua_State* L)
 {
-	if (!FullCtrl()) {
+	if (!FullCtrl(L)) {
 		return 0;
 	}
 

@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "AdvWater.h"
 #include "BaseSky.h"
@@ -17,7 +17,6 @@
 #include "Rendering/UnitDrawer.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 
 //////////////////////////////////////////////////////////////////////

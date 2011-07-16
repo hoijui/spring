@@ -3,7 +3,7 @@
 #ifndef _ENGINEOUTHANDLER_H
 #define _ENGINEOUTHANDLER_H
 
-#include "Object.h"
+#include "System/Object.h"
 #include "Sim/Misc/GlobalConstants.h"
 
 #include <map>
@@ -63,12 +63,16 @@ public:
 	void SeismicPing(int allyTeamId, const CUnit& unit, const float3& pos, float strength);
 	void WeaponFired(const CUnit& unit, const WeaponDef& def);
 	void PlayerCommandGiven(const std::vector<int>& selectedUnitIds, const Command& c, int playerId);
+
 	/**
 	 * A specific unit has finished a specific command,
 	 * might be a good idea to give new orders to it.
 	*/
 	void CommandFinished(const CUnit& unit, const Command& command);
-	void GotChatMsg(const char* msg, int playerId);
+	void SendChatMessage(const char* msg, int playerId);
+
+	/// send a raw string from unsynced Lua to one or all active skirmish AI's
+	bool SendLuaMessages(int aiTeam, const char* inData, std::vector<const char*>& outData);
 
 
 	// Skirmish AI stuff
@@ -130,17 +134,17 @@ public:
 	#define CATCH_AI_EXCEPTION									\
 		catch (const std::exception& e) {						\
 			CEngineOutHandler::HandleAIException(e.what());		\
-			throw e;											\
+			throw;											\
 		} catch (const std::string& s) {						\
 			CEngineOutHandler::HandleAIException(s.c_str());	\
-			throw s;											\
+			throw;											\
 		} catch (const char* s) {								\
 			CEngineOutHandler::HandleAIException(s);			\
-			throw s;											\
+			throw;											\
 		} catch (int err) {										\
 			const std::string s = IntToString(err);				\
 			CEngineOutHandler::HandleAIException(s.c_str());	\
-			throw err;											\
+			throw;											\
 		} catch (...) {											\
 			CEngineOutHandler::HandleAIException("Unknown");	\
 			throw;												\
@@ -151,12 +155,12 @@ private:
 
 private:
 	typedef std::vector<size_t> ids_t;
-
 	typedef std::map<size_t, CSkirmishAIWrapper*> id_ai_t;
+	typedef std::map<int, ids_t> team_ais_t;
+
 	/// Contains all local Skirmish AIs, indexed by their ID
 	id_ai_t id_skirmishAI;
 
-	typedef std::map<int, ids_t> team_ais_t;
 	/**
 	 * Array mapping team IDs to local Skirmish AI instances.
 	 * There can be multiple Skirmish AIs per team.

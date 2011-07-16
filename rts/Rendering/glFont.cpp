@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "glFont.h"
 #include <string>
@@ -21,12 +21,11 @@
 #include "System/myMath.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/FileSystem.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Util.h"
 #include "System/Exceptions.h"
 #include "System/mmgr.h"
 #include "System/float4.h"
-#include "bitops.h"
+#include "System/bitops.h"
 
 #undef GetCharWidth // winapi.h
 
@@ -1208,6 +1207,7 @@ void CglFont::WrapTextConsole(std::list<word>& words, float maxWidth, float maxH
 					//! last word W is larger than 0.5 * maxLineWidth, split it into
 					//! get 'L'eft and 'R'ight parts of the split (wL becomes Left, *wi becomes R)
 
+					bool restart = (currLine->start == wi);
 					//! turns *wi into R
 					word wL = SplitWord(*wi, freeWordSpace);
 
@@ -1223,6 +1223,8 @@ void CglFont::WrapTextConsole(std::list<word>& words, float maxWidth, float maxH
 
 					//! insert the L-part right before R
 					wi = words.insert(wi, wL);
+					if(restart)
+						currLine->start = wi;
 					++wi;
 				}
 
@@ -1272,7 +1274,7 @@ void CglFont::WrapTextConsole(std::list<word>& words, float maxWidth, float maxH
 
 void CglFont::WrapTextKnuth(std::list<word>& words, float maxWidth, float maxHeight) const
 {
-	//todo: FINISH ME!!! (Knuths algorithm would try to share deadspace between lines, with the smallest sum of (deadspace of line)^2)
+	// TODO FINISH ME!!! (Knuths algorithm would try to share deadspace between lines, with the smallest sum of (deadspace of line)^2)
 }
 
 
@@ -1430,7 +1432,7 @@ void CglFont::RemergeColorCodes(std::list<word>* words, std::list<colorcode>& co
 
 int CglFont::WrapInPlace(std::string& text, float _fontSize, const float maxWidth, const float maxHeight) const
 {
-	//todo: make an option to insert '-' for word wrappings (and perhaps try to syllabificate)
+	// TODO make an option to insert '-' for word wrappings (and perhaps try to syllabificate)
 
 	if (_fontSize <= 0.0f)
 		_fontSize = fontSize;
@@ -1471,7 +1473,7 @@ int CglFont::WrapInPlace(std::string& text, float _fontSize, const float maxWidt
 
 std::list<std::string> CglFont::Wrap(const std::string& text, float _fontSize, const float maxWidth, const float maxHeight) const
 {
-	//todo: make an option to insert '-' for word wrappings (and perhaps try to syllabificate)
+	// TODO make an option to insert '-' for word wrappings (and perhaps try to syllabificate)
 
 	if (_fontSize <= 0.0f)
 		_fontSize = fontSize;
@@ -1860,13 +1862,13 @@ void CglFont::RenderStringOutlined(float x, float y, const float& scaleX, const 
 }
 
 
-void CglFont::glWorldPrint(const float3 p, const float size, const std::string& str)
+void CglFont::glWorldPrint(const float3& p, const float size, const std::string& str)
 {
 
 	glPushMatrix();
 		glTranslatef(p.x, p.y, p.z);
-		glCallList(CCamera::billboardList);
-		Begin(false,false);
+		glMultMatrixf(camera->GetBillBoardMatrix());
+		Begin(false, false);
 			glPrint(0.0f, 0.0f, size, FONT_DESCENDER | FONT_CENTER | FONT_OUTLINE, str);
 		End();
 	glPopMatrix();

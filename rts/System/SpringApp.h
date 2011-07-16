@@ -6,7 +6,7 @@
 #include <string>
 #include <boost/cstdint.hpp>
 
-class BaseCmd;
+class CmdLineParams;
 class CGameController;
 class COffscreenGLContext;
 union SDL_Event;
@@ -36,6 +36,7 @@ protected:
 	static bool SetSDLVideoMode();                  //!< Sets SDL video mode
 	static void SetProcessAffinity(int);
 	int Update();                                   //!< Run simulation and draw
+	bool UpdateSim(CGameController *ac);
 
 	static bool GetDisplayGeometry();
 	static void SetupViewportGeometry();
@@ -53,7 +54,7 @@ protected:
 	 *
 	 * Pointer to instance of commandline parser
 	 */
-	BaseCmd *cmdline;
+	CmdLineParams* cmdline;
 
 	/**
 	 * @brief last required draw

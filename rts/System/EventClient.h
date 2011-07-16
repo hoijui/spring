@@ -7,7 +7,13 @@
 #include <vector>
 #include <map>
 
-#include "float3.h"
+#include "System/float3.h"
+
+#ifdef __APPLE__
+//defined in X11/X.h
+#undef KeyPress
+#undef KeyRelease
+#endif
 
 using std::string;
 using std::vector;
@@ -19,8 +25,13 @@ class CFeature;
 class CProjectile;
 struct Command;
 class CLogSubsystem;
-typedef void* zipFile;
-class CArchiveBase;
+class IArchive;
+
+#ifndef zipFile
+	// might be defined through zip.h already
+	typedef void* zipFile;
+#endif
+
 
 class CEventClient
 {
@@ -34,7 +45,7 @@ class CEventClient
 	public:
 		inline const std::string& GetName()   const { return name;   }
 		inline int                GetOrder()  const { return order;  }
-		inline bool               GetSynced() const { return synced; }
+		inline bool               GetSynced() const { return synced_; }
 
 		// used by the eventHandler to register
 		// call-ins when an EventClient is being added
@@ -50,7 +61,7 @@ class CEventClient
 	private:
 		const std::string name;
 		const int         order;
-		const bool        synced;
+		const bool        synced_;
 
 	protected:
 		CEventClient(const std::string& name, int order, bool synced);
@@ -58,11 +69,11 @@ class CEventClient
 
 	public:
 		// Synced events
-		virtual void Load(CArchiveBase* archive) {}
+		virtual void Load(IArchive* archive) {}
 
 		virtual void GamePreload() {}
 		virtual void GameStart() {}
-		virtual void GameOver(std::vector<unsigned char> winningAllyTeams) {}
+		virtual void GameOver(const std::vector<unsigned char>& winningAllyTeams) {}
 		virtual void GamePaused(int playerID, bool paused) {}
 		virtual void GameFrame(int gameFrame) {}
 		virtual void TeamDied(int teamID) {}
@@ -179,7 +190,10 @@ class CEventClient
 		virtual void DrawScreenEffects();
 		virtual void DrawScreen();
 		virtual void DrawInMiniMap();
+
+		virtual void GameProgress(int gameFrame) {}
 };
 
 
 #endif /* EVENT_CLIENT_H */
+

@@ -7,6 +7,10 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include "lib/gml/gmlcnf.h"
+#if defined(USE_GML) && GML_ENABLE_SIM
+#include <boost/thread/mutex.hpp>
+#endif
 
 // format string error checking
 #ifdef __GNUC__
@@ -43,7 +47,7 @@ public:
 	static CLogSubsystem* GetList() { return linkedList; }
 	CLogSubsystem* GetNext() { return next; }
 
-	CLogSubsystem(const char* name, bool enabled = false);
+	explicit CLogSubsystem(const char* name, bool enabled = false);
 
 	const char* const name;
 	CLogSubsystem* const next;
@@ -102,11 +106,11 @@ public:
 	CLogOutput();
 	~CLogOutput();
 
-	void Print(CLogSubsystem& subsystem, const char* fmt, ...) FORMATSTRING(3);
+	void Print(const CLogSubsystem& subsystem, const char* fmt, ...) FORMATSTRING(3);
 	void Print(const char* fmt, ...) FORMATSTRING(2);
 	void Print(const std::string& text);
-	void Prints(const CLogSubsystem& subsystem, const std::string& text); // canno be named Print, would be  not unique
-	void Printv(CLogSubsystem& subsystem, const char* fmt, va_list argp);
+	void Prints(const CLogSubsystem& subsystem, const std::string& text); // can not be named Print, as it would not be unique
+	void Printv(const CLogSubsystem& subsystem, const char* fmt, va_list argp);
 	static CLogSubsystem& GetDefaultLogSubsystem();
 
 	void SetLastMsgPos(const float3& pos);
@@ -233,6 +237,10 @@ private:
 	std::string filePath;
 	bool rotateLogFiles;
 	bool subscribersEnabled;
+
+#if defined(USE_GML) && GML_ENABLE_SIM
+	boost::mutex logmutex;
+#endif
 };
 
 

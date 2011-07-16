@@ -1,10 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "TransportCAI.h"
-#include "LineDrawer.h"
+#include "Game/GameHelper.h"
+#include "Game/GlobalUnsynced.h"
+#include "Map/Ground.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Misc/QuadField.h"
@@ -16,13 +18,7 @@
 #include "Sim/Units/UnitTypes/Building.h"
 #include "Sim/Units/UnitTypes/TransportUnit.h"
 #include "Sim/MoveTypes/TAAirMoveType.h"
-#include "Map/Ground.h"
-#include "Game/UI/CommandColors.h"
-#include "Game/GameHelper.h"
-#include "Rendering/GL/myGL.h"
-#include "Rendering/GL/glExtra.h"
 #include "System/creg/STL_List.h"
-#include "System/GlobalUnsynced.h"
 #include "System/myMath.h"
 #include "System/LogOutput.h"
 
@@ -111,7 +107,7 @@ void CTransportCAI::SlowUpdate()
 		return;
 	}
 	Command& c = commandQue.front();
-	switch (c.id) {
+	switch (c.GetID()) {
 		case CMD_LOAD_UNITS:   { ExecuteLoadUnits(c); dropSpots.clear(); return; }
 		case CMD_UNLOAD_UNITS: { ExecuteUnloadUnits(c); return; }
 		case CMD_UNLOAD_UNIT:  { ExecuteUnloadUnit(c);  return; }
@@ -144,7 +140,7 @@ void CTransportCAI::ExecuteLoadUnits(Command& c)
 				}
 			} else {
 				Command& currentUnitCommand = unit->commandAI->commandQue[0];
-				if (currentUnitCommand.id == CMD_LOAD_ONTO && currentUnitCommand.params.size() == 1 && int(currentUnitCommand.params[0]) == owner->id) {
+				if (currentUnitCommand.GetID() == CMD_LOAD_ONTO && currentUnitCommand.params.size() == 1 && int(currentUnitCommand.params[0]) == owner->id) {
 					if ((unit->moveType->progressState == AMoveType::Failed) && (owner->moveType->progressState == AMoveType::Failed)) {
 						unit->commandAI->FinishCommand();
 						FinishCommand();
@@ -224,10 +220,8 @@ void CTransportCAI::ExecuteLoadUnits(Command& c)
 		CUnit* unit = FindUnitToTransport(pos, radius);
 
 		if (unit && CanTransport(unit)) {
-			Command c2;
-				c2.id = CMD_LOAD_UNITS;
-				c2.params.push_back(unit->id);
-				c2.options = c.options | INTERNAL_ORDER;
+			Command c2(CMD_LOAD_UNITS, c.options|INTERNAL_ORDER);
+			c2.params.push_back(unit->id);
 			commandQue.push_front(c2);
 			inCommand = false;
 			SlowUpdate();
@@ -329,7 +323,7 @@ bool CTransportCAI::FindEmptySpot(float3 center, float radius, float emptyRadius
 			pos.y = ground->GetHeightAboveWater(pos.x, pos.z);
 
 			if (dynamic_cast<const CBuilding *>(unitToUnload)) {
-				pos = helper->Pos2BuildPos(BuildInfo(unitToUnload->unitDef, pos, unitToUnload->buildFacing));
+				pos = helper->Pos2BuildPos(BuildInfo(unitToUnload->unitDef, pos, unitToUnload->buildFacing), true);
 			}
 
 			if (!((CTransportUnit *)owner)->CanLoadUnloadAtPos(pos, unitToUnload)) {
@@ -364,7 +358,7 @@ bool CTransportCAI::FindEmptySpot(float3 center, float radius, float emptyRadius
 				float3 pos(x, ground->GetApproximateHeight(x, y), y);
 
 				if (dynamic_cast<const CBuilding *>(unitToUnload)) {
-					pos = helper->Pos2BuildPos(BuildInfo(unitToUnload->unitDef, pos, unitToUnload->buildFacing));
+					pos = helper->Pos2BuildPos(BuildInfo(unitToUnload->unitDef, pos, unitToUnload->buildFacing), true);
 				}
 
 				if (!((CTransportUnit *)owner)->CanLoadUnloadAtPos(pos, unitToUnload)) {
@@ -515,13 +509,11 @@ void CTransportCAI::UnloadUnits_Land(Command& c, CTransportUnit* transport)
 	}
 
 	if (canUnload) {
-		Command c2;
-		c2.id = CMD_UNLOAD_UNIT;
+		Command c2(CMD_UNLOAD_UNIT, c.options | INTERNAL_ORDER);
 		c2.params.push_back(unloadPos.x);
 		c2.params.push_back(unloadPos.y);
 		c2.params.push_back(unloadPos.z);
 		c2.params.push_back(u->id);
-		c2.options = c.options | INTERNAL_ORDER;
 		commandQue.push_front(c2);
 		SlowUpdate();
 	} else {
@@ -558,18 +550,16 @@ void CTransportCAI::UnloadUnits_Drop(Command& c, CTransportUnit* transport)
 	} else if (!dropSpots.empty() ) {
 		// make sure we check current spot infront of us each unload
 		pos = dropSpots.back(); // take last landing pos as new start spot
-		canUnload = dropSpots.size() > 0;
+		canUnload = !dropSpots.empty();
 	}
 
 	if (canUnload) {
 		if (SpotIsClear(dropSpots.back(), ((CTransportUnit*)owner)->GetTransportedUnits().front().unit)) {
 			const float3 pos = dropSpots.back();
-			Command c2;
-			c2.id = CMD_UNLOAD_UNIT;
+			Command c2(CMD_UNLOAD_UNIT, c.options | INTERNAL_ORDER);
 			c2.params.push_back(pos.x);
 			c2.params.push_back(pos.y);
 			c2.params.push_back(pos.z);
-			c2.options = c.options | INTERNAL_ORDER;
 			commandQue.push_front(c2);
 
 			SlowUpdate();
@@ -615,21 +605,17 @@ void CTransportCAI::UnloadUnits_LandFlood(Command& c, CTransportUnit* transport)
 			found, ((CTransportUnit*)owner)->GetTransportedUnits().front().unit);
 	if (canUnload) {
 
-		Command c2;
-		c2.id = CMD_UNLOAD_UNIT;
+		Command c2(CMD_UNLOAD_UNIT, c.options | INTERNAL_ORDER);
 		c2.params.push_back(found.x);
 		c2.params.push_back(found.y);
 		c2.params.push_back(found.z);
-		c2.options = c.options | INTERNAL_ORDER;
 		commandQue.push_front(c2);
 
 		if (isFirstIteration )	{
-			Command c1;
-			c1.id = CMD_MOVE;
+			Command c1(CMD_MOVE, c.options | INTERNAL_ORDER);;
 			c1.params.push_back(pos.x);
 			c1.params.push_back(pos.y);
 			c1.params.push_back(pos.z);
-			c1.options = c.options | INTERNAL_ORDER;
 			commandQue.push_front(c1);
 			startingDropPos = pos;
 		}
@@ -931,107 +917,6 @@ int CTransportCAI::GetDefaultCmd(const CUnit* pointed, const CFeature* feature)
 }
 
 
-void CTransportCAI::DrawCommands()
-{
-	lineDrawer.StartPath(owner->drawMidPos, cmdColors.start);
-
-	if (owner->selfDCountdown != 0) {
-		lineDrawer.DrawIconAtLastPos(CMD_SELFD);
-	}
-
-	CCommandQueue::iterator ci;
-	for (ci = commandQue.begin(); ci != commandQue.end(); ++ci) {
-		switch (ci->id) {
-			case CMD_MOVE: {
-				const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-				lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.move);
-				break;
-			}
-			case CMD_FIGHT: {
-				if (ci->params.size() >= 3) {
-					const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-					lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.fight);
-				}
-				break;
-			}
-			case CMD_PATROL: {
-				const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-				lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.patrol);
-				break;
-			}
-			case CMD_ATTACK: {
-				if (ci->params.size() == 1) {
-					const CUnit* unit = uh->GetUnit(ci->params[0]);
-
-					if ((unit != NULL) && isTrackable(unit)) {
-						const float3 endPos = helper->GetUnitErrorPos(unit, owner->allyteam);
-						lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.attack);
-					}
-				} else {
-					const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-					lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.attack);
-				}
-				break;
-			}
-			case CMD_GUARD: {
-				const CUnit* unit = uh->GetUnit(ci->params[0]);
-				if ((unit != NULL) && isTrackable(unit)) {
-					const float3 endPos = helper->GetUnitErrorPos(unit, owner->allyteam);
-					lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.guard);
-				}
-				break;
-			}
-			case CMD_LOAD_UNITS: {
-				if (ci->params.size() == 4) {
-					const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-
-					lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.load);
-					lineDrawer.Break(endPos, cmdColors.load);
-					glColor4fv(cmdColors.load);
-					glSurfaceCircle(endPos, ci->params[3], 20);
-					lineDrawer.RestartWithColor(cmdColors.load);
-				} else {
-					const CUnit* unit = uh->GetUnit(ci->params[0]);
-					if ((unit != NULL) && isTrackable(unit)) {
-						const float3 endPos = helper->GetUnitErrorPos(unit, owner->allyteam);
-						lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.load);
-					}
-				}
-				break;
-			}
-			case CMD_UNLOAD_UNITS: {
-				if (ci->params.size() == 5) {
-					const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-
-					lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.unload);
-					lineDrawer.Break(endPos, cmdColors.unload);
-					glColor4fv(cmdColors.unload);
-					glSurfaceCircle(endPos, ci->params[3], 20);
-					lineDrawer.RestartWithColor(cmdColors.unload);
-				}
-				break;
-			}
-			case CMD_UNLOAD_UNIT: {
-				const float3 endPos(ci->params[0], ci->params[1], ci->params[2]);
-				lineDrawer.DrawLineAndIcon(ci->id, endPos, cmdColors.unload);
-				break;
-			}
-			case CMD_WAIT: {
-				DrawWaitIcon(*ci);
-				break;
-			}
-			case CMD_SELFD: {
-				lineDrawer.DrawIconAtLastPos(ci->id);
-				break;
-			}
-			default:
-				DrawDefaultCommand(*ci);
-				break;
-		}
-	}
-	lineDrawer.FinishPath();
-}
-
 
 void CTransportCAI::FinishCommand()
 {
@@ -1067,7 +952,7 @@ bool CTransportCAI::LoadStillValid(CUnit* unit)
 
 	const Command& cmd = commandQue[1];
 
-	if (cmd.id != CMD_LOAD_UNITS || cmd.params.size() != 4) {
+	if (cmd.GetID() != CMD_LOAD_UNITS || cmd.params.size() != 4) {
 		return true;
 	}
 
@@ -1087,7 +972,7 @@ bool CTransportCAI::AllowedCommand(const Command& c, bool fromSynced)
 		return false;
 	}
 
-	switch (c.id) {
+	switch (c.GetID()) {
 		case CMD_UNLOAD_UNIT:
 		case CMD_UNLOAD_UNITS: {
 			CTransportUnit* transport = (CTransportUnit*) owner;
@@ -1095,7 +980,7 @@ bool CTransportCAI::AllowedCommand(const Command& c, bool fromSynced)
 			const std::list<CTransportUnit::TransportedUnit> &transpunits = ((CTransportUnit*) owner)->GetTransportedUnits();
 			// allow unloading empty transports for easier setup of transport bridges
 			if (!transpunits.empty()) {
-				if ((c.id == CMD_UNLOAD_UNITS) && fromSynced) {
+				if ((c.GetID() == CMD_UNLOAD_UNITS) && fromSynced) {
 					for (std::list<CTransportUnit::TransportedUnit>::const_iterator it = transpunits.begin(); it != transpunits.end(); ++it) {
 						if (CBuilding *building = dynamic_cast<CBuilding*>(it->unit)) {
 							building->buildFacing = int(abs(c.params[4])) % NUM_FACINGS;
@@ -1106,7 +991,7 @@ bool CTransportCAI::AllowedCommand(const Command& c, bool fromSynced)
 					CUnit* u = it->unit;
 
 					const float3 pos(c.params[0], c.params[1], c.params[2]);
-					const float radius = (c.id == CMD_UNLOAD_UNITS)? c.params[3]: 0.0f;
+					const float radius = (c.GetID() == CMD_UNLOAD_UNITS)? c.params[3]: 0.0f;
 					const float spread = u->radius * transport->unitDef->unloadSpread;
 					float3 found;
 

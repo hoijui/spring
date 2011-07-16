@@ -2,14 +2,14 @@
 
 #include "GameParticipant.h"
 
-#include "Net/Connection.h"
-#include "BaseNetProtocol.h"
+#include "System/Net/Connection.h"
+#include "System/BaseNetProtocol.h"
 
 GameParticipant::GameParticipant()
 : myState(UNCONNECTED)
 , lastFrameResponse(0)
 , speedControl(0)
-, luaDrawTime(0)
+, luaLockTime(0)
 , isLocal(false)
 , isReconn(false)
 , isMidgameJoin(false)

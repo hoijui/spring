@@ -1,18 +1,17 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include <cstring>
 
-#include "bitops.h"
+#include "System/bitops.h"
 #include "CommandColors.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "MouseCursor.h"
 #include "HwMouseCursor.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/Util.h"

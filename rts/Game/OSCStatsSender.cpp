@@ -10,19 +10,19 @@
 #include "lib/streflop/streflop_cond.h"
 
 #ifndef _MSC_VER
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #endif
 
 #include "OSCStatsSender.h"
-#include "Sim/Misc/TeamHandler.h"
-#include "Game/Game.h"
 #include "lib/oscpack/OscOutboundPacketStream.h"
-#include "System/Net/Socket.h"
+#include "Game/Game.h"
 #include "Game/GameVersion.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/PlayerHandler.h"
-#include "GlobalUnsynced.h"
-#include "ConfigHandler.h"
-#include "LogOutput.h"
+#include "Sim/Misc/TeamHandler.h"
+#include "System/ConfigHandler.h"
+#include "System/LogOutput.h"
+#include "System/Net/Socket.h"
 
 COSCStatsSender* COSCStatsSender::singleton = NULL;
 
@@ -89,7 +89,9 @@ COSCStatsSender* COSCStatsSender::GetInstance() {
 				"OscStatsSenderDestinationAddress", "127.0.0.1");
 		unsigned int dstPort   = configHandler->Get(
 				"OscStatsSenderDestinationPort", (unsigned int) 6447);
-		COSCStatsSender::singleton = new COSCStatsSender(dstAddress, dstPort);
+
+		static COSCStatsSender instance(dstAddress, dstPort);
+		COSCStatsSender::singleton = &instance;
 	}
 
 	return COSCStatsSender::singleton;
@@ -103,7 +105,7 @@ bool COSCStatsSender::SendInit() {
 			return SendInitialInfo()
 					&& SendTeamStatsTitles()
 					&& SendPlayerStatsTitles();
-		} catch (boost::system::system_error ex) {
+		} catch (const boost::system::system_error& ex) {
 			logOutput.Print("Failed sending OSC Stats init: %s", ex.what());
 			return false;
 		}
@@ -119,7 +121,7 @@ bool COSCStatsSender::Update(int frameNum) {
 			// Try to send team stats first, as they are more important,
 			// more interesting.
 			return SendTeamStats() && SendPlayerStats();
-		} catch (boost::system::system_error ex) {
+		} catch (const boost::system::system_error& ex) {
 			logOutput.Print("Failed sending OSC Stats init: %s", ex.what());
 			return false;
 		}

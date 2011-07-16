@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include <SDL_keysym.h>
 #include <SDL_timer.h>
 #include <boost/cstdint.hpp>
@@ -14,7 +14,6 @@
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
 #include "System/ConfigHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/Input/KeyInput.h"
@@ -176,11 +175,11 @@ float3 SmoothController::GetPos()
 	pos.z = Clamp(pos.z, 0.01f, gs->mapy * SQUARE_SIZE - 0.01f);
 	height = Clamp(height, 60.0f, maxHeight);
 
-	pos.y = ground->GetHeightAboveWater(pos.x,pos.z);
+	pos.y = ground->GetHeightAboveWater(pos.x, pos.z, false);
 	dir = float3(0.0f, -1.0f, flipped ? zscale : -zscale).ANormalize();
 
 	float3 cpos = pos - dir * height;
-	cpos.y = std::max(cpos.y, ground->GetHeightAboveWater(cpos.x,cpos.z)+5.0f);
+	cpos.y = std::max(cpos.y, ground->GetHeightAboveWater(cpos.x, cpos.z, false) + 5.0f);
 	return cpos;
 }
 

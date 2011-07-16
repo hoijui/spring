@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #if !defined(HEADLESS)
 #include "Rendering/Textures/Bitmap.h"
 #endif
@@ -10,7 +10,7 @@
 	// FIXME: duno how to create cursors at runtime on macs
 #elif defined(WIN32)
 	#include "windows.h"
-	#include "Input/MouseInput.h"
+	#include "System/Input/MouseInput.h"
 	typedef unsigned char byte;
 #else
 	#include <X11/Xcursor/Xcursor.h>
@@ -19,16 +19,16 @@
 #include "HwMouseCursor.h"
 
 #if !defined(__APPLE__) && !defined(HEADLESS)
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Rendering/GL/myGL.h"
-#include "bitops.h"
+#include "System/bitops.h"
 #include "MouseCursor.h"
 #include "CommandColors.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/SimpleParser.h"
-#include "LogOutput.h"
-#include "myMath.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/SimpleParser.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
 #include <cstring> // for memset
 
 #include <SDL_syswm.h>
@@ -75,6 +75,7 @@ class CHwWinCursor : public IHwCursor {
 	protected:
 		HCURSOR cursor;
 
+	#pragma push(pack,1)
 		struct CursorDirectoryHeader {
 			byte  xsize,ysize,ncolors,reserved1;
 			short hotx,hoty;
@@ -90,7 +91,8 @@ class CHwWinCursor : public IHwCursor {
 		struct AnihStructure {
 			DWORD size,images,frames,width,height,bpp,planes,rate,flags;
 		};
-
+	#pragma pop(pack)
+		
 	protected:
 		struct ImageData {
 			unsigned char* data;

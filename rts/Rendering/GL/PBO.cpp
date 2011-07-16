@@ -5,16 +5,14 @@
  * EXT_pixel_buffer_object class implementation
  */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <assert.h>
 #include <vector>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "PBO.h"
 
 #include "Rendering/GlobalRendering.h"
-#include "System/LogOutput.h"
-#include "System/GlobalUnsynced.h"
 #include "System/ConfigHandler.h"
 
 

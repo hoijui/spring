@@ -8,10 +8,10 @@
 #include <boost/thread/recursive_mutex.hpp>
 
 #include "GameController.h"
-/// #include "Rendering/GL/myGL.h"
+/// \#include "Rendering/GL/myGL.h"
 #include "System/LoadSave/LoadSaveHandler.h"
 #include "System/OffscreenGLContext.h"
-#include "myTime.h"
+#include "System/myTime.h"
 
 
 class CLoadScreen : public CGameController
@@ -42,6 +42,7 @@ public:
 	int KeyReleased(unsigned short k);
 	/// Called when the key is pressed by the user (can be called several times due to key repeat)
 	int KeyPressed(unsigned short k,bool isRepeat);
+
 
 private:
 	void RandomStartPicture(const std::string& sidePref);

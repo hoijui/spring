@@ -144,11 +144,11 @@ public:
 	~WeaponDef();
 
 	S3DModel* LoadModel();
+	S3DModel* LoadModel() const;
 
 	std::string name;
 	std::string type;
 	std::string description;
-	std::string filename;
 	std::string cegTag;        ///< tag of CEG that projectiles fired by this weapon should use
 
 	GuiSoundSet firesound;
@@ -212,7 +212,7 @@ public:
 	bool impactOnly;            ///< The weapon damages by impacting, not by exploding
 
 	bool noAutoTarget;          ///< cant target stuff (for antinuke,dgun)
-	bool manualfire;            ///< use dgun button
+	bool manualfire;            ///< if true, slave us to the ManualFire button
 	int interceptor;            ///< anti nuke
 	int targetable;             ///< nuke (can be shot by interceptor)
 	bool stockpile;

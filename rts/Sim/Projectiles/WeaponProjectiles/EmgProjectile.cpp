@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "EmgProjectile.h"
 #include "Game/Camera.h"
@@ -73,8 +73,7 @@ void CEmgProjectile::Collision(CUnit* unit)
 }
 
 void CEmgProjectile::Collision() {
-	if (!(weaponDef->waterweapon && ground->GetHeightReal(pos.x, pos.z) < pos.y))
-		CWeaponProjectile::Collision();
+	CWeaponProjectile::Collision();
 }
 
 void CEmgProjectile::Draw()

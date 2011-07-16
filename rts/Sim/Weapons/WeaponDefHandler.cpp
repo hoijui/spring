@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include <algorithm>
 #include <cctype>
@@ -13,7 +13,6 @@
 #include "Game/TraceRay.h"
 #include "Lua/LuaParser.h"
 #include "Rendering/Textures/ColorMap.h"
-#include "Rendering/Textures/TAPalette.h"
 #include "Sim/Misc/CategoryHandler.h"
 #include "Sim/Misc/DamageArrayHandler.h"
 #include "Sim/Misc/GlobalConstants.h"
@@ -73,7 +72,6 @@ void CWeaponDefHandler::ParseWeapon(const LuaTable& wdTable, WeaponDef& wd)
 
 	wd.tdfId = wdTable.GetInt("id", 0);
 
-	wd.filename    = wdTable.GetString("filename", "unknown");
 	wd.description = wdTable.GetString("name",     "Weapon");
 	wd.cegTag      = wdTable.GetString("cegTag",   "");
 
@@ -83,12 +81,12 @@ void CWeaponDefHandler::ParseWeapon(const LuaTable& wdTable, WeaponDef& wd)
 
 	//FIXME may be smarter to merge the collideXYZ tags with avoidXYZ and removing the collisionFlags tag (and move the code into CWeapon)?
 	wd.collisionFlags = 0;
-	const bool collideFriendly = wdTable.GetBool("collideFriendly", true);
-	const bool collideFeature  = wdTable.GetBool("collideFeature",  true);
-	const bool collideNeutral  = wdTable.GetBool("collideNeutral",  true);
-	if (!collideFriendly) { wd.collisionFlags |= Collision::NOFRIENDLIES; }
-	if (!collideFeature)  { wd.collisionFlags |= Collision::NOFEATURES;  }
-	if (!collideNeutral)  { wd.collisionFlags |= Collision::NONEUTRALS;  }
+
+	if (!wdTable.GetBool("collideEnemy",    true)) { wd.collisionFlags |= Collision::NOENEMIES;    }
+	if (!wdTable.GetBool("collideFriendly", true)) { wd.collisionFlags |= Collision::NOFRIENDLIES; }
+	if (!wdTable.GetBool("collideFeature",  true)) { wd.collisionFlags |= Collision::NOFEATURES;   }
+	if (!wdTable.GetBool("collideNeutral",  true)) { wd.collisionFlags |= Collision::NONEUTRALS;   }
+	if (!wdTable.GetBool("collideGround",   true)) { wd.collisionFlags |= Collision::NOGROUND;     }
 
 	wd.minIntensity = wdTable.GetFloat("minIntensity", 0.0f);
 

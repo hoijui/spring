@@ -1,25 +1,25 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "Game.h"
 #include "CameraHandler.h"
 #include "GameServer.h"
 #include "CommandMessage.h"
 #include "GameSetup.h"
+#include "GlobalUnsynced.h"
 #include "SelectedUnits.h"
 #include "PlayerHandler.h"
 #include "ChatMessage.h"
-#include "TimeProfiler.h"
+#include "System/TimeProfiler.h"
 #include "WordCompletion.h"
 #include "IVideoCapturing.h"
-#include "Game/UI/UnitTracker.h"
+#include "InMapDraw.h"
 #ifdef _WIN32
-#  include "winerror.h"
+#  include "winerror.h" // TODO someone on windows (MinGW? VS?) please check if this is required
 #endif
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/SkirmishAIHandler.h"
-#include "Rendering/InMapDraw.h"
 #include "Lua/LuaRules.h"
 #include "UI/GameSetupDrawer.h"
 #include "UI/LuaUI.h"
@@ -27,7 +27,7 @@
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Path/IPathManager.h"
 #include "System/EventHandler.h"
-#include "System/FPUCheck.h"
+#include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/NetProtocol.h"
 #include "System/LoadSave/DemoRecorder.h"
@@ -42,9 +42,9 @@ void CGame::ClientReadNet()
 		lastCpuUsageTime = gu->gameTime;
 
 		if (playing) {
-			net->Send(CBaseNetProtocol::Get().SendCPUUsage(profiler.GetPercent("CPU load")));
+			net->Send(CBaseNetProtocol::Get().SendCPUUsage(profiler.GetPercent("Game::SimFrame") + profiler.GetPercent("GameController::Draw")));
 #if defined(USE_GML) && GML_ENABLE_SIM
-			net->Send(CBaseNetProtocol::Get().SendLuaDrawTime(gu->myPlayerNum, luaDrawTime));
+			net->Send(CBaseNetProtocol::Get().SendLuaDrawTime(gu->myPlayerNum, luaLockTime));
 #endif
 		} else {
 			// the CPU-load percentage is undefined prior to SimFrame()
@@ -72,17 +72,30 @@ void CGame::ClientReadNet()
 		while ((packet = net->Peek(ahead))) {
 			if (packet->data[0] == NETMSG_NEWFRAME || packet->data[0] == NETMSG_KEYFRAME)
 				++que;
-			++ahead;
+
+			// this special packet skips queue entirely, so gets processed here
+			// it's meant to indicate current game progress for clients fast-forwarding to current point the game
+			// NOTE: this event should be unsynced, since its time reference frame is not related to the current
+			// progress of the game from the client's point of view
+			if ( packet->data[0] == NETMSG_GAME_FRAME_PROGRESS ) {
+				int serverframenum = *(int*)(packet->data+1);
+				// send the event to lua call-in
+				eventHandler.GameProgress(serverframenum);
+				// pop it out of the net buffer
+				net->DeleteBufferPacketAt(ahead);
+			}
+			else
+				++ahead;
 		}
 
-		if(que < leastQue)
+		if (que < leastQue)
 			leastQue = que;
 	}
 	else
 	{
 		// make sure ClientReadNet returns at least every 15 game frames
 		// so CGame can process keyboard input, and render etc.
-		timeLeft = (float)MAX_CONSECUTIVE_SIMFRAMES * gs->userSpeedFactor;
+		timeLeft = GAME_SPEED/float(gu->minFPS) * gs->userSpeedFactor;
 	}
 
 	// always render at least 2FPS (will otherwise be highly unresponsive when catching up after a reconnection)
@@ -121,15 +134,6 @@ void CGame::ClientReadNet()
 				eventHandler.PlayerRemoved(player, (int) inbuf[2]);
 
 				AddTraffic(player, packetCode, dataLength);
-				break;
-			}
-
-			case NETMSG_MEMDUMP: {
-				MakeMemDump();
-#ifdef TRACE_SYNC
-				tracefile.Commit();
-#endif
-				AddTraffic(-1, packetCode, dataLength);
 				break;
 			}
 
@@ -290,13 +294,6 @@ void CGame::ClientReadNet()
 						{
 							playerHandler->Player(player)->readyToStart = !!inbuf[3];
 						}
-						if (pos.y != -500) // no marker marker when no pos set yet
-						{
-							char label[128];
-							SNPRINTF(label, sizeof(label), "Start %i", team);
-							inMapDrawer->LocalPoint(pos, label, player);
-							// FIXME - erase old pos ?
-						}
 					}
 				}
 				AddTraffic(player, packetCode, dataLength);
@@ -388,10 +385,13 @@ void CGame::ClientReadNet()
 					if (!playerHandler->IsValidPlayer(player))
 						throw netcode::UnpackPacketException("Invalid player number");
 
-					Command c;
-					pckt >> c.id;
-					pckt >> c.options;
-					for(int a = 0; a < ((psize-9)/4); ++a) {
+					int cmd_id;
+					unsigned char cmd_opt;
+					pckt >> cmd_id;
+					pckt >> cmd_opt;
+
+					Command c(cmd_id, cmd_opt);
+					for (int a = 0; a < ((psize-9)/4); ++a) {
 						float param;
 						pckt >> param;
 						c.params.push_back(param);
@@ -415,12 +415,17 @@ void CGame::ClientReadNet()
 						throw netcode::UnpackPacketException("Invalid player number");
 
 					vector<int> selected;
+					bool firsterr = true;
 					for (int a = 0; a < ((psize-4)/2); ++a) {
 						short int unitid;
 						pckt >> unitid;
 
-						if (uh->GetUnit(unitid) == NULL)
-							throw netcode::UnpackPacketException("Invalid unit ID");
+						if (uh->GetUnit(unitid) == NULL) {
+							if(firsterr)
+								logOutput.Print("Got invalid Select: Invalid unit ID");
+							firsterr = false;
+							continue;
+						}
 
 						if ((uh->GetUnit(unitid)->team == playerHandler->Player(player)->team) || gs->godMode) {
 							selected.push_back(unitid);
@@ -452,9 +457,12 @@ void CGame::ClientReadNet()
 					if (unitid < 0 || static_cast<size_t>(unitid) >= uh->MaxUnits())
 						throw netcode::UnpackPacketException("Invalid unit ID");
 
-					Command c;
-					pckt >> c.id;
-					pckt >> c.options;
+					int cmd_id;
+					unsigned char cmd_opt;
+					pckt >> cmd_id;
+					pckt >> cmd_opt;
+
+					Command c(cmd_id, cmd_opt);
 					if (packetCode == NETMSG_AICOMMAND_TRACKED) {
 						pckt >> c.aiCommandId;
 					}
@@ -496,9 +504,12 @@ void CGame::ClientReadNet()
 					short int commandCount;
 					pckt >> commandCount;
 					for (int c = 0; c < commandCount; c++) {
-						Command cmd;
-						pckt >> cmd.id;
-						pckt >> cmd.options;
+						int cmd_id;
+						unsigned char cmd_opt;
+						pckt >> cmd_id;
+						pckt >> cmd_opt;
+
+						Command cmd(cmd_id, cmd_opt);
 						short int paramCount;
 						pckt >> paramCount;
 						for (int p = 0; p < paramCount; p++) {
@@ -560,7 +571,7 @@ void CGame::ClientReadNet()
 					for (int i = 0, j = fixedLen;  i < numUnitIDs;  i++, j += sizeof(short)) {
 						short int unitID;
 						pckt >> unitID;
-						if(unitID >= uh->MaxUnits() || unitID < 0)
+						if (unitID >= uh->MaxUnits() || unitID < 0)
 							throw netcode::UnpackPacketException("Invalid unit ID");
 
 						CUnit* u = uh->units[unitID];
@@ -580,7 +591,7 @@ void CGame::ClientReadNet()
 					netcode::UnpackPacket unpack(packet, 1);
 					boost::uint16_t size;
 					unpack >> size;
-					if(size != packet->length)
+					if (size != packet->length)
 						throw netcode::UnpackPacketException("Invalid size");
 					boost::uint8_t playerNum;
 					unpack >> playerNum;
@@ -681,7 +692,7 @@ void CGame::ClientReadNet()
 			}
 			case NETMSG_MAPDRAW: {
 				int player = inMapDrawer->GotNetMsg(packet);
-				if(player >= 0)
+				if (player >= 0)
 					AddTraffic(player, packetCode, dataLength);
 				break;
 			}
@@ -736,11 +747,7 @@ void CGame::ClientReadNet()
 					}
 					case TEAMMSG_RESIGN: {
 						playerHandler->Player(player)->StartSpectating();
-						if (player == gu->myPlayerNum) {
-							selectedUnits.ClearSelected();
-							unitTracker.Disable();
-							CLuaUI::UpdateTeams();
-						}
+
 						// actualize all teams of which the player is leader
 						for (size_t t = 0; t < teamHandler->ActiveTeams(); ++t) {
 							CTeam* team = teamHandler->Team(t);
@@ -772,23 +779,7 @@ void CGame::ClientReadNet()
 							break;
 						}
 
-						playerHandler->Player(player)->team      = newTeam;
-						playerHandler->Player(player)->spectator = false;
-						if (player == gu->myPlayerNum) {
-							gu->myPlayingTeam = gu->myTeam = newTeam;
-							gu->myPlayingAllyTeam = gu->myAllyTeam = teamHandler->AllyTeam(gu->myTeam);
-							gu->spectating           = false;
-							gu->spectatingFullView   = false;
-							gu->spectatingFullSelect = false;
-							selectedUnits.ClearSelected();
-							unitTracker.Disable();
-							CLuaUI::UpdateTeams();
-						}
-						if (teamHandler->Team(newTeam)->leader == -1) {
-							teamHandler->Team(newTeam)->leader = player;
-						}
-						CPlayer::UpdateControlledTeams();
-						eventHandler.PlayerChanged(player);
+						teamHandler->Team(newTeam)->AddPlayer(player);
 						break;
 					}
 					case TEAMMSG_TEAM_DIED: {
@@ -968,7 +959,7 @@ void CGame::ClientReadNet()
 				try {
 					CommandMessage msg(packet);
 
-					ActionReceived(msg.action, msg.player);
+					ActionReceived(msg.GetAction(), msg.GetPlayerID());
 				} catch (netcode::UnpackPacketException &e) {
 					logOutput.Print("Got invalid CommandMessage: %s", e.err.c_str());
 				}
@@ -1007,7 +998,6 @@ void CGame::ClientReadNet()
 				AddTraffic(player, packetCode, dataLength);
 				break;
 			}
-
 			case NETMSG_SETPLAYERNUM:
 			case NETMSG_ATTEMPTCONNECT: {
 				AddTraffic(-1, packetCode, dataLength);
@@ -1038,6 +1028,10 @@ void CGame::ClientReadNet()
 				} catch (netcode::UnpackPacketException &e) {
 					logOutput.Print("Got invalid New player message: %s", e.err.c_str());
 				}
+				break;
+			}
+			// drop NETMSG_GAME_FRAME_PROGRESS, if we recieved it here, it means we're the host ( so message wasn't processed ), so discard it
+			case NETMSG_GAME_FRAME_PROGRESS: {
 				break;
 			}
 			default: {

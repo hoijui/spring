@@ -23,8 +23,8 @@
 
 #include "lib/cutils/Util.h"
 #include "System/Util.h"
-#include "System/LogOutput.h"
-#include "FileSystem/FileSystem.h"
+#include "System/Log/ILog.h"
+#include "System/FileSystem/FileSystem.h"
 
 
 #if       defined WIN32
@@ -75,7 +75,7 @@ std::string GetProcessExecutableFile()
 	if (!pathFetchOk && util_hasError()) {
 		char errorMsg[2048];
 		util_getError(errorMsg, sizeof(errorMsg));
-		logOutput.Print("%s", errorMsg);
+		LOG_L(L_WARNING, "Failed to get file path of the process executable, reason: %s", errorMsg);
 	} else {
 		procExeFilePath = path;
 	}
@@ -97,7 +97,7 @@ std::string GetModuleFile(std::string moduleName)
 	if (!pathFetchOk && util_hasError()) {
 		char errorMsg[2048];
 		util_getError(errorMsg, sizeof(errorMsg));
-		logOutput.Print("%s", errorMsg);
+		LOG_L(L_WARNING, "Failed to get file path of the module \"%s\", reason: %s", moduleName.c_str(), errorMsg);
 	} else {
 		moduleFilePath = path;
 	}

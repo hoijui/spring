@@ -4,11 +4,12 @@
 #define COMMAND_H
 
 #include <string>
-#include <vector>
-#include <limits.h> // for INT_MAX
-#include "System/creg/creg_cond.h"
+#include <climits> // for INT_MAX
 
-// cmds lower than 0 is reserved for build options (cmd -x = unitdefs[x])
+#include "System/creg/creg_cond.h"
+#include "System/SafeVector.h"
+
+// ID's lower than 0 are reserved for build options (cmd -x = unitdefs[x])
 #define CMD_STOP                   0
 #define CMD_INSERT                 1
 #define CMD_REMOVE                 2
@@ -23,7 +24,7 @@
 #define CMD_ATTACK                20
 #define CMD_AREA_ATTACK           21
 #define CMD_GUARD                 25
-#define CMD_AISELECT              30
+#define CMD_AISELECT              30 //FIXME REMOVE
 #define CMD_GROUPSELECT           35
 #define CMD_GROUPADD              36
 #define CMD_GROUPCLEAR            37
@@ -42,7 +43,7 @@
 #define CMD_RECLAIM               90
 #define CMD_CLOAK                 95
 #define CMD_STOCKPILE            100
-#define CMD_DGUN                 105
+#define CMD_MANUALFIRE           105
 #define CMD_RESTORE              110
 #define CMD_REPEAT               115
 #define CMD_TRAJECTORY           120
@@ -104,19 +105,62 @@ enum {
 	FIRESTATE_FIREATWILL =  2,
 };
 
-
 struct Command
 {
 private:
 	CR_DECLARE_STRUCT(Command);
+/*
+	TODO check if usage of System/MemPool.h for this struct improves performance
+	#if !defined(USE_MMGR) && !(defined(USE_GML) && GML_ENABLE_SIM)
+	inline void* operator new(size_t size) { return mempool.Alloc(size); }
+	inline void operator delete(void* p, size_t size) { mempool.Free(p, size); }
+	#endif
+*/
 
 public:
-	Command():
-		id(0),
-		aiCommandId(-1),
-		options(0),
-		tag(0),
-		timeOut(INT_MAX) {}
+	Command(const int cmdID)
+		: aiCommandId(-1)
+		, options(0)
+		, tag(0)
+		, timeOut(INT_MAX)
+		, id(cmdID)
+	{}
+
+	Command(const int cmdID, const unsigned char cmdOptions)
+		: aiCommandId(-1)
+		, options(cmdOptions)
+		, tag(0)
+		, timeOut(INT_MAX)
+		, id(cmdID)
+	{}
+
+	Command()
+		: aiCommandId(-1)
+		, options(0)
+		, tag(0)
+		, timeOut(INT_MAX)
+		, id(0)
+	{}
+
+	Command(const Command& c)
+		: aiCommandId(c.aiCommandId)
+		, options(c.options)
+		, params(c.params)
+		, tag(c.tag)
+		, timeOut(c.timeOut)
+		, id(c.id)
+	{}
+
+	Command& operator = (const Command& c) {
+		id = c.id;
+		aiCommandId = c.aiCommandId;
+		options = c.options;
+		tag = c.tag;
+		timeOut = c.timeOut;
+		params = c.params;
+		return *this;
+	}
+
 	~Command() { params.clear(); }
 
 	bool IsAreaCommand() const {
@@ -138,21 +182,31 @@ public:
 		return false;
 	}
 
-	/// CMD_xxx code  (custom codes can also be used)
-	int id;
+	void AddParam(float par) { params.push_back(par); }
+	const float& GetParam(size_t idx) const { return params[idx]; }
+
+	/// const safe_vector<float>& GetParams() const { return params; }
+	const size_t GetParamsCount() const { return params.size(); }
+
+	void SetID(int id) 
+#ifndef _MSC_VER
+		__attribute__ ((deprecated)) 
+#endif
+		{ this->id = id; params.clear(); }
+	const int& GetID() const { return id; }
+
+public:
 	/**
 	 * AI Command callback id (passed in on handleCommand, returned
 	 * in CommandFinished event)
 	 */
 	int aiCommandId;
-	/// option bits
+
+	/// option bits (RIGHT_MOUSE_KEY, ...)
 	unsigned char options;
+
 	/// command parameters
-	std::vector<float> params;
-	/// adds a value to this commands parameter list
-	void AddParam(float par) {
-		params.push_back(par);
-	}
+	safe_vector<float> params;
 
 	/// unique id within a CCommandQueue
 	unsigned int tag;
@@ -167,6 +221,10 @@ public:
 	 * - currenFrame + 60
 	 */
 	int timeOut;
+
+private:
+	/// CMD_xxx code  (custom codes can also be used)
+	int id;
 };
 
 
@@ -183,7 +241,7 @@ public:
 		showUnique(false),
 		onlyTexture(false) {}
 
-	/// CMD_xxx     code (custom codes can also be used)
+	/// CMD_xxx code (custom codes can also be used)
 	int id;
 	/// CMDTYPE_xxx code
 	int type;

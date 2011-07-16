@@ -1,16 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "FPSController.h"
 
-#include "ConfigHandler.h"
 #include "Game/Camera.h"
-#include "LogOutput.h"
+#include "Game/GlobalUnsynced.h"
 #include "Map/Ground.h"
-#include "GlobalUnsynced.h"
-#include "myMath.h"
+#include "System/ConfigHandler.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
 
 using std::min;
 using std::max;
@@ -54,8 +54,7 @@ void CFPSController::MouseWheelMove(float move)
 
 float3 CFPSController::GetPos()
 {
-	if (!gu->fpsMode)
-	{
+	if (!gu->fpsMode) {
 		const float margin = 0.01f;
 		const float xMin = margin;
 		const float zMin = margin;
@@ -65,7 +64,7 @@ float3 CFPSController::GetPos()
 		pos.x = max(xMin, min(xMax, pos.x));
 		pos.z = max(zMin, min(zMax, pos.z));
 
-		const float gndHeight = ground->GetHeightAboveWater(pos.x, pos.z);
+		const float gndHeight = ground->GetHeightAboveWater(pos.x, pos.z, false);
 		const float yMin = gndHeight + 5.0f;
 		const float yMax = 9000.0f;
 		pos.y = max(yMin, min(yMax, pos.y));
@@ -90,9 +89,8 @@ void CFPSController::SetPos(const float3& newPos)
 {
 	CCameraController::SetPos(newPos);
 
-	if (!gu->fpsMode)
-	{
-		pos.y = ground->GetHeightAboveWater(pos.x, pos.z) + oldHeight;
+	if (!gu->fpsMode) {
+		pos.y = ground->GetHeightAboveWater(pos.x, pos.z, false) + oldHeight;
 	}
 }
 

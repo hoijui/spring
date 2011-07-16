@@ -7,7 +7,7 @@
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/LightHandler.h"
 #include "Rendering/GL/PBO.h"
-#include "float3.h"
+#include "System/float3.h"
 
 class CMetalMap;
 class CHeightLinePalette;
@@ -99,8 +99,8 @@ public:
 	int extraTextureUpdateRate;
 
 #ifdef USE_GML
-	int multiThreadDrawGround;
-	int multiThreadDrawGroundShadow;
+	bool multiThreadDrawGround;
+	bool multiThreadDrawGroundShadow;
 #endif
 
 	CHeightLinePalette* heightLinePal;

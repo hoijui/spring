@@ -1,11 +1,11 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "SyncTracer.h"
 #include <stdio.h>
-#include "LogOutput.h"
-#include "GlobalUnsynced.h"
-#include "mmgr.h"
+#include "Game/GlobalUnsynced.h"
+#include "System/LogOutput.h"
+#include "System/mmgr.h"
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -87,6 +87,13 @@ void CSyncTracer::DeleteInterval()
 		firstActive=0;
 }
 
+CSyncTracer& CSyncTracer::operator<<(const std::string& s)
+{
+	traces[nowActive] += s;
+	if (init()) (*logfile) << s;
+	return *this;
+}
+
 CSyncTracer& CSyncTracer::operator<<(const char* c)
 {
 	traces[nowActive]+=c;
@@ -120,4 +127,3 @@ CSyncTracer& CSyncTracer::operator<<(const float f)
 	if (init()) (*logfile) << f;
 	return *this;
 }
-

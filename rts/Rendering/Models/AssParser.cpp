@@ -1,19 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-//#include "StdAfx.h"
-#include "Util.h"
-#include "LogOutput.h"
-#include "Platform/errorhandler.h"
+//#include "System/StdAfx.h"
+#include "System/Util.h"
+#include "System/LogOutput.h"
+#include "System/Platform/errorhandler.h"
 #include "System/Exceptions.h"
 #include "Sim/Misc/CollisionVolume.h"
-#include "FileSystem/FileHandler.h"
+#include "System/FileSystem/FileHandler.h"
 #include "Lua/LuaParser.h"
 #include "3DModel.h"
 #include "3DModelLog.h"
 #include "S3OParser.h"
-#ifdef _MSC_VER
-	#define _INC_MATH //! a hack to prevent ambiguous math calls
-#endif
 #include "AssIO.h"
 #include "AssParser.h"
 
@@ -82,7 +79,7 @@ public:
 	~AssLogStream() {}
 	void write(const char* message)
 	{
-		logOutput.Print (LOG_MODEL_DETAIL, "Assimp: %s", message);
+		logOutput.Print(LOG_MODEL_DETAIL, "Assimp: %s", message);
 	}
 };
 
@@ -124,7 +121,7 @@ S3DModel* CAssParser::Load(const std::string& modelFilePath)
 
 	//! Create a logger for debugging model loading issues
 	Assimp::DefaultLogger::create("",Assimp::Logger::VERBOSE);
-	const unsigned int severity = Assimp::Logger::DEBUGGING|Assimp::Logger::INFO|Assimp::Logger::ERR|Assimp::Logger::WARN;
+	const unsigned int severity = Assimp::Logger::Debugging|Assimp::Logger::Info|Assimp::Logger::Err|Assimp::Logger::Warn;
 	Assimp::DefaultLogger::get()->attachStream( new AssLogStream(), severity );
 
 	//! Give the importer an IO class that handles Spring's VFS

@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include <set>
 #include <list>
@@ -21,8 +21,9 @@
 #include "Sim/MoveTypes/TAAirMoveType.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
-#include "myMath.h"
-#include "LogOutput.h"
+#include "System/myMath.h"
+#include "System/LogOutput.h"
+#include "LuaHelper.h"
 
 using namespace std;
 
@@ -88,28 +89,6 @@ bool LuaSyncedMoveCtrl::PushMoveCtrl(lua_State* L)
 }
 
 
-/******************************************************************************/
-/******************************************************************************/
-//
-//  Access helpers
-//
-
-static inline int CtrlTeam()
-{
-	return CLuaHandle::GetActiveHandle()->GetCtrlTeam();
-}
-
-
-static inline bool CanControlUnit(const CUnit* unit)
-{
-	const int ctrlTeam = CtrlTeam();
-	if (ctrlTeam < 0) {
-		return (ctrlTeam == CEventClient::AllAccessTeam) ? true : false;
-	}
-	return (ctrlTeam == unit->team);
-}
-
-
 static inline CUnit* ParseUnit(lua_State* L, const char* caller, int index)
 {
 	if (!lua_isnumber(L, index)) {
@@ -123,7 +102,7 @@ static inline CUnit* ParseUnit(lua_State* L, const char* caller, int index)
 	if (unit == NULL) {
 		return NULL;
 	}
-	if (!CanControlUnit(unit)) {
+	if (!CanControlUnit(L, unit)) {
 		return NULL;
 	}
 	return unit;

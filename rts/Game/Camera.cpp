@@ -1,15 +1,14 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include <string.h>
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Camera.h"
 #include "Map/Ground.h"
 #include "System/myMath.h"
 #include "System/float3.h"
 #include "System/Matrix44f.h"
-#include "System/GlobalUnsynced.h"
 #include "Rendering/GlobalRendering.h"
 
 
@@ -20,7 +19,18 @@
 CCamera* camera;
 CCamera* cam2;
 
-unsigned int CCamera::billboardList = 0;
+
+
+inline void GetGLdoubleMatrix(const CMatrix44f& m, GLdouble* dm)
+{
+	for (int i=0; i<16; i+=4) {
+		dm[i+0] = m[i+0];
+		dm[i+1] = m[i+1];
+		dm[i+2] = m[i+2];
+		dm[i+3] = m[i+3];
+	}
+}
+
 
 CCamera::CCamera()
 	: pos(2000.0f, 70.0f, 1800.0f)
@@ -29,62 +39,31 @@ CCamera::CCamera()
 	, posOffset(0.0f, 0.0f, 0.0f)
 	, tiltOffset(0.0f, 0.0f, 0.0f)
 	, lppScale(0.0f)
+	, viewMatrixD(16, 0.)
+	, projectionMatrixD(16, 0.)
 	, fov(0.0f)
 	, halfFov(0.0f)
 	, tanHalfFov(0.0f)
 {
 	memset(viewport, 0, 4*sizeof(int));
 
-	memset(viewMat,    0, 16*sizeof(double));
-	memset(viewMatInv, 0, 16*sizeof(double));
-	memset(projMat,    0, 16*sizeof(double));
-	memset(bboardMat,  0, 16*sizeof(double));
-
 	// stuff that will not change can be initialised here,
 	// so it does not need to be reinitialised every update
-	viewMat[15] = 1.0;
-	bboardMat[15] = 1.0;
+	projectionMatrix[15] = 0.0f;
+	billboardMatrix[15] = 1.0f;
 
 	SetFov(45.0f);
 
 	up = UpVector;
-
-	if (billboardList == 0) {
-		billboardList = glGenLists(1);
-	}
 }
 
-CCamera::~CCamera()
-{
-	glDeleteLists(billboardList, 1);
-}
-
-void CCamera::Roll(float rad)
-{
-	CMatrix44f rotate;
-	rotate.Rotate(rad, forward);
-	up = rotate.Mul(up);
-}
-
-void CCamera::Pitch(float rad)
-{
-	CMatrix44f rotate;
-	rotate.Rotate(rad, right);
-	forward = rotate.Mul(forward);
-	forward.Normalize();
-	rot.y = atan2(forward.x,forward.z);
-	rot.x = asin(forward.y);
-	UpdateForward();
-}
 
 void CCamera::Update(bool freeze, bool resetUp)
 {
 	pos2 = pos;
 
 	if (resetUp) {
-		up.x = 0.0f;
-		up.y = 1.0f;
-		up.z = 0.0f;
+		up = UpVector;
 	}
 
 	right = forward.cross(up);
@@ -95,7 +74,6 @@ void CCamera::Update(bool freeze, bool resetUp)
 
 	const float aspect = globalRendering->aspectRatio;
 	const float viewx = tan(aspect * halfFov);
-	// const float viewx = aspect * tanHalfFov;
 	const float viewy = tanHalfFov;
 
 	if (globalRendering->viewSizeY <= 0) {
@@ -130,22 +108,17 @@ void CCamera::Update(bool freeze, bool resetUp)
 		cam2->lppScale  = lppScale;
 	}
 
-	const float gndHeight = ground->GetHeightAboveWater(pos.x, pos.z);
+	const float gndHeight = ground->GetHeightAboveWater(pos.x, pos.z, false);
 	const float rangemod = 1.0f + std::max(0.0f, pos.y - gndHeight - 500.0f) * 0.0003f;
 	const float zNear = (CGlobalRendering::NEAR_PLANE * rangemod);
 
 	globalRendering->viewRange = CGlobalRendering::MAX_VIEW_RANGE * rangemod;
-
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
+	
 	// apply and store the projection transform
+	glMatrixMode(GL_PROJECTION);
 	myGluPerspective(aspect, zNear, globalRendering->viewRange);
 
-
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
+	
 	// FIXME: should be applying the offsets to pos/up/right/forward/etc,
 	//        but without affecting the real positions (need an intermediary)
 	float3 fShake = (forward * (1.0f + tiltOffset.z)) +
@@ -156,27 +129,26 @@ void CCamera::Update(bool freeze, bool resetUp)
 	const float3 center = camPos + fShake.ANormalize();
 
 	// apply and store the view transform
+	glMatrixMode(GL_MODELVIEW);
 	myGluLookAt(camPos, center, up);
 
+	// create extra matrices
+	viewProjectionMatrix = viewMatrix * projectionMatrix;
+	viewMatrixInverse = viewMatrix.InvertAffine();
+	projectionMatrixInverse = projectionMatrix.Invert();
+	viewProjectionMatrixInverse = viewProjectionMatrix.Invert();
 
-	// get the inverse view matrix (handy for shaders to have)
-	CMatrix44f::Invert((double(*)[4]) viewMat, (double(*)[4]) viewMatInv);
+	// GLdouble versions
+	GetGLdoubleMatrix(viewMatrix, &viewMatrixD[0]);
+	GetGLdoubleMatrix(projectionMatrix, &projectionMatrixD[0]);
 
-	// transpose the 3x3
-	bboardMat[ 0] = viewMat[ 0];
-	bboardMat[ 1] = viewMat[ 4];
-	bboardMat[ 2] = viewMat[ 8];
-	bboardMat[ 4] = viewMat[ 1];
-	bboardMat[ 5] = viewMat[ 5];
-	bboardMat[ 6] = viewMat[ 9];
-	bboardMat[ 8] = viewMat[ 2];
-	bboardMat[ 9] = viewMat[ 6];
-	bboardMat[10] = viewMat[10];
+	// Billboard Matrix
+	billboardMatrix = viewMatrix;
+	billboardMatrix.SetPos(ZeroVector);
+	billboardMatrix.Transpose(); //! viewMatrix is affine, equals inverse
+	billboardMatrix[15] = 1.0f; //! SetPos() touches m[15]
 
-	glNewList(billboardList, GL_COMPILE);
-	glMultMatrixd(bboardMat);
-	glEndList();
-
+	// viewport
 	viewport[0] = 0;
 	viewport[1] = 0;
 	viewport[2] = globalRendering->viewSizeX;
@@ -212,7 +184,7 @@ bool CCamera::InView(const float3& p, float radius)
 	const float3 t   = (p - pos);
 	const float  lsq = t.SqLength();
 
-	if (lsq < 2500.0f) {
+	if (lsq < 2500.0f) { //FIXME WHY?
 		return true;
 	}
 	else if (lsq > Square(globalRendering->viewRange)) {
@@ -239,12 +211,23 @@ void CCamera::UpdateForward()
 }
 
 
+void CCamera::SetFov(float myfov)
+{
+	fov = myfov;
+	halfFov = fov * 0.5f * PI / 180.f;
+	tanHalfFov = tan(halfFov);
+}
+
+
 float3 CCamera::CalcPixelDir(int x, int y) const
 {
-	float dx = float(x - globalRendering->viewPosX - globalRendering->viewSizeX / 2) / globalRendering->viewSizeY * tanHalfFov * 2;
-	float dy = float(y - globalRendering->viewSizeY / 2)                             / globalRendering->viewSizeY * tanHalfFov * 2;
-	float3 dir = forward - up * dy + right * dx;
-	dir.Normalize();
+	const int vsx = std::max(1, globalRendering->viewSizeX);
+	const int vsy = std::max(1, globalRendering->viewSizeY);
+
+	const float dx = float(x - globalRendering->viewPosX - (vsx >> 1)) / vsy * (tanHalfFov * 2.0f);
+	const float dy = float(y -                             (vsy >> 1)) / vsy * (tanHalfFov * 2.0f);
+
+	const float3 dir = (forward - up * dy + right * dx).Normalize();
 	return dir;
 }
 
@@ -253,59 +236,54 @@ float3 CCamera::CalcWindowCoordinates(const float3& objPos) const
 {
 	double winPos[3];
 	gluProject((GLdouble)objPos.x, (GLdouble)objPos.y, (GLdouble)objPos.z,
-	           viewMat, projMat, viewport,
+	           &viewMatrixD[0], &projectionMatrixD[0], viewport,
 	           &winPos[0], &winPos[1], &winPos[2]);
 	return float3((float)winPos[0], (float)winPos[1], (float)winPos[2]);
 }
 
+
 inline void CCamera::myGluPerspective(float aspect, float zNear, float zFar) {
-	GLdouble t = zNear * tanHalfFov;
-	GLdouble b = -t;
-	GLdouble l = b * aspect;
-	GLdouble r = t * aspect;
+	const float t = zNear * tanHalfFov;
+	const float b = -t;
+	const float l = b * aspect;
+	const float r = t * aspect;
 
-	projMat[ 0] = (2.0f * zNear) / (r - l);
+	projectionMatrix[ 0] = (2.0f * zNear) / (r - l);
 
-	projMat[ 5] = (2.0f * zNear) / (t - b);
+	projectionMatrix[ 5] = (2.0f * zNear) / (t - b);
 
-	projMat[ 8] = (r + l) / (r - l);
-	projMat[ 9] = (t + b) / (t - b);
-	projMat[10] = -(zFar + zNear) / (zFar - zNear);
-	projMat[11] = -1.0f;
+	projectionMatrix[ 8] = (r + l) / (r - l);
+	projectionMatrix[ 9] = (t + b) / (t - b);
+	projectionMatrix[10] = -(zFar + zNear) / (zFar - zNear);
+	projectionMatrix[11] = -1.0f;
 
-	projMat[14] = -(2.0f * zFar * zNear) / (zFar - zNear);
+	projectionMatrix[14] = -(2.0f * zFar * zNear) / (zFar - zNear);
 
-	glMultMatrixd(projMat);
+	glLoadMatrixf(projectionMatrix);
 }
+
 
 inline void CCamera::myGluLookAt(const float3& eye, const float3& center, const float3& up) {
-	float3 f = (center - eye).ANormalize();
-	float3 s = f.cross(up);
-	float3 u = s.cross(f);
+	const float3 f = (center - eye).ANormalize();
+	const float3 s = f.cross(up);
+	const float3 u = s.cross(f);
 
-	viewMat[ 0] =  s.x;
-	viewMat[ 1] =  u.x;
-	viewMat[ 2] = -f.x;
+	viewMatrix[ 0] =  s.x;
+	viewMatrix[ 1] =  u.x;
+	viewMatrix[ 2] = -f.x;
 
-	viewMat[ 4] =  s.y;
-	viewMat[ 5] =  u.y;
-	viewMat[ 6] = -f.y;
+	viewMatrix[ 4] =  s.y;
+	viewMatrix[ 5] =  u.y;
+	viewMatrix[ 6] = -f.y;
 
-	viewMat[ 8] =  s.z;
-	viewMat[ 9] =  u.z;
-	viewMat[10] = -f.z;
+	viewMatrix[ 8] =  s.z;
+	viewMatrix[ 9] =  u.z;
+	viewMatrix[10] = -f.z;
 
 	// save a glTranslated(-eye.x, -eye.y, -eye.z) call
-	viewMat[12] = ( s.x * -eye.x) + ( s.y * -eye.y) + ( s.z * -eye.z);
-	viewMat[13] = ( u.x * -eye.x) + ( u.y * -eye.y) + ( u.z * -eye.z);
-	viewMat[14] = (-f.x * -eye.x) + (-f.y * -eye.y) + (-f.z * -eye.z);
+	viewMatrix[12] = ( s.x * -eye.x) + ( s.y * -eye.y) + ( s.z * -eye.z);
+	viewMatrix[13] = ( u.x * -eye.x) + ( u.y * -eye.y) + ( u.z * -eye.z);
+	viewMatrix[14] = (-f.x * -eye.x) + (-f.y * -eye.y) + (-f.z * -eye.z);
 
-	glMultMatrixd(viewMat);
-}
-
-void CCamera::SetFov(float myfov)
-{
-	fov = myfov;
-	halfFov = fov * 0.008726646f;
-	tanHalfFov = tan(halfFov);
+	glLoadMatrixf(viewMatrix);
 }

@@ -1,18 +1,19 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <SDL_keysym.h>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "ShareBox.h"
 #include "MouseHandler.h"
-#include "Rendering/GL/myGL.h"
-#include "Sim/Misc/TeamHandler.h"
-#include "Game/PlayerHandler.h"
-#include "Sim/Misc/GlobalSynced.h"
-#include "Rendering/glFont.h"
-#include "NetProtocol.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/SelectedUnits.h"
+#include "Game/PlayerHandler.h"
+#include "Rendering/glFont.h"
+#include "Rendering/GL/myGL.h"
+#include "Sim/Misc/GlobalSynced.h"
+#include "Sim/Misc/TeamHandler.h"
+#include "System/NetProtocol.h"
 
 #define MAX_SHARE_TEAMS (teamHandler->ActiveTeams() - 1)
 int CShareBox::lastShareTeam = 0;
@@ -364,8 +365,7 @@ void CShareBox::MouseRelease(int x, int y, int button)
 	if ((InBox(mx, my, box + okBox) || InBox(mx, my, box + applyBox)) &&
 			 shareTeam != -1 && !teamHandler->Team(shareTeam)->isDead && !teamHandler->Team(gu->myTeam)->isDead) {
 		if (shareUnits) {
-			Command c;
-			c.id = CMD_STOP;
+			Command c(CMD_STOP);
 			// make sure the units are stopped and that the selection is transmitted
 			selectedUnits.GiveCommand(c, false);
 		}

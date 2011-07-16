@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include "FeatureHandler.h"
 
 #include "Game/Game.h"
@@ -16,7 +16,7 @@
 #include "System/Exceptions.h"
 #include "System/LogOutput.h"
 #include "System/TimeProfiler.h"
-#include "creg/STL_Set.h"
+#include "System/creg/STL_Set.h"
 
 
 using std::list;
@@ -64,9 +64,11 @@ CFeatureHandler::CFeatureHandler()
 	vector<string> keys;
 	rootTable.GetKeys(keys);
 	for (int i = 0; i < (int)keys.size(); i++) {
-		const string& name = keys[i];
-		const LuaTable fdTable = rootTable.SubTable(name);
-		CreateFeatureDef(fdTable, name);
+		const string& nameMixedCase = keys[i];
+		const string& nameLowerCase = StringToLower(nameMixedCase);
+		const LuaTable& fdTable = rootTable.SubTable(nameMixedCase);
+
+		AddFeatureDef(nameLowerCase, CreateFeatureDef(fdTable, nameLowerCase));
 	}
 }
 
@@ -89,6 +91,9 @@ CFeatureHandler::~CFeatureHandler()
 
 void CFeatureHandler::AddFeatureDef(const string& name, FeatureDef* fd)
 {
+	if (fd == NULL)
+		return;
+
 	map<string, const FeatureDef*>::const_iterator it = featureDefs.find(name);
 
 	if (it != featureDefs.end()) {
@@ -97,33 +102,32 @@ void CFeatureHandler::AddFeatureDef(const string& name, FeatureDef* fd)
 		fd->id = featureDefsVector.size();
 		featureDefsVector.push_back(fd);
 	}
+
 	featureDefs[name] = fd;
 }
 
 
-void CFeatureHandler::CreateFeatureDef(const LuaTable& fdTable, const string& mixedCase)
+FeatureDef* CFeatureHandler::CreateFeatureDef(const LuaTable& fdTable, const string& mixedCase) const
 {
-	const string name = StringToLower(mixedCase);
+	const string& name = StringToLower(mixedCase);
 	if (featureDefs.find(name) != featureDefs.end()) {
-		return;
+		return NULL;
 	}
 
-	FeatureDef* fd = new FeatureDef;
+	FeatureDef* fd = new FeatureDef();
 
 	fd->myName = name;
-
-	fd->filename = fdTable.GetString("filename", "unknown");
-
 	fd->description = fdTable.GetString("description", "");
 
-	fd->blocking      =  fdTable.GetBool("blocking",       true);
-	fd->burnable      =  fdTable.GetBool("flammable",      false);
-	fd->destructable  = !fdTable.GetBool("indestructible", false);
-	fd->reclaimable   =  fdTable.GetBool("reclaimable",    fd->destructable);
-	fd->autoreclaim   =  fdTable.GetBool("autoreclaimable",    fd->autoreclaim);
-	fd->resurrectable =  fdTable.GetInt("resurrectable",   -1);
+	fd->blocking      =  fdTable.GetBool("blocking",        true);
+	fd->burnable      =  fdTable.GetBool("flammable",       false);
+	fd->destructable  = !fdTable.GetBool("indestructible",  false);
+	fd->reclaimable   =  fdTable.GetBool("reclaimable",     fd->destructable);
+	fd->autoreclaim   =  fdTable.GetBool("autoreclaimable", fd->reclaimable);
+	fd->resurrectable =  fdTable.GetInt("resurrectable",    -1);
+	fd->geoThermal    =  fdTable.GetBool("geoThermal",      false);
 
-	//this seem to be the closest thing to floating that ta wreckage contains
+	// this seem to be the closest thing to floating that ta wreckage contains
 	fd->floating = fdTable.GetBool("nodrawundergray", false);
 	if (fd->floating && !fd->blocking) {
 		fd->floating = false;
@@ -166,19 +170,64 @@ void CFeatureHandler::CreateFeatureDef(const LuaTable& fdTable, const string& mi
 
 	fd->upright = fdTable.GetBool("upright", false);
 
-	// our resolution is double TA's
-	fd->xsize = fdTable.GetInt("footprintX", 1) * 2;
-	fd->zsize = fdTable.GetInt("footprintZ", 1) * 2;
+	fd->xsize = std::max(1 * 2, fdTable.GetInt("footprintX", 1) * 2);
+	fd->zsize = std::max(1 * 2, fdTable.GetInt("footprintZ", 1) * 2);
 
+	const float minMass = 1.0f;
 	const float defMass = (fd->metal * 0.4f) + (fd->maxHealth * 0.1f);
-	fd->mass = fdTable.GetFloat("mass", defMass);
-	fd->mass = std::max(0.001f, fd->mass);
+	fd->mass = std::max(minMass, fdTable.GetFloat("mass", defMass));
 
 	// custom parameters table
 	fdTable.SubTable("customParams").GetMap(fd->customParams);
 
-	AddFeatureDef(name, fd);
+	return fd;
 }
+
+
+FeatureDef* CFeatureHandler::CreateDefaultTreeFeatureDef(const std::string& name) const {
+	FeatureDef* fd = new FeatureDef();
+	fd->blocking = 1;
+	fd->burnable = true;
+	fd->destructable = 1;
+	fd->reclaimable = true;
+	fd->drawType = DRAWTYPE_TREE + atoi(name.substr(8).c_str());
+	fd->energy = 250;
+	fd->metal = 0;
+	fd->reclaimTime = 1500;
+	fd->maxHealth = 5;
+	fd->xsize = 2;
+	fd->zsize = 2;
+	fd->myName = name;
+	fd->description = "Tree";
+	fd->mass = 20;
+	fd->collisionVolume = new CollisionVolume("", ZeroVector, ZeroVector, CollisionVolume::COLVOL_HITTEST_DISC);
+	return fd;
+}
+
+FeatureDef* CFeatureHandler::CreateDefaultGeoFeatureDef(const std::string& name) const {
+	FeatureDef* fd = new FeatureDef();
+	fd->blocking = 0;
+	fd->burnable = 0;
+	fd->destructable = 0;
+	fd->reclaimable = false;
+	fd->geoThermal = true;
+	// geos are (usually) rendered only as vents baked into
+	// the map's ground texture and emit smoke to be visible
+	fd->drawType = DRAWTYPE_NONE;
+	fd->energy = 0;
+	fd->metal = 0;
+	fd->reclaimTime = 0;
+	fd->maxHealth = 0;
+	fd->xsize = 0;
+	fd->zsize = 0;
+	fd->myName = name;
+	fd->mass = CSolidObject::DEFAULT_MASS;
+	// geothermals have no collision volume at all
+	fd->collisionVolume = NULL;
+	return fd;
+}
+
+
 
 
 const FeatureDef* CFeatureHandler::GetFeatureDef(string name, const bool showError)
@@ -194,7 +243,7 @@ const FeatureDef* CFeatureHandler::GetFeatureDef(string name, const bool showErr
 	}
 
 	if (showError)
-		logOutput.Print("Couldnt find wreckage info %s", name.c_str());
+		logOutput.Print("[%s] could not find FeatureDef \"%s\"", __FUNCTION__, name.c_str());
 
 	return NULL;
 }
@@ -209,68 +258,41 @@ const FeatureDef* CFeatureHandler::GetFeatureDefByID(int id)
 }
 
 
+
 void CFeatureHandler::LoadFeaturesFromMap(bool onlyCreateDefs)
 {
-	//! add map's featureDefs
-	int numType = readmap->GetNumFeatureTypes ();
-	for (int a = 0; a < numType; ++a) {
-		const string name = StringToLower(readmap->GetFeatureTypeName(a));
+	//! add default tree and geo FeatureDefs defined by the map
+	const int numFeatureTypes = readmap->GetNumFeatureTypes();
+
+	for (int a = 0; a < numFeatureTypes; ++a) {
+		const string& name = StringToLower(readmap->GetFeatureTypeName(a));
 
 		if (GetFeatureDef(name, false) == NULL) {
 			if (name.find("treetype") != string::npos) {
-				FeatureDef* fd = new FeatureDef;
-				fd->blocking = 1;
-				fd->burnable = true;
-				fd->destructable = 1;
-				fd->reclaimable = true;
-				fd->drawType = DRAWTYPE_TREE + atoi(name.substr(8).c_str());
-				fd->energy = 250;
-				fd->metal = 0;
-				fd->reclaimTime = 1500;
-				fd->maxHealth = 5;
-				fd->xsize = 2;
-				fd->zsize = 2;
-				fd->myName = name;
-				fd->description = "Tree";
-				fd->mass = 20;
-				fd->collisionVolume = new CollisionVolume("", ZeroVector, ZeroVector, CollisionVolume::COLVOL_HITTEST_DISC);
-				AddFeatureDef(name, fd);
+				AddFeatureDef(name, CreateDefaultTreeFeatureDef(name));
 			}
 			else if (name.find("geovent") != string::npos) {
-				FeatureDef* fd = new FeatureDef;
-				fd->blocking = 0;
-				fd->burnable = 0;
-				fd->destructable = 0;
-				fd->reclaimable = false;
-				fd->geoThermal = true;
-				// geos are drawn into the ground texture and emit smoke to be visible
-				fd->drawType = DRAWTYPE_NONE;
-				fd->energy = 0;
-				fd->metal = 0;
-				fd->reclaimTime = 0;
-				fd->maxHealth = 0;
-				fd->xsize = 0;
-				fd->zsize = 0;
-				fd->myName = name;
-				fd->mass = CSolidObject::DEFAULT_MASS;
-				// geothermals have no collision volume at all
-				fd->collisionVolume = NULL;
-				AddFeatureDef(name, fd);
+				AddFeatureDef(name, CreateDefaultGeoFeatureDef(name));
 			}
 			else {
-				logOutput.Print("Unknown map feature type %s", name.c_str());
+				logOutput.Print("[%s] unknown map feature type \"%s\"", __FUNCTION__, name.c_str());
 			}
 		}
 	}
 
+	//! add a default geovent FeatureDef if the map did not
+	if (GetFeatureDef("geovent", false) == NULL) {
+		AddFeatureDef("geovent", CreateDefaultGeoFeatureDef("geovent"));
+	}
+
 	if (!onlyCreateDefs) {
-		//! create map features
+		//! create map-specified feature instances
 		const int numFeatures = readmap->GetNumFeatures();
 		MapFeatureInfo* mfi = new MapFeatureInfo[numFeatures];
 		readmap->GetFeatureInfo(mfi);
 
-		for(int a = 0; a < numFeatures; ++a) {
-			const string name = StringToLower(readmap->GetFeatureTypeName(mfi[a].featureType));
+		for (int a = 0; a < numFeatures; ++a) {
+			const string& name = StringToLower(readmap->GetFeatureTypeName(mfi[a].featureType));
 			map<string, const FeatureDef*>::iterator def = featureDefs.find(name);
 
 			if (def == featureDefs.end()) {
@@ -331,6 +353,7 @@ CFeature* CFeatureHandler::GetFeature(int id)
 		return 0;
 }
 
+
 CFeature* CFeatureHandler::CreateWreckage(const float3& pos, const string& name,
 	float rot, int facing, int iter, int team, int allyteam, bool emitSmoke, const UnitDef* udef,
 	const float3& speed)
@@ -367,7 +390,7 @@ CFeature* CFeatureHandler::CreateWreckage(const float3& pos, const string& name,
 
 void CFeatureHandler::Update()
 {
-	SCOPED_TIMER("Feature Update");
+	SCOPED_TIMER("FeatureHandler::Update");
 
 	if ((gs->frameNum & 31) == 0) {
 		// let all areareclaimers choose a target with a different id
@@ -388,10 +411,15 @@ void CFeatureHandler::Update()
 
 		if(!toBeRemoved.empty()) {
 
+			GML_RECMUTEX_LOCK(obj); // Update
+
+			eventHandler.DeleteSyncedObjects();
+
 			GML_RECMUTEX_LOCK(feat); // Update
-			GML_RECMUTEX_LOCK(quad); // Update
 
 			eventHandler.DeleteSyncedFeatures();
+
+			GML_RECMUTEX_LOCK(quad); // Update
 
 			while (!toBeRemoved.empty()) {
 				CFeature* feature = GetFeature(toBeRemoved.back());

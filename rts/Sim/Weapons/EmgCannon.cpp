@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "EmgCannon.h"
 #include "Game/TraceRay.h"
 #include "Sim/Misc/Team.h"
@@ -8,9 +8,9 @@
 #include "Sim/MoveTypes/AirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/EmgProjectile.h"
 #include "Sim/Units/Unit.h"
-#include "Sync/SyncTracer.h"
+#include "System/Sync/SyncTracer.h"
 #include "WeaponDefHandler.h"
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 CR_BIND_DERIVED(CEmgCannon, CWeapon, (NULL));
 
@@ -72,9 +72,9 @@ bool CEmgCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 
 	dir /= length;
 
-	const float g = ground->LineGroundCol(weaponMuzzlePos, pos);
-	if (g > 0 && g < length * 0.9f)
+	if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
 		return false;
+	}
 
 	const float spread =
 		(accuracy + sprayAngle) *

@@ -1,12 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "BeamLaser.h"
 #include "Game/GameHelper.h"
 #include "Game/TraceRay.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Map/Ground.h"
-#include "Matrix44f.h"
+#include "System/Matrix44f.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/InterceptHandler.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -19,7 +19,7 @@
 #include "Sim/Units/UnitTypes/Building.h"
 #include "PlasmaRepulser.h"
 #include "WeaponDefHandler.h"
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 CR_BIND_DERIVED(CBeamLaser, CWeapon, (NULL));
 
@@ -121,10 +121,9 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	dir /= length;
 
 	if (!onlyForward) {
-		// skip ground col testing for aircraft
-		float g = ground->LineGroundCol(weaponMuzzlePos, pos);
-		if (g > 0 && g < length * 0.9f)
+		if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
 			return false;
+		}
 	}
 
 	const float spread =
@@ -134,13 +133,11 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	if (avoidFeature && TraceRay::LineFeatureCol(weaponMuzzlePos, dir, length)) {
 		return false;
 	}
-	if (avoidFriendly) {
-		if (TraceRay::TestAllyCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, owner))
-			return false;
+	if (avoidFriendly && TraceRay::TestAllyCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, owner)) {
+		return false;
 	}
-	if (avoidNeutral) {
-		if (TraceRay::TestNeutralCone(weaponMuzzlePos, dir, length, spread, owner))
-			return false;
+	if (avoidNeutral && TraceRay::TestNeutralCone(weaponMuzzlePos, dir, length, spread, owner)) {
+		return false;
 	}
 
 	return true;
@@ -307,26 +304,28 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 				weaponDef->dynDamageInverted
 			);
 		}
-		
-		helper->Explosion(
+
+		DamageArray damageArray = weaponDef->dynDamageExp > 0?
+			dynDamages * (hitIntensity * damageMul):
+			weaponDef->damages * (hitIntensity * damageMul);
+		CGameHelper::ExplosionParams params = {
 			hitPos,
-			weaponDef->dynDamageExp > 0?
-				dynDamages * (hitIntensity * damageMul):
-				weaponDef->damages * (hitIntensity * damageMul),
+			dir,
+			damageArray,
+			weaponDef,
+			owner,
+			hitUnit,
+			hitFeature,
 			areaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
-			owner,
-			true,
-			1.0f,
-			weaponDef->noExplode || weaponDef->noSelfDamage, /*false*/
-			weaponDef->impactOnly,                           /*false*/
-			weaponDef->explosionGenerator,
-			hitUnit,
-			dir,
-			weaponDef->id,
-			hitFeature
-		);
+			1.0f,                                             // gfxMod
+			weaponDef->impactOnly,
+			weaponDef->noExplode || weaponDef->noSelfDamage,  // ignoreOwner
+			true                                              // damageGround
+		};
+
+		helper->Explosion(params);
 	}
 
 	if (targetUnit) {

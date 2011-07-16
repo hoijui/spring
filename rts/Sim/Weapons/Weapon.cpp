@@ -1,12 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
-#include "creg/STL_List.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
+#include "System/creg/STL_List.h"
 #include "WeaponDefHandler.h"
 #include "Weapon.h"
 #include "Game/GameHelper.h"
 #include "Game/Player.h"
+#include "Game/TraceRay.h"
 #include "Lua/LuaRules.h"
 #include "Map/Ground.h"
 #include "Sim/Misc/CollisionHandler.h"
@@ -559,8 +560,12 @@ void CWeapon::HoldFire()
 
 inline bool CWeapon::AllowWeaponTargetCheck() const
 {
-	if (luaRules && luaRules->AllowWeaponTargetCheck(owner->id, weaponNum, weaponDef->id)) {
-		return true;
+	if (luaRules != NULL) {
+		const int checkAllowed = luaRules->AllowWeaponTargetCheck(owner->id, weaponNum, weaponDef->id);
+
+		if (checkAllowed >= 0) {
+			return checkAllowed;
+		}
 	}
 
 	if (weaponDef->noAutoTarget)                 { return false; }
@@ -779,6 +784,16 @@ void CWeapon::DependentDied(CObject *o)
 	if (o == interceptTarget) {
 		interceptTarget = NULL;
 	}
+}
+
+bool CWeapon::HaveFreeLineOfFire(const float3& pos, const float3& dir, float length) const {
+	CUnit* u = NULL;
+	CFeature* f = NULL;
+	const float g = TraceRay::TraceRay(pos, dir, length, collisionFlags, owner, u, f);
+
+	// true iff nothing (unit, feature, ground) blocks
+	// the ray of length <length> from <pos> along <dir>
+	return (g <= 0.0f || g >= (length * 0.9f));
 }
 
 bool CWeapon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)

@@ -1,35 +1,33 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "MetalMap.h"
 #include "ReadMap.h"
-#include "ConfigHandler.h"
+#include "System/ConfigHandler.h"
 
 CR_BIND(CMetalMap,(NULL, 0, 0, 0.0f));
 
 CR_REG_METADATA(CMetalMap,(
-				CR_MEMBER(extractionMap)
-				));
+	CR_MEMBER(extractionMap)
+));
 
-CMetalMap::CMetalMap(unsigned char* map, int sizeX, int sizeZ, float metalScale)
-	: metalMap(map)
-	, metalScale(metalScale)
-	, sizeX(sizeX)
-	, sizeZ(sizeZ)
+CMetalMap::CMetalMap(const unsigned char* map, int _sizeX, int _sizeZ, float _metalScale)
+	: metalScale(_metalScale)
+	, sizeX(_sizeX)
+	, sizeZ(_sizeZ)
 {
-	// Creating an empty map over extraction.
-//	extractionMap = new float[sizeX * sizeZ];
 	extractionMap.resize(sizeX * sizeZ, 0.0f);
-//	int i;
-//	for(i = 0; i < (sizeX * sizeZ); i++) {
-//		extractionMap[i] = 0.0f;
-//	}
+	metalMap.resize(sizeX * sizeZ, 0);
 
-	int whichPalette = configHandler->Get("MetalMapPalette", 0);
+	if (map != NULL) {
+		memcpy(&metalMap[0], map, sizeX * sizeZ);
+	} else {
+		metalScale = 1.0f;
+	}
 
-	if (whichPalette == 1){
+	if (configHandler->Get("MetalMapPalette", 0) == 1) {
 		/* Swap the green and blue channels. making metal go
 		   black -> blue -> cyan,
 		   rather than the usual black -> green -> cyan. */
@@ -38,9 +36,8 @@ CMetalMap::CMetalMap(unsigned char* map, int sizeX, int sizeZ, float metalScale)
 			metalPal[a * 3 + 1] = std::max(0, a * 2 - 255);
 			metalPal[a * 3 + 2] = std::min(255, a * 2);
 		}
-	}
-	else {
-		for(int a = 0; a < 256; ++a) {
+	} else {
+		for (int a = 0; a < 256; ++a) {
 			metalPal[a * 3 + 0] = a;
 			metalPal[a * 3 + 1] = std::min(255, a * 2);
 			metalPal[a * 3 + 2] = std::max(0, a * 2 - 255);
@@ -52,8 +49,8 @@ CMetalMap::CMetalMap(unsigned char* map, int sizeX, int sizeZ, float metalScale)
 
 CMetalMap::~CMetalMap()
 {
-	delete[] metalMap;
-//	delete[] extractionMap;
+	extractionMap.clear();
+	metalMap.clear();
 }
 
 
@@ -120,4 +117,3 @@ void CMetalMap::RemoveExtraction(int x, int z, float depth)
 
 	extractionMap[(z * sizeX) + x] -= depth;
 }
-

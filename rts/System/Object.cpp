@@ -1,11 +1,11 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-#include "Object.h"
-#include "mmgr.h"
-#include "creg/STL_Set.h"
-#include "LogOutput.h"
+#include "System/Object.h"
+#include "System/mmgr.h"
+#include "System/creg/STL_Set.h"
+#include "System/Log/ILog.h"
 
 #ifndef USE_MMGR
 # define m_setOwner(file, line, func)
@@ -25,12 +25,15 @@ CR_REG_METADATA(CObject, (
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-CObject::CObject()
+CObject::CObject() : detached(false)
 {
 }
 
-CObject::~CObject()
+void CObject::Detach()
 {
+	// SYNCED
+	assert(!detached);
+	detached = true;
 	std::list<CObject*>::iterator di;
 	for(di=listeners.begin();di!=listeners.end();++di){
  		m_setOwner(__FILE__, __LINE__, __FUNCTION__);
@@ -45,6 +48,14 @@ CObject::~CObject()
 	m_resetGlobals();
 }
 
+
+CObject::~CObject()
+{
+	// UNSYNCED (if detached)
+	if (!detached)
+		Detach();
+}
+
 void CObject::Serialize(creg::ISerializer *s)
 {
 	if (s->IsWriting ()) {
@@ -57,8 +68,10 @@ void CObject::Serialize(creg::ISerializer *s)
 		for (std::list<CObject*>::iterator i=listening.begin();i!=listening.end();++i) {
 			if ((*i)->GetClass()!=CObject::StaticClass())
 				s->SerializeObjectPtr((void **)&*i,(*i)->GetClass());
-			else
-				logOutput.Print("Death dependance not serialized in %s",this->GetClass()->name.c_str());
+			else {
+				LOG("Death dependance not serialized in %s",
+						GetClass()->name.c_str());
+			}
 		}
 	} else {
 		int size;
@@ -85,6 +98,7 @@ void CObject::DependentDied(CObject* o)
 
 void CObject::AddDeathDependence(CObject *o)
 {
+	assert(!detached);
 	m_setOwner(__FILE__, __LINE__, __FUNCTION__);
 	o->listeners.insert(o->listeners.end(),this);
 	m_setOwner(__FILE__, __LINE__, __FUNCTION__);
@@ -94,6 +108,7 @@ void CObject::AddDeathDependence(CObject *o)
 
 void CObject::DeleteDeathDependence(CObject *o)
 {
+	assert(!detached);
 	//note that we can be listening to a single object from several different places (like curreclaim in CBuilder and lastAttacker in CUnit, grr) so we should only remove one of them
 	m_setOwner(__FILE__, __LINE__, __FUNCTION__);
 	ListErase<CObject*>(listening, o);

@@ -1,12 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <stdio.h>
 #include <algorithm>
 #include <iostream>
 #include <locale>
 #include <cctype>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "UnitDefHandler.h"
 #include "UnitDef.h"
@@ -50,11 +50,11 @@ CUnitDefHandler::CUnitDefHandler(void) : noCost(false)
 	unitDefs.push_back(nullDef);
 
 	for (unsigned int a = 0; a < unitDefNames.size(); ++a) {
-		const string unitName = unitDefNames[a];
+		const string& unitName = unitDefNames[a];
 		LuaTable udTable = rootTable.SubTable(unitName);
 
 		// parse the unitdef data (but don't load buildpics, etc...)
-		PushNewUnitDef(unitName, udTable);
+		PushNewUnitDef(StringToLower(unitName), udTable);
 	}
 
 	CleanBuildOptions();

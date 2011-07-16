@@ -1,6 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "ExternalAI/SkirmishAIHandler.h"
+#include "Game/GlobalUnsynced.h"
 #include "Rendering/DebugDrawerAI.h"
 #include "Rendering/glFont.h"
 #include "Rendering/GlobalRendering.h"
@@ -8,7 +9,6 @@
 #include "Rendering/GL/VertexArray.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "System/bitops.h"
-#include "System/GlobalUnsynced.h"
 
 static const float3 GRAPH_MIN_SCALE = float3( 1e9,  1e9, 0.0f);
 static const float3 GRAPH_MAX_SCALE = float3(-1e9, -1e9, 0.0f);
@@ -37,6 +37,9 @@ DebugDrawerAI* DebugDrawerAI::GetInstance() {
 
 
 void DebugDrawerAI::Draw() {
+#if defined(USE_GML) && GML_ENABLE_SIM
+	return;
+#endif
 	if (!draw || !gu->spectating) {
 		return;
 	}
@@ -390,6 +393,9 @@ int DebugDrawerAI::TexSet::AddTexture(const float* data, int w, int h) {
 }
 
 void DebugDrawerAI::TexSet::UpdateTexture(int texHandle, const float* data, int x, int y, int w, int h) {
+#if defined(USE_GML) && GML_ENABLE_SIM
+	return;
+#endif
 	std::map<int, TexSet::Texture*>::iterator it = textures.find(texHandle);
 
 	if (it == textures.end()) {
@@ -482,6 +488,9 @@ DebugDrawerAI::TexSet::Texture::Texture(int w, int h, const float* data):
 	labelWidth(0.0f),
 	labelHeight(0.0f)
 {
+#if defined(USE_GML) && GML_ENABLE_SIM
+	return;
+#endif
 	const int intFormat = GL_RGBA;  // note: data only holds the red component
 	const int extFormat = GL_RED;
 	const int dataType  = GL_FLOAT;
@@ -497,6 +506,9 @@ DebugDrawerAI::TexSet::Texture::Texture(int w, int h, const float* data):
 }
 
 DebugDrawerAI::TexSet::Texture::~Texture() {
+#if defined(USE_GML) && GML_ENABLE_SIM
+	return;
+#endif
 	glDeleteTextures(1, &id);
 }
 

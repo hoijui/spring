@@ -103,8 +103,10 @@ if    (BUILD_${myName}_AIINTERFACE)
 	SetGlobal(${myName}_AIINTERFACE_VERS   ${myVersion})
 	SetGlobal(${myName}_AIINTERFACE_TARGET ${myTarget})
 
-	aux_source_directory(${mySourceDir} mySources)
-
+	set(mySources
+			"${mySourceDir}/Interface.cpp"
+			"${mySourceDir}/InterfaceExport.cpp"
+		)
 #	list(APPEND mySources ${rts}/System/Platform/SharedLib)
 #	if    (UNIX)
 #		list (APPEND mySources ${rts}/System/Platform/Linux/SoLib)

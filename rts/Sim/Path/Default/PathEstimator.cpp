@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "lib/gml/gml.h" // FIXME: linux for some reason does not compile without this
 
@@ -12,7 +12,7 @@
 #include <boost/version.hpp>
 
 #include "lib/minizip/zip.h"
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "PathAllocator.h"
 #include "PathCache.h"
@@ -24,7 +24,8 @@
 #include "Sim/MoveTypes/MoveMath/MoveMath.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
-#include "System/FileSystem/ArchiveZip.h"
+#include "System/FileSystem/IArchive.h"
+#include "System/FileSystem/ArchiveLoader.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/LogOutput.h"
 #include "System/ConfigHandler.h"
@@ -45,15 +46,15 @@ CPathEstimator::CPathEstimator(CPathFinder* pf, unsigned int BSIZE, const std::s
 	BLOCK_SIZE(BSIZE),
 	BLOCK_PIXEL_SIZE(BSIZE * SQUARE_SIZE),
 	BLOCKS_TO_UPDATE(SQUARES_TO_UPDATE / (BLOCK_SIZE * BLOCK_SIZE) + 1),
-	pathFinder(pf),
 	nbrOfBlocksX(gs->mapx / BLOCK_SIZE),
 	nbrOfBlocksZ(gs->mapy / BLOCK_SIZE),
+	blockStates(int2(nbrOfBlocksX, nbrOfBlocksZ), int2(gs->mapx, gs->mapy)),
+	pathFinder(pf),
 	pathChecksum(0),
 	offsetBlockNum(nbrOfBlocksX * nbrOfBlocksZ),
 	costBlockNum(nbrOfBlocksX * nbrOfBlocksZ),
 	nextOffsetMessage(-1),
-	nextCostMessage(-1),
-	blockStates(int2(nbrOfBlocksX, nbrOfBlocksZ), int2(gs->mapx, gs->mapy))
+	nextCostMessage(-1)
 {
 	// these give the changes in (x, z) coors
 	// when moving one step in given direction
@@ -112,10 +113,10 @@ CPathEstimator::~CPathEstimator()
 
 void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::string& map)
 {
-	int numThreads_tmp = configHandler->Get("HardwareThreadCount", 0);
-	size_t numThreads = ((numThreads_tmp < 0) ? 0 : numThreads_tmp);
+	unsigned int numThreads = std::max(0, configHandler->Get("HardwareThreadCount", 0));
 
 	if (numThreads == 0) {
+		// auto-detect
 		#if (BOOST_VERSION >= 103500)
 		numThreads = boost::thread::hardware_concurrency();
 		#elif defined(USE_GML)
@@ -129,21 +130,35 @@ void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::
 		threads.resize(numThreads);
 		pathFinders.resize(numThreads);
 	}
+
 	pathFinders[0] = pathFinder;
 
 	// Not much point in multithreading these...
 	InitVertices();
 	InitBlocks();
 
-	char calcMsg[512];
-	sprintf(calcMsg, "Reading Estimate PathCosts [%d]", BLOCK_SIZE);
-	loadscreen->SetLoadMessage(calcMsg);
-
 	if (!ReadFile(cacheFileName, map)) {
-		pathBarrier = new boost::barrier(numThreads);
+		// start extra threads if applicable, but always keep the total
+		// memory-footprint made by CPathFinder instances within bounds
+		const unsigned int minMemFootPrint = sizeof(CPathFinder) + pathFinder->GetMemFootPrint();
+		const unsigned int maxMemFootPrint = configHandler->Get("MaxPathCostsMemoryFootPrint", 512 * 1024 * 1024);
+		const unsigned int numExtraThreads = std::min(int(numThreads - 1), std::max(0, int(maxMemFootPrint / minMemFootPrint) - 1));
+		const unsigned int reqMemFootPrint = minMemFootPrint * (numExtraThreads + 1);
 
-		// Start threads if applicable
-		for (size_t i = 1; i < numThreads; ++i) {
+		{
+			char calcMsg[512];
+			const char* fmtString = (numExtraThreads > 0)?
+				"PathCosts: creating PE%u cache with %u PF threads (%u MB)":
+				"PathCosts: creating PE%u cache with %u PF thread (%u MB)";
+
+			sprintf(calcMsg, fmtString, BLOCK_SIZE, numExtraThreads + 1, reqMemFootPrint / (1024 * 1024));
+			loadscreen->SetLoadMessage(calcMsg);
+		}
+
+		// note: only really needed if numExtraThreads > 0
+		pathBarrier = new boost::barrier(numExtraThreads + 1);
+
+		for (unsigned int i = 1; i <= numExtraThreads; i++) {
 			pathFinders[i] = new CPathFinder();
 			threads[i] = new boost::thread(boost::bind(&CPathEstimator::CalcOffsetsAndPathCosts, this, i));
 		}
@@ -151,7 +166,7 @@ void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::
 		// Use the current thread as thread zero
 		CalcOffsetsAndPathCosts(0);
 
-		for (size_t i = 1; i < numThreads; ++i) {
+		for (unsigned int i = 1; i <= numExtraThreads; i++) {
 			threads[i]->join();
 			delete threads[i];
 			delete pathFinders[i];
@@ -771,17 +786,22 @@ bool CPathEstimator::ReadFile(const std::string& cacheFileName, const std::strin
 	sprintf(hashString, "%u", hash);
 
 	std::string filename = std::string(pathDir) + map + hashString + "." + cacheFileName + ".zip";
-
+	if (!filesystem.FileExists(filename))
+		return false;
 	// open file for reading from a suitable location (where the file exists)
-	CArchiveZip* pfile = new CArchiveZip(filesystem.LocateFile(filename));
+	IArchive* pfile = archiveLoader.OpenArchive(filesystem.LocateFile(filename), "sdz");
 
 	if (!pfile || !pfile->IsOpen()) {
 		delete pfile;
 		return false;
 	}
 
-	std::auto_ptr<CArchiveZip> auto_pfile(pfile);
-	CArchiveZip& file(*pfile);
+	char calcMsg[512];
+	sprintf(calcMsg, "Reading Estimate PathCosts [%d]", BLOCK_SIZE);
+	loadscreen->SetLoadMessage(calcMsg);
+
+	std::auto_ptr<IArchive> auto_pfile(pfile);
+	IArchive& file(*pfile);
 
 	const unsigned fid = file.FindFile("pathinfo");
 
@@ -861,15 +881,15 @@ void CPathEstimator::WriteFile(const std::string& cacheFileName, const std::stri
 
 
 		// get the CRC over the written path data
-		CArchiveZip* pfile = new CArchiveZip(filesystem.LocateFile(filename));
+		IArchive* pfile = archiveLoader.OpenArchive(filesystem.LocateFile(filename), "sdz");
 
 		if (!pfile || !pfile->IsOpen()) {
 			delete pfile;
 			return;
 		}
 
-		std::auto_ptr<CArchiveZip> auto_pfile(pfile);
-		CArchiveZip& file(*pfile);
+		std::auto_ptr<IArchive> auto_pfile(pfile);
+		IArchive& file(*pfile);
 		
 		const unsigned fid = file.FindFile("pathinfo");
 		assert(fid < file.NumFiles());

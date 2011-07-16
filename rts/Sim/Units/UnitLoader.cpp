@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "UnitLoader.h"
 #include "Unit.h"
@@ -28,8 +28,9 @@
 #include "Map/ReadMap.h"
 
 #include "Sim/Features/FeatureHandler.h"
+#include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
-
+#include "Sim/Units/UnitHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "Sim/Weapons/BeamLaser.h"
 #include "Sim/Weapons/bombdropper.h"
@@ -50,6 +51,7 @@
 #include "System/EventBatchHandler.h"
 #include "System/Exceptions.h"
 #include "System/LogOutput.h"
+#include "System/Platform/Watchdog.h"
 #include "System/TimeProfiler.h"
 
 //////////////////////////////////////////////////////////////////////
@@ -73,60 +75,62 @@ CUnit* CUnitLoader::LoadUnit(const std::string& name, const float3& pos, int tea
 CUnit* CUnitLoader::LoadUnit(const UnitDef* ud, const float3& pos, int team,
                              bool build, int facing, const CUnit* builder)
 {
-	GML_RECMUTEX_LOCK(sel); // LoadUnit - for anti deadlock purposes.
-	GML_RECMUTEX_LOCK(quad); // LoadUnit - make sure other threads cannot access an incomplete unit
+	CUnit* unit = NULL;
 
 	SCOPED_TIMER("UnitLoader::LoadUnit");
 
-	if (team < 0) {
-		team = teamHandler->GaiaTeamID(); // FIXME use gs->gaiaTeamID ?  (once it is always enabled)
-		if (team < 0)
-			throw content_error("Invalid team and no gaia team to put unit in");
-	}
+	{
+		GML_RECMUTEX_LOCK(sel); // LoadUnit - for anti deadlock purposes.
+		GML_RECMUTEX_LOCK(quad); // LoadUnit - make sure other threads cannot access an incomplete unit
 
-	CUnit* unit = NULL;
-
-	if (ud->IsTransportUnit()) {
-		unit = new CTransportUnit();
-	} else if (ud->IsFactoryUnit()) {
-		// special static builder structures that can always be given
-		// move orders (which are passed on to all mobile buildees)
-		unit = new CFactory();
-	} else if (ud->IsMobileBuilderUnit() || ud->IsStaticBuilderUnit()) {
-		// all other types of non-structure "builders", including hubs and
-		// nano-towers (the latter should not have any build-options at all,
-		// whereas the former should be unable to build any mobile units)
-		unit = new CBuilder();
-	} else if (ud->IsBuildingUnit()) {
-		// static non-builder structures
-		if (ud->IsExtractorUnit()) {
-			unit = new CExtractorBuilding();
-		} else {
-			unit = new CBuilding();
+		if (team < 0) {
+			team = teamHandler->GaiaTeamID(); // FIXME use gs->gaiaTeamID ?  (once it is always enabled)
+			if (team < 0)
+				throw content_error("Invalid team and no gaia team to put unit in");
 		}
-	} else {
-		// regular mobile unit
-		unit = new CUnit();
-	}
 
-	unit->PreInit(ud, team, facing, pos, build);
+		if (ud->IsTransportUnit()) {
+			unit = new CTransportUnit();
+		} else if (ud->IsFactoryUnit()) {
+			// special static builder structures that can always be given
+			// move orders (which are passed on to all mobile buildees)
+			unit = new CFactory();
+		} else if (ud->IsMobileBuilderUnit() || ud->IsStaticBuilderUnit()) {
+			// all other types of non-structure "builders", including hubs and
+			// nano-towers (the latter should not have any build-options at all,
+			// whereas the former should be unable to build any mobile units)
+			unit = new CBuilder();
+		} else if (ud->IsBuildingUnit()) {
+			// static non-builder structures
+			if (ud->IsExtractorUnit()) {
+				unit = new CExtractorBuilding();
+			} else {
+				unit = new CBuilding();
+			}
+		} else {
+			// regular mobile unit
+			unit = new CUnit();
+		}
 
-	if (ud->IsTransportUnit()) {
-		new CTransportCAI(unit);
-	} else if (ud->IsFactoryUnit()) {
-		new CFactoryCAI(unit);
-	} else if (ud->IsMobileBuilderUnit() || ud->IsStaticBuilderUnit()) {
-		new CBuilderCAI(unit);
-	} else if (ud->IsNonHoveringAirUnit()) {
-		// non-hovering fighter or bomber aircraft; coupled to AirMoveType
-		new CAirCAI(unit);
-	} else if (ud->IsAirUnit()) {
-		// all other aircraft
-		new CMobileCAI(unit);
-	} else if (ud->IsGroundUnit()) {
-		new CMobileCAI(unit);
-	} else {
-		new CCommandAI(unit);
+		unit->PreInit(ud, team, facing, pos, build);
+
+		if (ud->IsTransportUnit()) {
+			new CTransportCAI(unit);
+		} else if (ud->IsFactoryUnit()) {
+			new CFactoryCAI(unit);
+		} else if (ud->IsMobileBuilderUnit() || ud->IsStaticBuilderUnit()) {
+			new CBuilderCAI(unit);
+		} else if (ud->IsNonHoveringAirUnit()) {
+			// non-hovering fighter or bomber aircraft; coupled to AirMoveType
+			new CAirCAI(unit);
+		} else if (ud->IsAirUnit()) {
+			// all other aircraft
+			new CMobileCAI(unit);
+		} else if (ud->IsGroundUnit()) {
+			new CMobileCAI(unit);
+		} else {
+			new CCommandAI(unit);
+		}
 	}
 
 	unit->PostInit(builder);
@@ -180,6 +184,9 @@ CWeapon* CUnitLoader::LoadWeapon(CUnit* owner, const UnitDefWeapon* udw)
 	} else if (weaponDef->type == "EmgCannon") {
 		weapon = new CEmgCannon(owner);
 	} else if (weaponDef->type == "DGun") {
+		// NOTE: no special connection to UnitDef::canManualFire
+		// (any type of weapon may be slaved to the button which
+		// controls manual firing) or the CMD_MANUALFIRE command
 		weapon = new CDGunWeapon(owner);
 	} else if (weaponDef->type == "StarburstLauncher") {
 		weapon = new CStarburstLauncher(owner);
@@ -259,15 +266,14 @@ CWeapon* CUnitLoader::LoadWeapon(CUnit* owner, const UnitDefWeapon* udw)
 
 
 
-void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
+void CUnitLoader::ParseAndExecuteGiveUnitsCommand(const std::vector<std::string>& args, int team)
 {
-	float3 pos;
-
-	if (args.size() < 3) {
+	if (args.size() < 2) {
 		logOutput.Print("[%s] not enough arguments (\"/give [amount] <objectName | 'all'> [team] [@x, y, z]\")", __FUNCTION__);
 		return;
 	}
 
+	float3 pos;
 	if (sscanf(args[args.size() - 1].c_str(), "@%f, %f, %f", &pos.x, &pos.y, &pos.z) != 3) {
 		logOutput.Print("[%s] invalid position argument (\"/give [amount] <objectName | 'all'> [team] [@x, y, z]\")", __FUNCTION__);
 		return;
@@ -277,15 +283,15 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 	int amountArgIdx = -1;
 	int teamArgIdx = -1;
 
-	if (args.size() == 5) {
-		amountArgIdx = 1;
-		teamArgIdx = 3;
+	if (args.size() == 4) {
+		amountArgIdx = 0;
+		teamArgIdx = 2;
 	}
-	else if (args.size() == 4) {
-		if (args[1].find_first_not_of("0123456789") == std::string::npos) {
-			amountArgIdx = 1;
+	else if (args.size() == 3) {
+		if (args[0].find_first_not_of("0123456789") == std::string::npos) {
+			amountArgIdx = 0;
 		} else {
-			teamArgIdx = 2;
+			teamArgIdx = 1;
 		}
 	}
 
@@ -298,6 +304,7 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 		}
 	}
 
+	int featureAllyTeam = -1;
 	if (teamArgIdx >= 0) {
 		team = atoi(args[teamArgIdx].c_str());
 
@@ -305,22 +312,32 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 			logOutput.Print("[%s] invalid team argument: %s", __FUNCTION__, args[teamArgIdx].c_str());
 			return;
 		}
+
+		featureAllyTeam = teamHandler->AllyTeam(team);
 	}
 
-	const std::string& objectName = (amountArgIdx >= 0) ? args[2] : args[1];
+	const std::string& objectName = (amountArgIdx >= 0) ? args[1] : args[0];
 
 	if (objectName.empty()) {
 		logOutput.Print("[%s] invalid object-name argument", __FUNCTION__);
 		return;
 	}
 
+	GiveUnits(objectName, pos, amount, team, featureAllyTeam);
+}
+
+
+void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amount, int team, int featureAllyTeam)
+{
+	const CTeam* receivingTeam = teamHandler->Team(team);
+
 	if (objectName == "all") {
 		unsigned int numRequestedUnits = unitDefHandler->unitDefs.size() - 1; /// defid=0 is not valid
-		unsigned int currentNumUnits = teamHandler->Team(team)->units.size();
+		unsigned int currentNumUnits = receivingTeam->units.size();
 
 		// make sure team unit-limit is not exceeded
-		if ((currentNumUnits + numRequestedUnits) > uh->MaxUnitsPerTeam()) {
-			numRequestedUnits = uh->MaxUnitsPerTeam() - currentNumUnits;
+		if ((currentNumUnits + numRequestedUnits) > receivingTeam->maxUnits) {
+			numRequestedUnits = receivingTeam->maxUnits - currentNumUnits;
 		}
 
 		// make sure square is entirely on the map
@@ -331,6 +348,7 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 		pos.z = std::max(sqHalfMapSize, std::min(pos.z, float3::maxzpos - sqHalfMapSize - 1));
 
 		for (int a = 1; a <= numRequestedUnits; ++a) {
+			Watchdog::ClearPrimaryTimers(); // the other thread may be waiting for a mutex held by this one, triggering hang detection
 			const float px = pos.x + (a % sqSize - sqSize / 2) * 10 * SQUARE_SIZE;
 			const float pz = pos.z + (a / sqSize - sqSize / 2) * 10 * SQUARE_SIZE;
 			const float3 unitPos = float3(px, ground->GetHeightReal(px, pz), pz);
@@ -346,23 +364,23 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 		}
 	} else {
 		unsigned int numRequestedUnits = amount;
-		unsigned int currentNumUnits = teamHandler->Team(team)->units.size();
+		unsigned int currentNumUnits = receivingTeam->units.size();
 
-		if (currentNumUnits >= uh->MaxUnitsPerTeam()) {
+		if (receivingTeam->AtUnitLimit()) {
 			logOutput.Print(
 				"[%s] unable to give more units to team %d (current: %u, team limit: %u, global limit: %u)",
-				__FUNCTION__, team, currentNumUnits, uh->MaxUnitsPerTeam(), uh->MaxUnits()
+				__FUNCTION__, team, currentNumUnits, receivingTeam->maxUnits, uh->MaxUnits()
 			);
 			return;
 		}
 
 		// make sure team unit-limit is not exceeded
-		if ((currentNumUnits + numRequestedUnits) > uh->MaxUnitsPerTeam()) {
-			numRequestedUnits = uh->MaxUnitsPerTeam() - currentNumUnits;
+		if ((currentNumUnits + numRequestedUnits) > receivingTeam->maxUnits) {
+			numRequestedUnits = receivingTeam->maxUnits - currentNumUnits;
 		}
 
 		const UnitDef* unitDef = unitDefHandler->GetUnitDefByName(objectName);
-		const FeatureDef* featureDef = featureHandler->GetFeatureDef(objectName);
+		const FeatureDef* featureDef = featureHandler->GetFeatureDef(objectName, false);
 
 		if (unitDef == NULL && featureDef == NULL) {
 			logOutput.Print("[%s] %s is not a valid object-name", __FUNCTION__, objectName.c_str());
@@ -387,6 +405,7 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 					const float pz = squarePos.z + z * zsize * SQUARE_SIZE;
 
 					const float3 unitPos = float3(px, ground->GetHeightReal(px, pz), pz);
+					Watchdog::ClearPrimaryTimers();
 					const CUnit* unit = LoadUnit(unitDef, unitPos, team, false, 0, NULL);
 
 					if (unit != NULL) {
@@ -401,13 +420,8 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 		}
 
 		if (featureDef != NULL) {
-			int allyteam = -1;
-
-			if (teamArgIdx < 0) {
+			if (featureAllyTeam < 0) {
 				team = -1; // default to world features
-				allyteam = -1;
-			} else {
-				allyteam = teamHandler->AllyTeam(team);
 			}
 
 			const int xsize = featureDef->xsize;
@@ -427,9 +441,10 @@ void CUnitLoader::GiveUnits(const std::vector<std::string>& args, int team)
 					const float pz = squarePos.z + z * zsize * SQUARE_SIZE;
 					const float3 featurePos = float3(px, ground->GetHeightReal(px, pz), pz);
 
+					Watchdog::ClearPrimaryTimers();
 					CFeature* feature = new CFeature();
 					// Initialize() adds the feature to the FeatureHandler -> no memory-leak
-					feature->Initialize(featurePos, featureDef, 0, 0, team, allyteam, NULL);
+					feature->Initialize(featurePos, featureDef, 0, 0, team, featureAllyTeam, NULL);
 
 					--total;
 				}
@@ -455,7 +470,7 @@ void CUnitLoader::FlattenGround(const CUnit* unit)
 		// if the terrain here is above sea level
 
 		BuildInfo bi(unitDef, unit->pos, unit->buildFacing);
-		bi.pos = helper->Pos2BuildPos(bi);
+		bi.pos = helper->Pos2BuildPos(bi, true);
 		const float hss = 0.5f * SQUARE_SIZE;
 		const int tx1 = (int) std::max(0.0f ,(bi.pos.x - (bi.GetXSize() * hss)) / SQUARE_SIZE);
 		const int tz1 = (int) std::max(0.0f ,(bi.pos.z - (bi.GetZSize() * hss)) / SQUARE_SIZE);
@@ -464,7 +479,7 @@ void CUnitLoader::FlattenGround(const CUnit* unit)
 
 		for (int z = tz1; z <= tz2; z++) {
 			for (int x = tx1; x <= tx2; x++) {
-				readmap->SetHeight(z * (gs->mapx + 1) + x, bi.pos.y);
+				readmap->SetHeight(z * gs->mapxp1 + x, bi.pos.y);
 			}
 		}
 
@@ -482,7 +497,7 @@ void CUnitLoader::RestoreGround(const CUnit* unit)
 		!(unitDef->canmove && (unitDef->speed > 0.0f))) {
 
 		BuildInfo bi(unitDef, unit->pos, unit->buildFacing);
-		bi.pos = helper->Pos2BuildPos(bi);
+		bi.pos = helper->Pos2BuildPos(bi, true);
 		const float hss = 0.5f * SQUARE_SIZE;
 		const int tx1 = (int) std::max(0.0f ,(bi.pos.x - (bi.GetXSize() * hss)) / SQUARE_SIZE);
 		const int tz1 = (int) std::max(0.0f ,(bi.pos.z - (bi.GetZSize() * hss)) / SQUARE_SIZE);
@@ -490,13 +505,13 @@ void CUnitLoader::RestoreGround(const CUnit* unit)
 		const int tz2 = std::min(gs->mapy, tz1 + bi.GetZSize());
 
 
-		const float* heightmap = readmap->GetHeightmap();
+		const float* heightmap = readmap->GetCornerHeightMapSynced();
 		int num = 0;
 		float heightdiff = 0.0f;
 		for (int z = tz1; z <= tz2; z++) {
 			for (int x = tx1; x <= tx2; x++) {
-				int index = z * (gs->mapx + 1) + x;
-				heightdiff += heightmap[index] - readmap->orgheightmap[index];
+				int index = z * gs->mapxp1 + x;
+				heightdiff += heightmap[index] - readmap->GetOriginalHeightMapSynced()[index];
 				++num;
 			}
 		}
@@ -505,15 +520,15 @@ void CUnitLoader::RestoreGround(const CUnit* unit)
 		heightdiff += unit->pos.y - bi.pos.y;
 		for (int z = tz1; z <= tz2; z++) {
 			for (int x = tx1; x <= tx2; x++) {
-				int index = z * (gs->mapx + 1) + x;
-				readmap->SetHeight(index, heightdiff + readmap->orgheightmap[index]);
+				int index = z * gs->mapxp1 + x;
+				readmap->SetHeight(index, heightdiff + readmap->GetOriginalHeightMapSynced()[index]);
 			}
 		}
 		// but without affecting the build height
-		heightdiff = bi.pos.y - helper->Pos2BuildPos(bi).y;
+		heightdiff = bi.pos.y - helper->Pos2BuildPos(bi, true).y;
 		for (int z = tz1; z <= tz2; z++) {
 			for (int x = tx1; x <= tx2; x++) {
-				int index = z * (gs->mapx + 1) + x;
+				int index = z * gs->mapxp1 + x;
 				readmap->SetHeight(index, heightdiff + heightmap[index]);
 			}
 		}

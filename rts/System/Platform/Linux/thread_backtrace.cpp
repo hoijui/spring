@@ -1,13 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "thread_backtrace.h"
 #include <vector>
 #include <stdint.h>
-#include <string.h> //memcpy
-#include "LogOutput.h"
+#include <string.h> // memcpy
 
 
 #define FP_OFFSET 1 //! in sizeof(void*)

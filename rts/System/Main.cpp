@@ -5,30 +5,27 @@
  * everything else
  */
 
-
-#ifdef _MSC_VER
-	#include "StdAfx.h"
-#endif
 #include <sstream>
 #include <boost/system/system_error.hpp>
 #include <boost/bind.hpp>
-//SDL_main.h contains a macro that replaces the main function, see SDL_main.h for details
-#include <SDL_main.h>
 
+#include "System/SpringApp.h"
+
+#include "lib/gml/gml.h"
+#include "lib/gml/gmlmut.h"
+#include "System/Exceptions.h"
 #include "System/Platform/errorhandler.h"
 #include "System/Platform/Threading.h"
 
-#ifndef _MSC_VER
-	#include "StdAfx.h"
-#endif
-#include "lib/gml/gml.h"
-#include "System/Exceptions.h"
-
-#include "SpringApp.h"
-
 #ifdef WIN32
-	#include "Platform/Win/win32.h"
+	#include "System/Platform/Win/win32.h"
 #endif
+
+#ifndef __APPLE__
+	// SDL_main.h contains a macro that replaces the main function on some OS, see SDL_main.h for details
+	#include <SDL_main.h>
+#endif
+
 
 void MainFunc(int argc, char** argv, int* ret) {
 #ifdef __MINGW32__
@@ -74,6 +71,14 @@ int Run(int argc, char* argv[])
 
 	return ret;
 }
+
+/**
+	\mainpage
+	This is the documentation of the Spring RTS Engine.
+
+	http://springrts.com/
+
+*/
 
 
 

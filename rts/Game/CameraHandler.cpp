@@ -1,9 +1,9 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <cstdlib>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "CameraHandler.h"
 
@@ -18,10 +18,9 @@
 #include "Camera/OverviewController.h"
 #include "Camera/TWController.h"
 #include "Camera/OrbitController.h"
-#include "ConfigHandler.h"
-#include "LogOutput.h"
-#include "GlobalUnsynced.h"
 #include "Rendering/GlobalRendering.h"
+#include "System/ConfigHandler.h"
+#include "System/LogOutput.h"
 
 
 CCameraHandler* camHandler = NULL;
@@ -168,7 +167,7 @@ void CCameraHandler::PushMode()
 
 void CCameraHandler::PopMode()
 {
-	if (controllerStack.size() > 0) {
+	if (!controllerStack.empty()) {
 		SetCameraMode(controllerStack.top());
 		controllerStack.pop();
 	}

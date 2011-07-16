@@ -1,4 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+#include "System/StdAfx.h"
 
 #include "ExternalAI/AICallback.h"
 #include "ExternalAI/AICheats.h"
@@ -10,6 +11,15 @@
 #include "ExternalAI/Interface/AISCommands.h"
 #include "ExternalAI/Interface/SSkirmishAICallback.h"
 #include "ExternalAI/Interface/SSkirmishAILibrary.h"
+#include "Game/GlobalUnsynced.h" // for myTeam
+#include "Game/GameSetup.h"
+#include "Game/GameVersion.h"
+#include "Game/SelectedUnits.h"
+#include "Game/UI/GuiHandler.h" //TODO: fix some switch for new gui
+#include "Map/ReadMap.h"
+#include "Map/MetalMap.h"
+#include "Map/MapInfo.h"
+#include "Lua/LuaRulesParams.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
@@ -29,17 +39,8 @@
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Misc/QuadField.h" // for qf->GetFeaturesExact(pos, radius)
-#include "Map/ReadMap.h"
-#include "Map/MetalMap.h"
-#include "Map/MapInfo.h"
-#include "Game/SelectedUnits.h"
-#include "Game/UI/GuiHandler.h" //TODO: fix some switch for new gui
-#include "Game/GameSetup.h"
-#include "Game/GameVersion.h"
-#include "Lua/LuaRulesParams.h"
-#include "FileSystem/ArchiveScanner.h"
-#include "GlobalUnsynced.h" // for myTeam
-#include "LogOutput.h"
+#include "System/FileSystem/ArchiveScanner.h"
+#include "System/Log/ILog.h"
 
 
 static const char* SKIRMISH_AIS_VERSION_COMMON = "common";
@@ -229,7 +230,6 @@ EXPORT(int) skirmishAiCallback_Engine_handleCommand(int skirmishAIId, int toId, 
 		clbCheat = skirmishAIId_cheatCallback[skirmishAIId];
 	}
 
-
 	switch (commandTopic) {
 
 		case COMMAND_CHEATS_SET_MY_INCOME_MULTIPLIER:
@@ -411,13 +411,26 @@ EXPORT(int) skirmishAiCallback_Engine_handleCommand(int skirmishAIId, int toId, 
 			clb->FreePath(cmd->pathId);
 			break;
 		}
-		case COMMAND_CALL_LUA_RULES:
-		{
-			SCallLuaRulesCommand* cmd = (SCallLuaRulesCommand*) commandData;
-			// TODO: FIXME: should strcpy() this
-			cmd->ret_outData = clb->CallLuaRules(cmd->data, cmd->inSize);
-			break;
-		}
+
+
+		// TODO: FIXME: should strcpy() this
+		// const char* outData = clb->CallLua ## HandleName ## (cmd->inData, cmd->inSize);
+		//
+		// if (outData != NULL)
+		//     strcpy((cmd->ret_outData = new char[strlen(outData) + 1]), outData);
+		// else
+		//     cmd->ret_outData = NULL;
+		//
+		#define SSAICALLBACK_CALL_LUA(HandleName, HANDLENAME)                                               \
+			case COMMAND_CALL_LUA_ ## HANDLENAME: {                                                         \
+				SCallLua ## HandleName ## Command* cmd = (SCallLua ## HandleName ## Command*) commandData;  \
+				cmd->ret_outData = clb->CallLua ## HandleName(cmd->inData, cmd->inSize);                    \
+			} break;
+
+		SSAICALLBACK_CALL_LUA(Rules, RULES)
+		SSAICALLBACK_CALL_LUA(UI, UI)
+
+		#undef SSAICALLBACK_CALL_LUA
 
 
 		case COMMAND_DRAWER_ADD_NOTIFICATION:
@@ -927,7 +940,7 @@ EXPORT(void) skirmishAiCallback_Log_log(int skirmishAIId, const char* const msg)
 	checkSkirmishAIId(skirmishAIId);
 
 	const CSkirmishAILibraryInfo* info = getSkirmishAILibraryInfo(skirmishAIId);
-	logOutput.Print("Skirmish AI <%s-%s>: %s", info->GetName().c_str(), info->GetVersion().c_str(), msg);
+	LOG("Skirmish AI <%s-%s>: %s", info->GetName().c_str(), info->GetVersion().c_str(), msg);
 }
 
 EXPORT(void) skirmishAiCallback_Log_exception(int skirmishAIId, const char* const msg, int severety, bool die) {
@@ -935,7 +948,7 @@ EXPORT(void) skirmishAiCallback_Log_exception(int skirmishAIId, const char* cons
 	checkSkirmishAIId(skirmishAIId);
 
 	const CSkirmishAILibraryInfo* info = getSkirmishAILibraryInfo(skirmishAIId);
-	logOutput.Print("Skirmish AI <%s-%s>: error, severety %i: [%s] %s",
+	LOG_L(L_ERROR, "Skirmish AI <%s-%s>: severety %i: [%s] %s",
 			info->GetName().c_str(), info->GetVersion().c_str(), severety,
 			(die ? "AI shutting down" : "AI still running"), msg);
 	if (die) {
@@ -1046,7 +1059,8 @@ EXPORT(bool) skirmishAiCallback_Cheats_setEnabled(int skirmishAIId, bool enabled
 
 	skirmishAIId_cheatingEnabled[skirmishAIId] = enabled;
 	if (enabled && !skirmishAIId_usesCheats[skirmishAIId]) {
-		logOutput.Print("SkirmishAI (ID = %i, team ID = %i) is using cheats!", skirmishAIId, skirmishAIId_teamId[skirmishAIId]);
+		LOG("SkirmishAI (ID = %i, team ID = %i) is using cheats!",
+				skirmishAIId, skirmishAIId_teamId[skirmishAIId]);
 		skirmishAIId_usesCheats[skirmishAIId] = true;
 	}
 	return (enabled == skirmishAiCallback_Cheats_isEnabled(skirmishAIId));
@@ -1525,7 +1539,7 @@ EXPORT(int) skirmishAiCallback_Map_getHeightMap(int skirmishAIId, float* heights
 EXPORT(int) skirmishAiCallback_Map_getCornersHeightMap(int skirmishAIId,
 		float* cornerHeights, int cornerHeights_sizeMax) {
 
-	static const int cornerHeights_sizeReal = (gs->mapx + 1) * (gs->mapy + 1);
+	static const int cornerHeights_sizeReal = gs->mapxp1 * gs->mapyp1;
 
 	int cornerHeights_size = cornerHeights_sizeReal;
 
@@ -1997,7 +2011,7 @@ EXPORT(const char*) skirmishAiCallback_UnitDef_getHumanName(int skirmishAIId, in
 }
 
 EXPORT(const char*) skirmishAiCallback_UnitDef_getFileName(int skirmishAIId, int unitDefId) {
-	return getUnitDefById(skirmishAIId, unitDefId)->filename.c_str();
+	return "$$deprecated$$";
 }
 
 //EXPORT(int) skirmishAiCallback_UnitDef_getId(int skirmishAIId, int unitDefId) {
@@ -2294,8 +2308,9 @@ EXPORT(float) skirmishAiCallback_UnitDef_getSlideTolerance(int skirmishAIId, int
 	return getUnitDefById(skirmishAIId, unitDefId)->slideTolerance;
 }
 
+// DEPRECATED
 EXPORT(float) skirmishAiCallback_UnitDef_getMaxSlope(int skirmishAIId, int unitDefId) {
-	return getUnitDefById(skirmishAIId, unitDefId)->maxSlope;
+	return 0.0f;
 }
 
 EXPORT(float) skirmishAiCallback_UnitDef_getMaxHeightDif(int skirmishAIId, int unitDefId) {
@@ -2691,8 +2706,8 @@ EXPORT(bool) skirmishAiCallback_UnitDef_isTargetingFacility(int skirmishAIId, in
 	return getUnitDefById(skirmishAIId, unitDefId)->targfac;
 }
 
-EXPORT(bool) skirmishAiCallback_UnitDef_isAbleToDGun(int skirmishAIId, int unitDefId) {
-	return getUnitDefById(skirmishAIId, unitDefId)->canDGun;
+EXPORT(bool) skirmishAiCallback_UnitDef_canManualFire(int skirmishAIId, int unitDefId) {
+	return getUnitDefById(skirmishAIId, unitDefId)->canManualFire;
 }
 
 EXPORT(bool) skirmishAiCallback_UnitDef_isNeedGeo(int skirmishAIId, int unitDefId) {
@@ -2786,10 +2801,6 @@ EXPORT(int) skirmishAiCallback_UnitDef_getFlareSalvoSize(int skirmishAIId, int u
 EXPORT(int) skirmishAiCallback_UnitDef_getFlareSalvoDelay(int skirmishAIId, int unitDefId) {
 	return getUnitDefById(skirmishAIId, unitDefId)->flareSalvoDelay;
 }
-
-//EXPORT(bool) skirmishAiCallback_UnitDef_isSmoothAnim(int skirmishAIId, int unitDefId) {
-//	return getUnitDefById(skirmishAIId, unitDefId)->smoothAnim;
-//}
 
 EXPORT(bool) skirmishAiCallback_UnitDef_isAbleToLoopbackAttack(int skirmishAIId, int unitDefId) {
 	return getUnitDefById(skirmishAIId, unitDefId)->canLoopbackAttack;
@@ -3026,7 +3037,9 @@ EXPORT(int) skirmishAiCallback_UnitDef_WeaponMount_getOnlyTargetCategory(int ski
 
 //########### BEGINN Unit
 EXPORT(int) skirmishAiCallback_Unit_getLimit(int skirmishAIId) {
-	return uh->MaxUnitsPerTeam();
+	const int team = skirmishAIId_teamId[skirmishAIId];
+	const int limit = teamHandler->Team(team)->maxUnits;
+	return limit;
 }
 
 EXPORT(int) skirmishAiCallback_Unit_getMax(int skirmishAIId) {
@@ -3253,7 +3266,7 @@ EXPORT(int) skirmishAiCallback_Unit_CurrentCommand_getType(int skirmishAIId, int
 EXPORT(int) skirmishAiCallback_Unit_CurrentCommand_getId(int skirmishAIId, int unitId, int commandId) {
 
 	const CCommandQueue* q = _intern_Unit_getCurrentCommandQueue(skirmishAIId, unitId);
-	return (CHECK_COMMAND_ID(q, commandId) ? q->at(commandId).id : 0);
+	return (CHECK_COMMAND_ID(q, commandId) ? q->at(commandId).GetID() : 0);
 }
 
 EXPORT(short) skirmishAiCallback_Unit_CurrentCommand_getOptions(int skirmishAIId, int unitId, int commandId) {
@@ -3569,7 +3582,7 @@ EXPORT(const char*) skirmishAiCallback_FeatureDef_getDescription(int skirmishAII
 }
 
 EXPORT(const char*) skirmishAiCallback_FeatureDef_getFileName(int skirmishAIId, int featureDefId) {
-	return getFeatureDefById(skirmishAIId, featureDefId)->filename.c_str();
+	return "$$deprecated$$";
 }
 
 //EXPORT(int) skirmishAiCallback_FeatureDef_getId(int skirmishAIId, int featureDefId) {
@@ -3807,7 +3820,7 @@ EXPORT(const char*) skirmishAiCallback_WeaponDef_getDescription(int skirmishAIId
 }
 
 EXPORT(const char*) skirmishAiCallback_WeaponDef_getFileName(int skirmishAIId, int weaponDefId) {
-	return getWeaponDefById(skirmishAIId, weaponDefId)->filename.c_str();
+	return "$$deprecated$$";
 }
 
 EXPORT(const char*) skirmishAiCallback_WeaponDef_getCegTag(int skirmishAIId, int weaponDefId) {
@@ -4424,7 +4437,7 @@ EXPORT(int) skirmishAiCallback_Group_OrderPreview_getId(int skirmishAIId, int gr
 
 	//TODO: need to add support for new gui
 	Command tmpCmd = guihandler->GetOrderPreview();
-	return tmpCmd.id;
+	return tmpCmd.GetID();
 }
 
 EXPORT(short) skirmishAiCallback_Group_OrderPreview_getOptions(int skirmishAIId, int groupId) {
@@ -4721,7 +4734,7 @@ static void skirmishAiCallback_init(SSkirmishAICallback* callback) {
 	callback->UnitDef_isAbleToKamikaze = &skirmishAiCallback_UnitDef_isAbleToKamikaze;
 	callback->UnitDef_getKamikazeDist = &skirmishAiCallback_UnitDef_getKamikazeDist;
 	callback->UnitDef_isTargetingFacility = &skirmishAiCallback_UnitDef_isTargetingFacility;
-	callback->UnitDef_isAbleToDGun = &skirmishAiCallback_UnitDef_isAbleToDGun;
+	callback->UnitDef_canManualFire = &skirmishAiCallback_UnitDef_canManualFire;
 	callback->UnitDef_isNeedGeo = &skirmishAiCallback_UnitDef_isNeedGeo;
 	callback->UnitDef_isFeature = &skirmishAiCallback_UnitDef_isFeature;
 	callback->UnitDef_isHideDamage = &skirmishAiCallback_UnitDef_isHideDamage;

@@ -5,7 +5,7 @@
 
 #include "ExternalAI/SkirmishAIData.h"
 
-#include "creg/creg_cond.h"
+#include "System/creg/creg_cond.h"
 
 #include <map>
 #include <set>
@@ -195,8 +195,6 @@ private:
 
 	bool gameInitialized;
 	std::set<std::string> luaAIShortNames;
-
-	static CSkirmishAIHandler* mySingleton;
 };
 
 #define skirmishAIHandler CSkirmishAIHandler::GetInstance()

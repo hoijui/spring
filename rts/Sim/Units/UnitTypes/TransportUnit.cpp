@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "TransportUnit.h"
 #include "Game/GameHelper.h"
 #include "Game/SelectedUnits.h"
@@ -21,7 +21,7 @@
 #include "System/EventHandler.h"
 #include "System/myMath.h"
 #include "System/creg/STL_List.h"
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 CR_BIND_DERIVED(CTransportUnit, CUnit, );
 
@@ -79,7 +79,7 @@ void CTransportUnit::Update()
 			if (ti->piece >= 0) {
 				const CMatrix44f& transMat = GetTransformMatrix(true);
 				const CMatrix44f& pieceMat = script->GetPieceMatrix(ti->piece);
-				const CMatrix44f  slaveMat = transMat.Mul(pieceMat);
+				const CMatrix44f slaveMat = pieceMat * transMat;
 
 				SyncedFloat3& xdir = transportee->rightdir;
 				SyncedFloat3& ydir = transportee->updir;
@@ -179,8 +179,7 @@ void CTransportUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker
 			// issue a move order so that unit won't try to return to pick-up pos in IdleCheck()
 			if (dynamic_cast<CTAAirMoveType*>(moveType) && u->unitDef->canmove) {
 				const float3& pos = u->pos;
-				Command c;
-				c.id = CMD_MOVE;
+				Command c(CMD_MOVE);
 				c.params.push_back(pos.x);
 				c.params.push_back(ground->GetHeightAboveWater(pos.x, pos.z));
 				c.params.push_back(pos.z);
@@ -204,9 +203,9 @@ void CTransportUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker
 
 
 
-bool CTransportUnit::CanTransport(const CUnit *unit) const
+bool CTransportUnit::CanTransport(const CUnit* unit) const
 {
-	if (unit->transporter)
+	if (unit->transporter != NULL)
 		return false;
 
 	if (!unit->unitDef->transportByEnemy && !teamHandler->AlliedTeams(unit->team, team))
@@ -255,7 +254,32 @@ bool CTransportUnit::CanTransport(const CUnit *unit) const
 
 void CTransportUnit::AttachUnit(CUnit* unit, int piece)
 {
-	DetachUnit(unit);
+	if (unit->transporter == this) {
+		// assume we are already transporting this unit,
+		// and just want to move it to a different piece
+		// with script logic (this means the UnitLoaded
+		// event is only sent once)
+		std::list<TransportedUnit>::iterator transporteesIt;
+
+		for (transporteesIt = transported.begin(); transporteesIt != transported.end(); ++transporteesIt) {
+			TransportedUnit& tu = *transporteesIt;
+
+			if (tu.unit == unit) {
+				tu.piece = piece;
+				break;
+			}
+		}
+
+		return;
+	} else {
+		// handle transfers from another transport to us
+		// (can still fail depending on CanTransport())
+		if (unit->transporter != NULL) {
+			unit->transporter->DetachUnit(unit);
+		}
+	}
+
+	// covers the case where unit->transporter != NULL
 	if (!CanTransport(unit)) {
 		return;
 	}
@@ -267,7 +291,7 @@ void CTransportUnit::AttachUnit(CUnit* unit, int piece)
 	unit->toBeTransported = false;
 
 	if (!unitDef->isFirePlatform) {
-		// make sure unit doesnt fire etc in transport
+		// make sure unit does not fire etc in transport
 		unit->stunned = true;
 		selectedUnits.RemoveUnit(unit);
 	}
@@ -299,7 +323,6 @@ void CTransportUnit::AttachUnit(CUnit* unit, int piece)
 	unit->UpdateTerrainType();
 
 	eventHandler.UnitLoaded(unit, this);
-
 	commandAI->BuggerOff(pos, -1.0f); // make sure not to get buggered off :) by transportee
 }
 
@@ -338,45 +361,51 @@ bool CTransportUnit::DetachUnitCore(CUnit* unit)
 			unit->UpdateTerrainType();
 
 			eventHandler.UnitUnloaded(unit, this);
-
 			return true;
 		}
 	}
+
 	return false;
 }
 
 
-void CTransportUnit::DetachUnit(CUnit* unit)
+bool CTransportUnit::DetachUnit(CUnit* unit)
 {
 	if (DetachUnitCore(unit)) {
 		unit->Block();
 
 		// erase command queue unless it's a wait command
 		const CCommandQueue& queue = unit->commandAI->commandQue;
-		if (queue.empty() || (queue.front().id != CMD_WAIT)) {
-			Command c;
-			c.id = CMD_STOP;
+		if (queue.empty() || (queue.front().GetID() != CMD_WAIT)) {
+			Command c(CMD_STOP);
 			unit->commandAI->GiveCommand(c);
 		}
+
+		return true;
 	}
+
+	return false;
 }
 
 
-void CTransportUnit::DetachUnitFromAir(CUnit* unit, float3 pos)
+bool CTransportUnit::DetachUnitFromAir(CUnit* unit, float3 pos)
 {
 	if (DetachUnitCore(unit)) {
 		unit->Drop(this->pos, this->frontdir, this);
 
 		//add an additional move command for after we land
 		if(unit->unitDef->canmove) {
-			Command c;
-			c.id = CMD_MOVE;
+			Command c(CMD_MOVE);
 			c.params.push_back(pos.x);
 			c.params.push_back(pos.y);
 			c.params.push_back(pos.z);
 			unit->commandAI->GiveCommand(c);
 		}
+
+		return true;
 	}
+
+	return false;
 }
 
 
@@ -424,10 +453,10 @@ float CTransportUnit::GetLoadUnloadHeight(const float3& wantedPos, const CUnit* 
 			// for transported structures, <wantedPos> must be free/buildable
 			// (note: TestUnitBuildSquare calls IsAllowedTerrainHeight again)
 			BuildInfo bi(unit->unitDef, wantedPos, unit->buildFacing);
-			bi.pos = helper->Pos2BuildPos(bi);
+			bi.pos = helper->Pos2BuildPos(bi, true);
 			CFeature* f = NULL;
 
-			if (isAllowedHeight && (!uh->TestUnitBuildSquare(bi, f, -1) || f != NULL))
+			if (isAllowedHeight && (!uh->TestUnitBuildSquare(bi, f, -1, true) || f != NULL))
 				isAllowedHeight = false;
 		}
 	}

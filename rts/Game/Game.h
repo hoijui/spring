@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __GAME_H__
-#define __GAME_H__
+#ifndef _GAME_H
+#define _GAME_H
 
 #include <time.h>
 #include <string>
@@ -9,23 +9,22 @@
 #include <set>
 
 #include "GameController.h"
-#include "creg/creg_cond.h"
-
-#include "lib/gml/gml.h"
+#include "System/creg/creg_cond.h"
 
 class CBaseWater;
 class CConsoleHistory;
-class CWordCompletion;
 class CKeySet;
 class CInfoConsole;
 class LuaParser;
 class LuaInputReceiver;
 class ILoadSaveHandler;
 class Action;
+class ISyncedActionExecutor;
+class IUnsyncedActionExecutor;
 class ChatMessage;
 class SkirmishAIData;
+class CWorldDrawer;
 
-const int MAX_CONSECUTIVE_SIMFRAMES = 15;
 
 class CGame : public CGameController
 {
@@ -33,12 +32,12 @@ private:
 	CR_DECLARE(CGame);	// Do not use CGame pointer in CR_MEMBER()!!!
 
 public:
-	void LoadGame(const std::string& mapname);
+	void LoadGame(const std::string& mapName);
 	void SetupRenderingParams();
 
 private:
 	void LoadDefs();
-	void LoadSimulation(const std::string& mapname);
+	void LoadSimulation(const std::string& mapName);
 	void LoadRendering();
 	void LoadInterface();
 	void LoadLua();
@@ -46,13 +45,13 @@ private:
 	void PostLoad();
 
 public:
-	CGame(const std::string& mapname, const std::string& modName, ILoadSaveHandler* saveFile);
+	CGame(const std::string& mapName, const std::string& modName, ILoadSaveHandler* saveFile);
 	virtual ~CGame();
 
 	bool Draw();
 	bool DrawMT();
 
-	static void DrawMTcb(void *c) {((CGame *)c)->DrawMT();}
+	static void DrawMTcb(void* c) { ((CGame *)c)->DrawMT(); }
 	bool Update();
 	/// Called when a key is released by the user
 	int KeyReleased(unsigned short k);
@@ -64,8 +63,8 @@ public:
 	bool ProcessCommandText(unsigned int key, const std::string& command);
 	bool ProcessKeyPressAction(unsigned int key, const Action& action);
 
-	bool ActionPressed(unsigned int key, const Action&, bool isRepeat);
-	bool ActionReleased(const Action&);
+	bool ActionPressed(unsigned int key, const Action& action, bool isRepeat);
+	bool ActionReleased(const Action& action);
 
 	bool HasLag() const;
 
@@ -117,7 +116,8 @@ public:
 	bool showFPS;
 	bool showClock;
 	bool showSpeed;
-	bool showMTInfo;
+	int showMTInfo;
+	int mtInfoCtrl;
 	/// Prevents spectator msgs from being seen by players
 	bool noSpectatorChat;
 	volatile bool finishedLoading;
@@ -125,17 +125,15 @@ public:
 	unsigned char gameID[16];
 
 	CInfoConsole* infoConsole;
-
-	void MakeMemDump(void);
-
 	CConsoleHistory* consoleHistory;
-	CWordCompletion* wordCompletion;
 
 	void SetHotBinding(const std::string& action) { hotBinding = action; }
 
-private:
+public:
 	/// Save the game state to file.
 	void SaveGame(const std::string& filename, bool overwrite);
+	void DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod);
+
 	/// Re-load the game.
 	void ReloadGame();
 	/// Send a message to other players (allows prefixed messages with e.g. "a:...")
@@ -144,7 +142,7 @@ private:
 	void HandleChatMsg(const ChatMessage& msg);
 
 	/// synced actions (received from server) go in here
-	void ActionReceived(const Action&, int playernum);
+	void ActionReceived(const Action& action, int playerID);
 
 	void DrawInputText();
 	void ParseInputTextGeometry(const std::string& geo);
@@ -154,6 +152,7 @@ private:
 
 	void ReColorTeams();
 
+public:
 	void ReloadCOB(const std::string& msg, int player);
 	void ReloadCEGs(const std::string& tag);
 
@@ -161,6 +160,7 @@ private:
 	void DrawSkip(bool blackscreen = true);
 	void EndSkip();
 
+public:
 	std::string hotBinding;
 	float inputTextPosX;
 	float inputTextPosY;
@@ -183,14 +183,13 @@ public:
 		return playerTraffic;
 	}
 
-private:
+public:
 	void AddTraffic(int playerID, int packetCode, int length);
 	// <playerID, <packetCode, total bytes> >
 	std::map<int, PlayerTrafficInfo> playerTraffic;
 
 	void ClientReadNet();
 	void UpdateUI(bool cam);
-	bool DrawWorld();
 
 	void SimFrame();
 	void StartPlaying();
@@ -210,16 +209,23 @@ private:
 	float skipOldUserSpeed;
 	unsigned skipLastDraw;
 
+	/**
+	 * @see CGameServer#speedControl
+	 */
 	int speedControl;
-	int luaDrawTime;
+	int luaLockTime;
+	int luaExportSize;
 
 
 	/// for reloading the savefile
 	ILoadSaveHandler* saveFile;
+
+private:
+	CWorldDrawer* worldDrawer;
 };
 
 
 extern CGame* game;
 
 
-#endif // __GAME_H__
+#endif // _GAME_H

@@ -10,6 +10,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Game/GameHelper.h"
 #include "Game/GameSetup.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/Player.h"
 #include "Game/PlayerHandler.h"
 #include "Sim/Units/Unit.h"
@@ -17,14 +18,13 @@
 #include "Sim/Misc/Team.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
-#include "NetProtocol.h"
-#include "GlobalUnsynced.h"
-#include "ConfigHandler.h"
-#include "LogOutput.h"
-#include "Util.h"
-#include "TimeProfiler.h"
+#include "System/NetProtocol.h"
+#include "System/ConfigHandler.h"
+#include "System/Log/ILog.h"
+#include "System/Util.h"
+#include "System/TimeProfiler.h"
 
-#include "creg/STL_Map.h"
+#include "System/creg/STL_Map.h"
 
 
 CR_BIND_DERIVED(CEngineOutHandler, CObject, )
@@ -66,9 +66,9 @@ void CEngineOutHandler::HandleAIException(const char* description) {
 
 	if (CEngineOutHandler::IsCatchExceptions()) {
 		if (description) {
-			logOutput.Print("AI Exception: \'%s\'", description);
+			LOG_L(L_ERROR, "AI Exception: \'%s\'", description);
 		} else {
-			logOutput.Print("AI Exception");
+			LOG_L(L_ERROR, "AI Exception");
 		}
 //		exit(-1);
 	}
@@ -491,10 +491,58 @@ void CEngineOutHandler::CommandFinished(const CUnit& unit, const Command& comman
 	DO_FOR_TEAM_SKIRMISH_AIS(CommandFinished(unitId, command.aiCommandId, aiCommandTopicId), teamId);
 }
 
-void CEngineOutHandler::GotChatMsg(const char* msg, int fromPlayerId) {
+void CEngineOutHandler::SendChatMessage(const char* msg, int fromPlayerId) {
 	AI_EVT_MTH();
 
-	DO_FOR_SKIRMISH_AIS(GotChatMsg(msg, fromPlayerId))
+	DO_FOR_SKIRMISH_AIS(SendChatMessage(msg, fromPlayerId))
+}
+
+bool CEngineOutHandler::SendLuaMessages(int aiTeam, const char* inData, std::vector<const char*>& outData) {
+	SCOPED_TIMER("AI Total");
+
+	if (id_skirmishAI.empty()) {
+		return false;
+	}
+
+	id_ai_t::iterator it;
+	unsigned int n = 0;
+
+	if (aiTeam != -1) {
+		// get the AI's for team <aiTeam>
+		const team_ais_t::iterator aiTeamIter = team_skirmishAIs.find(aiTeam);
+
+		if (aiTeamIter == team_skirmishAIs.end()) {
+			return false;
+		}
+
+		// get the vector of ID's for the AI's
+		ids_t& aiIDs = aiTeamIter->second;
+		ids_t::iterator aiIDsIter;
+
+		outData.resize(aiIDs.size(), "");
+
+		// send only to AI's in team <aiTeam>
+		for (aiIDsIter = aiIDs.begin(); aiIDsIter != aiIDs.end(); ++aiIDsIter) {
+			const size_t aiID = aiIDs[*aiIDsIter];
+
+			CSkirmishAIWrapper* wrapperAI = id_skirmishAI[aiID];
+			wrapperAI->SendLuaMessage(inData, &outData[n++]);
+		}
+	} else {
+		outData.resize(id_skirmishAI.size(), "");
+
+		// broadcast to all AI's across all teams
+		//
+		// since neither AI ID's nor AI teams are
+		// necessarily consecutive, store responses
+		// in calling order
+		for (it = id_skirmishAI.begin(); it != id_skirmishAI.end(); ++it) {
+			CSkirmishAIWrapper* wrapperAI = it->second;
+			wrapperAI->SendLuaMessage(inData, &outData[n++]);
+		}
+	}
+
+	return true;
 }
 
 
@@ -509,7 +557,7 @@ void CEngineOutHandler::CreateSkirmishAI(const size_t skirmishAIId) {
 	/*bool weDoPause = !gs->paused;
 	if (weDoPause) {
 		const std::string& myPlayerName = playerHandler->Player(gu->myPlayerNum)->name;
-		logOutput.Print(
+		LOG(
 				"Player %s (auto)-paused the game for letting Skirmish AI"
 				" %s initialize for controlling team %i.%s",
 				myPlayerName.c_str(), key.GetShortName().c_str(), teamId,

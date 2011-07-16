@@ -92,18 +92,41 @@
 #define INTERNAL_ORDER  (DONT_REPEAT)
 
 
+namespace springLegacyAI {
+
 struct Command
 {
 private:
 	CR_DECLARE_STRUCT(Command);
 
 public:
-	Command():
-		id(0),
-		aiCommandId(-1),
-		options(0),
-		tag(0),
-		timeOut(INT_MAX) {}
+	Command(const int cmdID)
+		: id(cmdID)
+		, aiCommandId(-1)
+		, options(0)
+		, tag(0)
+		, timeOut(INT_MAX)
+	{}
+
+	Command(const int cmdID, const unsigned char cmdOptions)
+		: id(cmdID)
+		, aiCommandId(-1)
+		, options(cmdOptions)
+		, tag(0)
+		, timeOut(INT_MAX)
+	{}
+
+	Command()
+		: id(0)
+		, aiCommandId(-1)
+		, options(0)
+		, tag(0)
+		, timeOut(INT_MAX)
+	{}
+
+	~Command() {
+		params.clear();
+	}
 
 	bool IsAreaCommand() const {
 		if (id == CMD_REPAIR ||
@@ -124,21 +147,29 @@ public:
 		return false;
 	}
 
+	/// adds a value to this commands parameter list
+	void AddParam(float par) {
+		params.push_back(par);
+	}
+
+	void SetID(int id) { this->id = id; params.clear(); }
+	const int& GetID() const { return id; }
+
+public:
 	/// CMD_xxx code  (custom codes can also be used)
 	int id;
+
 	/**
 	 * AI Command callback id (passed in on handleCommand, returned
 	 * in CommandFinished event)
 	 */
 	int aiCommandId;
+
 	/// option bits
 	unsigned char options;
+
 	/// command parameters
 	std::vector<float> params;
-	/// adds a value to this commands parameter list
-	void AddParam(float par) {
-		params.push_back(par);
-	}
 
 	/// unique id within a CCommandQueue
 	unsigned int tag;
@@ -197,5 +228,6 @@ public:
 	std::vector<std::string> params;
 };
 
+} // namespace springLegacyAI
 
 #endif // COMMAND_H

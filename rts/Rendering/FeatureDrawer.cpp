@@ -1,18 +1,20 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include "FeatureDrawer.h"
 
 #include "Game/Camera.h"
+#include "Game/GlobalUnsynced.h"
 #include "Lua/LuaRules.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/FarTextureHandler.h"
+#include "Rendering/Env/BaseSky.h"
+#include "Rendering/Env/ITreeDrawer.h"
 #include "Rendering/Env/BaseWater.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
 #include "Rendering/GL/glExtra.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
@@ -27,7 +29,6 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "System/ConfigHandler.h"
 #include "System/EventHandler.h"
-#include "System/GlobalUnsynced.h"
 #include "System/myMath.h"
 #include "System/Util.h"
 
@@ -86,7 +87,9 @@ CFeatureDrawer::~CFeatureDrawer()
 void CFeatureDrawer::RenderFeatureCreated(const CFeature* feature)
 {
 	CFeature* f = const_cast<CFeature*>(feature);
-#if defined(USE_GML) && GML_ENABLE_SIM
+	texturehandlerS3O->UpdateDraw();
+
+#if defined(USE_GML) && GML_ENABLE_SIM && !GML_SHARE_LISTS
 	if(f->model && TEX_TYPE(f) < 0)
 		TEX_TYPE(f) = texturehandlerS3O->LoadS3OTextureNow(f->model);
 #endif
@@ -157,7 +160,7 @@ void CFeatureDrawer::Update()
 }
 
 
-void CFeatureDrawer::UpdateDrawPos(CFeature* f)
+inline void CFeatureDrawer::UpdateDrawPos(CFeature* f)
 {
 //#if defined(USE_GML) && GML_ENABLE_SIM
 //	f->drawPos = f->pos + (f->speed * ((float)globalRendering->lastFrameStart - (float)f->lastUnitUpdate) * globalRendering->weightedSpeedFactor);
@@ -170,10 +173,7 @@ void CFeatureDrawer::UpdateDrawPos(CFeature* f)
 
 void CFeatureDrawer::Draw()
 {
-	if(globalRendering->drawFog) {
-		glEnable(GL_FOG);
-		glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
-	}
+	IBaseSky::SetFog();
 
 	GML_RECMUTEX_LOCK(feat); // Draw
 
@@ -229,7 +229,7 @@ void CFeatureDrawer::DrawOpaqueFeatures(int modelType)
 	FeatureSet::iterator featureSetIt;
 
 	for (featureBinIt = featureBin.begin(); featureBinIt != featureBin.end(); ++featureBinIt) {
-		if (modelType == MODELTYPE_S3O || modelType == MODELTYPE_OBJ || modelType == MODELTYPE_ASS) {
+		if (modelType != MODELTYPE_3DO) {
 			texturehandlerS3O->SetS3oTexture(featureBinIt->first);
 		}
 
@@ -266,7 +266,7 @@ void CFeatureDrawer::DrawFeatureStatBars(const CFeature* feature)
 
 	glPushMatrix();
 	glTranslatef(interPos.x, interPos.y, interPos.z);
-	glCallList(CCamera::billboardList);
+	glMultMatrixf(camera->GetBillBoardMatrix());
 
 	const float recl = feature->reclaimLeft;
 	const float rezp = feature->resurrectProgress;
@@ -337,10 +337,7 @@ void CFeatureDrawer::DrawFadeFeatures(bool noAdvShading)
 		glEnable(GL_ALPHA_TEST);
 		glAlphaFunc(GL_GREATER, 0.5f);
 
-		if (globalRendering->drawFog) {
-			glEnable(GL_FOG);
-			glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
-		}
+		IBaseSky::SetFog();
 
 		{
 			GML_RECMUTEX_LOCK(feat); // DrawFadeFeatures
@@ -371,7 +368,7 @@ void CFeatureDrawer::DrawFadeFeaturesHelper(int modelType) {
 		FeatureRenderBin& featureBin = cloakedModelRenderers[modelType]->GetFeatureBinMutable();
 
 		for (FeatureRenderBinIt it = featureBin.begin(); it != featureBin.end(); ++it) {
-			if (modelType == MODELTYPE_S3O || modelType == MODELTYPE_OBJ || modelType == MODELTYPE_ASS) {
+			if (modelType != MODELTYPE_3DO) {
 				texturehandlerS3O->SetS3oTexture(it->first);
 			}
 
@@ -385,7 +382,7 @@ void CFeatureDrawer::DrawFadeFeaturesSet(FeatureSet& fadeFeatures, int modelType
 	for (FeatureSet::iterator fi = fadeFeatures.begin(); fi != fadeFeatures.end(); ) {
 		const float cols[] = {1.0f, 1.0f, 1.0f, fi->second};
 
-		if (modelType == MODELTYPE_S3O) {
+		if (modelType != MODELTYPE_3DO) {
 			glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, cols);
 		}
 
@@ -406,7 +403,6 @@ void CFeatureDrawer::DrawFadeFeaturesSet(FeatureSet& fadeFeatures, int modelType
 
 void CFeatureDrawer::DrawShadowPass()
 {
-	glDisable(GL_CULL_FACE); //FIXME: enable culling for s3o models
 	glPolygonOffset(1.0f, 1.0f);
 	glEnable(GL_POLYGON_OFFSET_FILL);
 
@@ -436,7 +432,14 @@ void CFeatureDrawer::DrawShadowPass()
 		// (we are just interested in the 255 alpha here)
 		glBindTexture(GL_TEXTURE_2D, 0);
 
-		for (int modelType = MODELTYPE_3DO; modelType < MODELTYPE_OTHER; modelType++) {
+		// 3DO's have clockwise-wound faces and
+		// (usually) holes, so disable backface
+		// culling for them
+		glDisable(GL_CULL_FACE);
+		DrawOpaqueFeatures(MODELTYPE_3DO);
+		glEnable(GL_CULL_FACE);
+
+		for (int modelType = MODELTYPE_S3O; modelType < MODELTYPE_OTHER; modelType++) {
 			DrawOpaqueFeatures(modelType);
 		}
 
@@ -447,7 +450,6 @@ void CFeatureDrawer::DrawShadowPass()
 	po->Disable();
 
 	glDisable(GL_POLYGON_OFFSET_FILL);
-	glEnable(GL_CULL_FACE);
 }
 
 
@@ -490,7 +492,7 @@ public:
 							camera->pos * (f->midPos.y / dif) +
 							f->midPos * (-camera->pos.y / dif);
 					}
-					if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z) > f->drawRadius) {
+					if (ground->GetApproximateHeight(zeroPos.x, zeroPos.z, false) > f->drawRadius) {
 						continue;
 					}
 				}

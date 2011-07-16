@@ -1,11 +1,11 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <assert.h>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "ProfileDrawer.h"
-#include "TimeProfiler.h"
+#include "System/TimeProfiler.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/glFont.h"
 #include "Rendering/GL/VertexArray.h"
@@ -13,17 +13,21 @@
 
 ProfileDrawer* ProfileDrawer::instance = NULL;
 
-void ProfileDrawer::Enable()
+void ProfileDrawer::SetEnabled(bool enable)
 {
-	assert(instance == NULL);
-	instance = new ProfileDrawer();
+	if (enable) {
+		assert(instance == NULL);
+		instance = new ProfileDrawer();
+	} else {
+		ProfileDrawer* tmpInstance = instance;
+		instance = NULL;
+		delete tmpInstance;
+	}
 }
 
-
-void ProfileDrawer::Disable()
+bool ProfileDrawer::IsEnabled()
 {
-	delete instance;
-	instance = NULL;
+	return (instance != NULL);
 }
 
 static const float start_x = 0.6f;
@@ -55,11 +59,13 @@ void ProfileDrawer::Draw()
 	for (pi = profiler.profile.begin(); pi != profiler.profile.end(); ++pi, ++y) {
 #if GML_MUTEX_PROFILER
 		if (pi->first.size()<5 || pi->first.substr(pi->first.size()-5,5).compare("Mutex")!=0) { --y; continue; }
+		const float fStartY = start_y - y * 0.020f;
+#else
+		const float fStartY = start_y - y * 0.024f;
 #endif
 		const float s = ((float)pi->second.total) / 1000.0f;
 		const float p = pi->second.percent * 100;
 		float fStartX = start_x + 0.005f + 0.015f + 0.005f;
-		const float fStartY = start_y - y * 0.024f;
 
 		// print total-time running since application start
 		fStartX += 0.09f;

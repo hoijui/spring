@@ -1,16 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "DirtProjectile.h"
 #include "Game/Camera.h"
+#include "Game/GlobalUnsynced.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ProjectileDrawer.hpp"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
-#include "System/GlobalUnsynced.h"
 
 CR_BIND_DERIVED(CDirtProjectile, CProjectile, );
 
@@ -68,7 +68,7 @@ void CDirtProjectile::Update()
 	alpha -= alphaFalloff;
 	size += sizeExpansion;
 
-	if (ground->GetApproximateHeight(pos.x, pos.z) - 40 > pos.y) {
+	if (ground->GetApproximateHeight(pos.x, pos.z, false) - 40 > pos.y) {
 		deleteMe = true;
 	}
 	if (alpha <= 0) {

@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Rifle.h"
 #include "WeaponDefHandler.h"
@@ -11,7 +11,7 @@
 #include "Sim/Projectiles/Unsynced/SmokeProjectile.h"
 #include "Sim/Projectiles/Unsynced/TracerProjectile.h"
 #include "Sim/Units/Unit.h"
-#include "Sync/SyncTracer.h"
+#include "System/Sync/SyncTracer.h"
 #include "System/myMath.h"
 
 CR_BIND_DERIVED(CRifle, CWeapon, (NULL));
@@ -65,9 +65,9 @@ bool CRifle::TryTarget(const float3 &pos, bool userTarget, CUnit* unit)
 
 	dir /= length;
 
-	const float g = ground->LineGroundCol(weaponMuzzlePos, pos);
-	if (g > 0 && g < length * 0.9f)
+	if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
 		return false;
+	}
 
 	const float spread =
 		(accuracy + sprayAngle) *

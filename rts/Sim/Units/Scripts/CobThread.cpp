@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <sstream>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "CobThread.h"
 #include "CobFile.h"
@@ -204,7 +204,7 @@ const int DROP   = 0x10084000;
 
 int CCobThread::POP(void)
 {
-	if (stack.size() > 0) {
+	if (!stack.empty()) {
 		int r = stack.back();
 		stack.pop_back();
 		return r;
@@ -213,24 +213,22 @@ int CCobThread::POP(void)
 		return 0;
 }
 
-//Returns -1 if this thread is dead and needs to be killed
-int CCobThread::Tick(int deltaTime)
+// Returns false if this thread is dead and needs to be killed
+bool CCobThread::Tick(int deltaTime)
 {
 	if (state == Sleep) {
 		logOutput.Print("CobError: sleeping thread ticked!");
 	}
 	if (state == Dead || !owner) {
-		return -1;
+		return false;
 	}
 
 	state = Run;
 
 	int r1, r2, r3, r4, r5, r6;
 	vector<int> args;
-	CCobThread *thread;
 
 	execTrace.clear();
-	delayedAnims.clear();
 	//list<int>::iterator ei;
 	vector<int>::iterator ei;
 
@@ -267,7 +265,7 @@ int CCobThread::Tick(int deltaTime)
 				if (COB_DEBUG_FILTER)
 					logOutput.Print("%s sleeping for %d ms", script.scriptNames[callStack.back().functionId].c_str(), r1);
 #endif
-				return 0;
+				return true;
 			case SPIN:
 				r1 = GET_LONG_PC();
 				r2 = GET_LONG_PC();
@@ -294,7 +292,7 @@ int CCobThread::Tick(int deltaTime)
 					state = Dead;
 					//callStack.pop_back();
 					//Leave values intact on stack in case caller wants to check them
-					return -1;
+					return false;
 				}
 
 				PC = callStack.back().returnAddr;
@@ -368,7 +366,7 @@ int CCobThread::Tick(int deltaTime)
 			case POP_STACK:
 				POP();
 				break;
-			case START:
+			case START: {
 				r1 = GET_LONG_PC();
 				r2 = GET_LONG_PC();
 
@@ -384,7 +382,7 @@ int CCobThread::Tick(int deltaTime)
 					args.push_back(r4);
 				}
 
-				thread = new CCobThread(script, owner);
+				CCobThread* thread = new CCobThread(script, owner);
 				thread->Start(r1, args, true);
 
 				//Seems that threads should inherit signal mask from creator
@@ -395,7 +393,7 @@ int CCobThread::Tick(int deltaTime)
 					logOutput.Print("Starting %s %d", script.scriptNames[r1].c_str(), signalMask);
 #endif
 
-				break;
+			} break;
 			case CREATE_LOCAL_VAR:
 				if (paramCount == 0) {
 					stack.push_back(0);
@@ -410,7 +408,6 @@ int CCobThread::Tick(int deltaTime)
 					stack.push_back(luaArgs[r1 - LUA0]);
 					break;
 				}
-				ForceCommitAllAnims();			// getunitval could possibly read piece locations
 				r1 = owner->GetUnitVal(r1, 0, 0, 0, 0);
 				stack.push_back(r1);
 				break;
@@ -549,7 +546,6 @@ int CCobThread::Tick(int deltaTime)
 				r3 = GET_LONG_PC();
 				r4 = GET_LONG_PC();
 				//logOutput.Print("Turning piece %s axis %d to %d speed %d", script.pieceNames[r3].c_str(), r4, r2, r1);
-				ForceCommitAnim(1, r3, r4);
 				owner->Turn(r3, r4, r1, r2);
 				break;
 			case GET:
@@ -562,7 +558,6 @@ int CCobThread::Tick(int deltaTime)
 					stack.push_back(luaArgs[r1 - LUA0]);
 					break;
 				}
-				ForceCommitAllAnims();
 				r6 = owner->GetUnitVal(r1, r2, r3, r4, r5);
 				stack.push_back(r6);
 				break;
@@ -603,46 +598,19 @@ int CCobThread::Tick(int deltaTime)
 				r2 = GET_LONG_PC();
 				r4 = POP();
 				r3 = POP();
-				ForceCommitAnim(2, r1, r2);
 				owner->Move(r1, r2, r3, r4);
 				break;
 			case MOVE_NOW:{
 				r1 = GET_LONG_PC();
 				r2 = GET_LONG_PC();
 				r3 = POP();
-
-				if (owner->smoothAnim) {
-					DelayedAnim a;
-					a.type = 2;
-					a.piece = r1;
-					a.axis = r2;
-					a.dest = r3;
-					delayedAnims.push_back(a);
-
-					//logOutput.Print("Delayed move %s %d %d", owner->pieces[r1].name.c_str(), r2, r3);
-				}
-				else {
-					owner->MoveNow(r1, r2, r3);
-				}
-
+				owner->MoveNow(r1, r2, r3);
 				break;}
 			case TURN_NOW:{
 				r1 = GET_LONG_PC();
 				r2 = GET_LONG_PC();
 				r3 = POP();
-
-				if (owner->smoothAnim) {
-					DelayedAnim a;
-					a.type = 1;
-					a.piece = r1;
-					a.axis = r2;
-					a.dest = r3;
-					delayedAnims.push_back(a);
-				}
-				else {
-					owner->TurnNow(r1, r2, r3);
-				}
-
+				owner->TurnNow(r1, r2, r3);
 				break;}
 			case WAIT_TURN:
 				r1 = GET_LONG_PC();
@@ -650,7 +618,7 @@ int CCobThread::Tick(int deltaTime)
 				//logOutput.Print("Waiting for turn on piece %s around axis %d", script.pieceNames[r1].c_str(), r2);
 				if (owner->AddAnimListener(CCobInstance::ATurn, r1, r2, this)) {
 					state = WaitTurn;
-					return 0;
+					return true;
 				}
 				else
 					break;
@@ -660,7 +628,7 @@ int CCobThread::Tick(int deltaTime)
 				//logOutput.Print("Waiting for move on piece %s on axis %d", script.pieceNames[r1].c_str(), r2);
 				if (owner->AddAnimListener(CCobInstance::AMove, r1, r2, this)) {
 					state = WaitMove;
-					return 0;
+					return true;
 				}
 				break;
 			case SET:
@@ -744,11 +712,11 @@ int CCobThread::Tick(int deltaTime)
 					++ei;
 				}
 				state = Dead;
-				return -1;
+				return false;
 		}
 	}
 
-	return 0;
+	return true;
 }
 
 // Shows an errormessage which includes the current state of the script interpreter
@@ -757,7 +725,7 @@ void CCobThread::ShowError(const string& msg)
 	static int spamPrevention = 100;
 	if (spamPrevention < 0) return;
 	--spamPrevention;
-	if (callStack.size() == 0)
+	if (callStack.empty())
 		logOutput.Print("CobError: %s outside script execution (?)", msg.c_str());
 	else
 		logOutput.Print("CobError: %s (in %s:%s at %x)", msg.c_str(), script.name.c_str(), script.scriptNames[callStack.back().functionId].c_str(), PC - 1);
@@ -843,70 +811,6 @@ void CCobThread::DependentDied(CObject* o)
 	if(o==owner)
 		owner=0;
 }
-
-void CCobThread::CommitAnims(int deltaTime)
-{
-	for (vector<DelayedAnim>::iterator anim = delayedAnims.begin(); anim != delayedAnims.end(); ++anim) {
-
-		//Only consider smoothing when the thread is sleeping for a short while, but not too short
-		int delta = wakeTime - GCurrentTime;
-		bool smooth = (state == Sleep) && (delta < 300) && (delta > deltaTime);
-
-//		logOutput.Print("Commiting %s type %d %d", owner->pieces[anim->piece].name.c_str(), smooth, anim->dest);
-
-		switch (anim->type) {
-			case 1:
-				if (smooth)
-					owner->TurnSmooth(anim->piece, anim->axis, anim->dest, delta, deltaTime);
-				else
-					owner->TurnNow(anim->piece, anim->axis, anim->dest);
-				break;
-			case 2:
-				if (smooth)
-					owner->MoveSmooth(anim->piece, anim->axis, anim->dest, delta, deltaTime);
-				else
-					owner->MoveNow(anim->piece, anim->axis, anim->dest);
-				break;
-		}
-	}
-	delayedAnims.clear();
-}
-
-void CCobThread::ForceCommitAnim(int type, int piece, int axis)
-{
-	for (vector<DelayedAnim>::iterator anim = delayedAnims.begin(); anim != delayedAnims.end(); ++anim) {
-		if ((anim->type == type) && (anim->piece == piece) && (anim->axis == axis)) {
-			switch (type) {
-				case 1:
-					owner->TurnNow(piece, axis, anim->dest);
-					break;
-				case 2:
-					owner->MoveNow(piece, axis, anim->dest);
-					break;
-			}
-
-			//Remove it so it does not interfere later
-			delayedAnims.erase(anim);
-			return;
-		}
-	}
-}
-
-void CCobThread::ForceCommitAllAnims()
-{
-	for (vector<DelayedAnim>::iterator anim = delayedAnims.begin(); anim != delayedAnims.end(); ++anim) {
-		switch (anim->type) {
-			case 1:
-				owner->TurnNow(anim->piece, anim->axis, anim->dest);
-				break;
-			case 2:
-				owner->MoveNow(anim->piece, anim->axis, anim->dest);
-				break;
-		}
-	}
-	delayedAnims.clear();
-}
-
 
 /******************************************************************************/
 

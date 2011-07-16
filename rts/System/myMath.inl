@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 //                  F(N=2) = H(-32768 / 32767)
-// 
+//
 //                         ^
 //                         |
 //                         |
@@ -9,7 +9,7 @@
 //                         |
 //                         |
 //                         v
-// 
+//
 //                  F(S=0) = H(0)
 inline short int GetHeadingFromFacing(int facing)
 {
@@ -145,34 +145,46 @@ inline float Square(const float x)
 
 inline int Round(const float f)
 {
-	return floor(f + 0.5f);
-}
-
-inline float Clamp(const float& v, const float& min, const float& max)
-{
-	return std::min(max, std::max(min, v));
+	return math::floor(f + 0.5f);
 }
 
 template<class T>
 inline T Clamp(const T& v, const T& min, const T& max)
 {
-	return v < min ? min : (v > max ? max : v);
+	return std::min(max, std::max(min, v));
 }
 
 inline float ClampRad(float f)
 {
-	f = fmod(f, TWOPI);
+	f = math::fmod(f, TWOPI);
 	if (f < 0.0f) f += TWOPI;
 	return f;
 }
 
 inline void ClampRad(float* f)
 {
-	*f = fmod(*f, TWOPI);
+	*f = math::fmod(*f, TWOPI);
 	if (*f < 0.0f) *f += TWOPI;
 }
 
 inline bool RadsAreEqual(const float f1, const float f2)
 {
-	return (fmod(f1 - f2, TWOPI) == 0.0f);
+	return (math::fmod(f1 - f2, TWOPI) == 0.0f);
+}
+
+inline float GetRadFromXY(const float dx, const float dy)
+{
+	float a;
+	if(dx != 0) {
+		a = math::atan(dy / dx);
+		if(dx < 0)
+			a += PI;
+		else if(dy < 0)
+			a += 2.0f * PI;
+		return a;
+	}
+	a = PI / 2.0f;
+	if(dy < 0)
+		a += PI;
+	return a;
 }

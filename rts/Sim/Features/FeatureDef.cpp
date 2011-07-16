@@ -3,6 +3,7 @@
 #include "FeatureDef.h"
 #include "Rendering/Models/IModelParser.h"
 #include "Sim/Misc/CollisionVolume.h"
+#include "System/EventHandler.h"
 
 CR_BIND(FeatureDef, );
 
@@ -39,7 +40,6 @@ FeatureDef::FeatureDef()
 	, maxHealth(0)
 	, reclaimTime(0)
 	, mass(0)
-	, upright(false)
 	, drawType(0)
 	, model(NULL)
 	, resurrectable(false)
@@ -52,6 +52,7 @@ FeatureDef::FeatureDef()
 	, floating(false)
 	, noSelect(false)
 	, geoThermal(false)
+	, upright(false)
 	, xsize(0)
 	, zsize(0)
 {
@@ -66,9 +67,10 @@ FeatureDef::~FeatureDef() {
 
 S3DModel* FeatureDef::LoadModel() const
 {
-	if (this->model == NULL) {
+	if (this->model == NULL)
 		this->model = modelParser->Load3DModel(modelname);
-	}
+	else
+		eventHandler.LoadedModelRequested();
 
 	return (this->model);
 }

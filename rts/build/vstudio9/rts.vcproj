@@ -947,6 +947,22 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\Game\InMapDrawModel.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\Game\InMapDrawModel.h"
+				>
+			</File>
+			<File
+				RelativePath="..\..\Game\InMapDraw.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\Game\InMapDraw.h"
+				>
+			</File>
+			<File
 				RelativePath="..\..\Game\DummyVideoCapturing.h"
 				>
 			</File>
@@ -1955,11 +1971,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\..\Rendering\InMapDraw.cpp"
+				RelativePath="..\..\Rendering\InMapDrawView.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\..\Rendering\InMapDraw.h"
+				RelativePath="..\..\Rendering\InMapDrawView.h"
 				>
 			</File>
 			<File
@@ -2070,11 +2086,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\..\Rendering\Env\BaseTreeDrawer.cpp"
+					RelativePath="..\..\Rendering\Env\ITreeDrawer.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\Rendering\Env\BaseTreeDrawer.h"
+					RelativePath="..\..\Rendering\Env\ITreeDrawer.h"
 					>
 				</File>
 				<File
@@ -4254,15 +4270,15 @@
 				Name="FileSystem"
 				>
 				<File
-					RelativePath="..\..\System\FileSystem\Archive7Zip.cpp"
+					RelativePath="..\..\System\FileSystem\SevenZipArchive.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\Archive7Zip.h"
+					RelativePath="..\..\System\FileSystem\SevenZipArchive.h"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveBase.cpp"
+					RelativePath="..\..\System\FileSystem\IArchive.cpp"
 					>
 					<FileConfiguration
 						Name="Debug|Win32"
@@ -4314,23 +4330,23 @@
 					</FileConfiguration>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveBase.h"
+					RelativePath="..\..\System\FileSystem\IArchive.h"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveBuffered.cpp"
+					RelativePath="..\..\System\FileSystem\BufferedArchive.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveBuffered.h"
+					RelativePath="..\..\System\FileSystem\BufferedArchive.h"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveDir.cpp"
+					RelativePath="..\..\System\FileSystem\DirArchive.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveDir.h"
+					RelativePath="..\..\System\FileSystem\DirArchive.h"
 					>
 				</File>
 				<File
@@ -4342,19 +4358,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveHPI.cpp"
+					RelativePath="..\..\System\FileSystem\PoolArchive.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveHPI.h"
-					>
-				</File>
-				<File
-					RelativePath="..\..\System\FileSystem\ArchivePool.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\..\System\FileSystem\ArchivePool.h"
+					RelativePath="..\..\System\FileSystem\PoolArchive.h"
 					>
 				</File>
 				<File
@@ -4414,11 +4422,11 @@
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveZip.cpp"
+					RelativePath="..\..\System\FileSystem\ZipArchive.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\FileSystem\ArchiveZip.h"
+					RelativePath="..\..\System\FileSystem\ZipArchive.h"
 					>
 				</File>
 				<File
@@ -4976,11 +4984,11 @@
 				Name="Platform"
 				>
 				<File
-					RelativePath="..\..\System\Platform\BaseCmd.cpp"
+					RelativePath="..\..\System\Platform\CmdLineParams.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\System\Platform\BaseCmd.h"
+					RelativePath="..\..\System\Platform\CmdLineParams.h"
 					>
 				</File>
 				<File

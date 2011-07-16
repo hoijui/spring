@@ -137,8 +137,9 @@ enum CommandTopic {
 	COMMAND_DEBUG_DRAWER_OVERLAYTEXTURE_SET_SIZE  = 93,
 	COMMAND_DEBUG_DRAWER_OVERLAYTEXTURE_SET_LABEL = 94,
 	COMMAND_TRACE_RAY_FEATURE                     = 95,
+	COMMAND_CALL_LUA_UI                           = 96,
 };
-const int NUM_CMD_TOPICS = 96;
+const int NUM_CMD_TOPICS = 97;
 
 
 /**
@@ -178,6 +179,7 @@ enum UnitCommandOptions {
 		+ sizeof(struct SGetNextWaypointPathCommand) \
 		+ sizeof(struct SFreePathCommand) \
 		+ sizeof(struct SCallLuaRulesCommand) \
+		+ sizeof(struct SCallLuaUICommand) \
 		+ sizeof(struct SSendStartPosCommand) \
 		+ sizeof(struct SAddNotificationDrawerCommand) \
 		+ sizeof(struct SAddPointDrawCommand) \
@@ -303,9 +305,9 @@ struct SSetLastPosMessageCommand {
 }; //$ COMMAND_SET_LAST_POS_MESSAGE Game_setLastMessagePosition
 
 /**
- * Give <amount> units of resource <resourceId> to team <receivingTeam>.
+ * Give \<amount\> units of resource \<resourceId\> to team \<receivingTeam\>.
  * - the amount is capped to the AI team's resource levels
- * - does not check for alliance with <receivingTeam>
+ * - does not check for alliance with \<receivingTeam\>
  * - LuaRules might not allow resource transfers, AI's must verify the deduction
  */
 struct SSendResourcesCommand {
@@ -316,11 +318,11 @@ struct SSendResourcesCommand {
 }; //$ COMMAND_SEND_RESOURCES Economy_sendResource REF:resourceId->Resource REF:receivingTeamId->Team
 
 /**
- * Give units specified by <unitIds> to team <receivingTeam>.
- * <ret_sentUnits> represents how many actually were transferred.
- * Make sure this always matches the size of <unitIds> you passed in.
+ * Give units specified by \<unitIds\> to team \<receivingTeam\>.
+ * \<ret_sentUnits\> represents how many actually were transferred.
+ * Make sure this always matches the size of \<unitIds\> you passed in.
  * If it does not, then some unitId's were filtered out.
- * - does not check for alliance with <receivingTeam>
+ * - does not check for alliance with \<receivingTeam\>
  * - AI's should check each unit if it is still under control of their
  *   team after the transaction via UnitTaken() and UnitGiven(), since
  *   LuaRules might block part of it
@@ -404,12 +406,21 @@ struct SFreePathCommand {
 
 struct SCallLuaRulesCommand {
 	/// Can be set to NULL to skip passing in a string
-	const char* data;
+	const char* inData;
 	/// If this is less than 0, the data size is calculated using strlen()
 	int inSize;
 	/// this is subject to Lua garbage collection, copy it if you wish to continue using it
 	const char* ret_outData;
 }; //$ COMMAND_CALL_LUA_RULES Lua_callRules
+
+struct SCallLuaUICommand {
+	/// Can be set to NULL to skip passing in a string
+	const char* inData;
+	/// If this is less than 0, the data size is calculated using strlen()
+	int inSize;
+	/// this is subject to Lua garbage collection, copy it if you wish to continue using it
+	const char* ret_outData;
+}; //$ COMMAND_CALL_LUA_UI Lua_callUI
 
 struct SSendStartPosCommand {
 	bool ready;
@@ -486,11 +497,11 @@ struct SRestartPathDrawerCommand {
  * Creates a cubic Bezier spline figure from pos1 to pos4, with control points pos2 and pos3.
  *
  * - Each figure is part of a figure group
- * - When creating figures, use 0 as <figureGroupId> to create a new figure group.
- *   The id of this figure group is returned in <ret_newFigureGroupId>
- * - <lifeTime> specifies how many frames a figure should live before being auto-removed;
+ * - When creating figures, use 0 as \<figureGroupId\> to create a new figure group.
+ *   The id of this figure group is returned in \<ret_newFigureGroupId\>
+ * - \<lifeTime\> specifies how many frames a figure should live before being auto-removed;
  *   0 means no removal
- * - <arrow> == true means that the figure will get an arrow at the end
+ * - \<arrow\> == true means that the figure will get an arrow at the end
  */
 struct SCreateSplineFigureDrawerCommand {
 	float* pos1_posF3;
@@ -513,8 +524,8 @@ struct SCreateSplineFigureDrawerCommand {
  * Creates a straight line from pos1 to pos2.
  *
  * - Each figure is part of a figure group
- * - When creating figures, use 0 as <figureGroupId> to create a new figure group.
- *   The id of this figure group is returned in <ret_newFigureGroupId>
+ * - When creating figures, use 0 as \<figureGroupId\> to create a new figure group.
+ *   The id of this figure group is returned in \<ret_newFigureGroupId\>
  * @param lifeTime specifies how many frames a figure should live before being auto-removed;
  *                 0 means no removal
  * @param arrow true means that the figure will get an arrow at the end
@@ -1573,8 +1584,15 @@ void initSUnitCommand(void* sUnitCommand);
 #endif
 
 
-#ifdef __cplusplus
+#ifdef	__cplusplus
+#ifdef    BUILDING_AI
+namespace springLegacyAI {
+	struct Command;
+}
+using namespace springLegacyAI;
+#else  // BUILDING_AI
 struct Command;
+#endif // BUILDING_AI
 
 // legacy support functions
 

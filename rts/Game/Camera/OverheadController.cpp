@@ -1,19 +1,18 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include <SDL_keysym.h>
 #include <boost/cstdint.hpp>
 
 #include "OverheadController.h"
 
-#include "ConfigHandler.h"
+#include "System/ConfigHandler.h"
 #include "Game/Camera.h"
 #include "Game/CameraHandler.h"
 #include "Game/UI/MouseHandler.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/Input/KeyInput.h"
@@ -80,7 +79,7 @@ void COverheadController::MouseWheelMove(float move)
 				dif = (height - oldAltHeight) / mouse->dir.y * dir.y;
 			}
 			float3 wantedPos = cpos + mouse->dir * dif;
-			float newHeight = ground->LineGroundCol(wantedPos, wantedPos + dir * 15000);
+			float newHeight = ground->LineGroundCol(wantedPos, wantedPos + dir * 15000, false);
 			if (newHeight < 0) {
 				newHeight = height* (1.0f + move * 0.007f * (keyInput->IsKeyPressed(SDLK_LSHIFT) ? 3:1));
 			}
@@ -128,7 +127,7 @@ float3 COverheadController::GetPos()
 	pos.z = Clamp(pos.z, 0.01f, gs->mapy * SQUARE_SIZE - 0.01f);
 	height = Clamp(height, 60.0f, maxHeight);
 
-	pos.y = ground->GetHeightAboveWater(pos.x,pos.z);
+	pos.y = ground->GetHeightAboveWater(pos.x, pos.z, false);
 	dir = float3(0.0f, -1.0f, flipped ? zscale : -zscale).ANormalize();
 
 	float3 cpos = pos - dir * height;

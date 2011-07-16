@@ -8,8 +8,6 @@ using std::sprintf;
 
 #include "Game/GameVersion.h"
 #include "Game/GameSetup.h"
-#include "FileSystem/FileSystem.h"
-#include "FileSystem/FileSystemHandler.h"
 #include "Sim/Misc/GlobalConstants.h" // for MAX_TEAMS
 #include "Sim/Misc/TeamHandler.h" // ActiveTeams()
 #include "ExternalAI/IAILibraryManager.h"
@@ -20,10 +18,13 @@ using std::sprintf;
 #include "ExternalAI/Interface/AISCommands.h"         // for ABI version
 #include "ExternalAI/Interface/SSkirmishAILibrary.h"  // for ABI version
 #include "ExternalAI/Interface/SAIInterfaceLibrary.h" // for ABI version and AI_INTERFACE_PROPERTY_*
-#include "LogOutput.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/FileSystem/FileSystemHandler.h"
+#include "System/Log/ILog.h"
 
 #include <vector>
 #include <stdlib.h> // malloc(), calloc(), free()
+#include <sstream> // ostringstream
 
 
 static const char* AI_INTERFACES_VERSION_COMMON = "common";
@@ -50,19 +51,19 @@ EXPORT(int) aiInterfaceCallback_Engine_AIInterface_ABIVersion_getWarningPart(int
 }
 
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getMajor(int UNUSED_interfaceId) {
-	return SpringVersion::Major;
+	return SpringVersion::GetMajor().c_str();
 }
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getMinor(int UNUSED_interfaceId) {
-	return SpringVersion::Minor;
+	return SpringVersion::GetMinor().c_str();
 }
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getPatchset(int UNUSED_interfaceId) {
-	return SpringVersion::Patchset;
+	return SpringVersion::GetPatchSet().c_str();
 }
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getAdditional(int UNUSED_interfaceId) {
-	return SpringVersion::Additional;
+	return SpringVersion::GetAdditional().c_str();
 }
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getBuildTime(int UNUSED_interfaceId) {
-	return SpringVersion::BuildTime;
+	return SpringVersion::GetBuildTime().c_str();
 }
 EXPORT(const char*) aiInterfaceCallback_Engine_Version_getNormal(int UNUSED_interfaceId) {
 	return SpringVersion::Get().c_str();
@@ -143,14 +144,15 @@ EXPORT(void) aiInterfaceCallback_Log_log(int interfaceId, const char* const msg)
 	CHECK_INTERFACE_ID(interfaceId);
 
 	const CAIInterfaceLibraryInfo* info = infos[interfaceId];
-	logOutput.Print("AI Interface <%s-%s>: %s", info->GetName().c_str(), info->GetVersion().c_str(), msg);
+	LOG("AI Interface <%s-%s>: %s",
+			info->GetName().c_str(), info->GetVersion().c_str(), msg);
 }
 EXPORT(void) aiInterfaceCallback_Log_exception(int interfaceId, const char* const msg, int severety, bool die) {
 
 	CHECK_INTERFACE_ID(interfaceId);
 
 	const CAIInterfaceLibraryInfo* info = infos[interfaceId];
-	logOutput.Print("AI Interface <%s-%s>: error, severety %i: [%s] %s",
+	LOG_L(L_ERROR, "AI Interface <%s-%s>: severety %i: [%s] %s",
 			info->GetName().c_str(), info->GetVersion().c_str(), severety,
 			(die ? "AI Interface shutting down" : "AI Interface still running"), msg);
 	if (die) {

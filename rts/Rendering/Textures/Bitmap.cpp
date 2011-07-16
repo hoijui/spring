@@ -1,8 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-//#include <omp.h>
 #include <ostream>
 #include <fstream>
 #include <string.h>
@@ -10,20 +9,20 @@
 //#include <IL/ilu.h>
 #include <SDL_video.h>
 #include <boost/thread.hpp>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #ifndef BITMAP_NO_OPENGL
 	#include "Rendering/GL/myGL.h"
 	#include "System/TimeProfiler.h"
 #endif // !BITMAP_NO_OPENGL
 
-#include "Rendering/GlobalRendering.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "GlobalUnsynced.h"
 #include "Bitmap.h"
-#include "bitops.h"
-#include "LogOutput.h"
+#include "Rendering/GlobalRendering.h"
+#include "System/bitops.h"
+#include "System/LogOutput.h"
+#include "System/OpenMP_cond.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/FileSystem.h"
 
 
 boost::mutex devilMutex; // devil functions, whilst expensive, aren't thread-save
@@ -343,9 +342,7 @@ bool CBitmap::Save(std::string const& filename, bool opaque) const
 #ifndef BITMAP_NO_OPENGL
 const unsigned int CBitmap::CreateTexture(bool mipmaps) const
 {
-#ifndef BITMAP_NO_OPENGL
 	ScopedTimer timer("Textures::CBitmap::CreateTexture");
-#endif
 
 	if (type == BitmapTypeDDS) {
 		return CreateDDSTexture();
@@ -533,7 +530,8 @@ void CBitmap::Renormalize(float3 newCol)
 }
 
 
-inline void kernelBlur(CBitmap* dst, const unsigned char* src, int x, int y, int channel, float weight) {
+inline static void kernelBlur(CBitmap* dst, const unsigned char* src, int x, int y, int channel, float weight)
+{
 	float fragment = 0.0f;
 
 	const int pos = (x + y * dst->xsize) * dst->channels + channel;
@@ -574,13 +572,13 @@ void CBitmap::Blur(int iterations, float weight)
 	dst->Alloc(xsize,ysize);
 
 	for (int i=0; i < iterations; ++i){
-		#pragma omp parallel private(y,x,i)
 		{
-			#pragma omp for
-			for (int y=0; y < ysize; ++y) {
-				for (int x=0; x < xsize; ++x) {
-					for (int i=0; i < channels; ++i) {
-						kernelBlur(dst, src->mem, x, y, i, weight);
+			int j,y,x;
+			#pragma omp parallel for private(j,x,y)
+			for (y=0; y < ysize; y++) {
+				for (x=0; x < xsize; x++) {
+					for (j=0; j < channels; j++) {
+						kernelBlur(dst, src->mem, x, y, j, weight);
 					}
 				}
 			}

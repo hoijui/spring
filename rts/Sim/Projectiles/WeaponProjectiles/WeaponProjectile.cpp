@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Game/GameHelper.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
@@ -16,7 +16,6 @@
 #include "Rendering/Models/IModelParser.h"
 #include "Map/Ground.h"
 #include "System/Matrix44f.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Sound/SoundChannels.h"
 #include "System/LogOutput.h"
 #ifdef TRACE_SYNC
@@ -94,14 +93,16 @@ CWeaponProjectile::CWeaponProjectile(const float3& pos, const float3& speed,
 		interceptTarget->targeted = true;
 		AddDeathDependence(interceptTarget);
 	}
-	if (weaponDef) {
-		if(weaponDef->interceptedByShieldType) {
+
+	if (weaponDef != NULL) {
+		if (weaponDef->interceptedByShieldType) {
 			interceptHandler.AddShieldInterceptableProjectile(this);
 		}
 
 		alwaysVisible = weaponDef->visuals.alwaysVisible;
+		ignoreWater = weaponDef->waterweapon;
 
-		model = LoadModel(weaponDef);
+		model = weaponDef->LoadModel();
 
 		collisionFlags = weaponDef->collisionFlags;
 	}
@@ -129,39 +130,44 @@ void CWeaponProjectile::Collision(CFeature* feature)
 		impactDir.Normalize();
 
 		// Dynamic Damage
-		DamageArray dynDamages;
-		if (weaponDef->dynDamageExp > 0)
-			dynDamages = weaponDefHandler->DynamicDamages(weaponDef->damages,
-					startpos, pos, (weaponDef->dynDamageRange > 0)
-							? weaponDef->dynDamageRange
-							: weaponDef->range,
-					weaponDef->dynDamageExp, weaponDef->dynDamageMin,
-					weaponDef->dynDamageInverted);
+		DamageArray damageArray;
+		if (weaponDef->dynDamageExp > 0) {
+			damageArray = weaponDefHandler->DynamicDamages(
+				weaponDef->damages,
+				startpos, pos,
+				(weaponDef->dynDamageRange > 0)
+					? weaponDef->dynDamageRange
+					: weaponDef->range,
+				weaponDef->dynDamageExp, weaponDef->dynDamageMin,
+				weaponDef->dynDamageInverted);
+		} else {
+			damageArray = weaponDef->damages;
+		}
 
-		helper->Explosion(
+		CGameHelper::ExplosionParams params = {
 			pos,
-			(weaponDef->dynDamageExp > 0)? dynDamages: weaponDef->damages,
+			impactDir,
+			damageArray,
+			weaponDef,
+			owner(),
+			NULL,                                             // hitUnit
+			feature,
 			weaponDef->areaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
-			owner(),
-			true,
-			weaponDef->noExplode? 0.3f: 1.0f,
-			weaponDef->noExplode || weaponDef->noSelfDamage,
+			weaponDef->noExplode? 0.3f: 1.0f,                 // gfxMod
 			weaponDef->impactOnly,
-			weaponDef->explosionGenerator,
-			0,
-			impactDir,
-			weaponDef->id,
-			feature
-		);
+			weaponDef->noExplode || weaponDef->noSelfDamage,  // ignoreOwner
+			true                                              // damgeGround
+		};
+		helper->Explosion(params);
 	}
 
 	if (weaponDef->soundhit.getID(0) > 0) {
 		Channels::Battle.PlaySample(weaponDef->soundhit.getID(0), this, weaponDef->soundhit.getVolume(0));
 	}
 
-	if (!weaponDef->noExplode){
+	if (!weaponDef->noExplode) {
 		CProjectile::Collision();
 	} else {
 		if (TraveledRange()) {
@@ -179,35 +185,37 @@ void CWeaponProjectile::Collision(CUnit* unit)
 		impactDir.Normalize();
 
 		// Dynamic Damage
-		DamageArray damages;
+		DamageArray damageArray;
 		if (weaponDef->dynDamageExp > 0) {
-			damages = weaponDefHandler->DynamicDamages(weaponDef->damages,
-					startpos, pos,
-					weaponDef->dynDamageRange > 0?
-						weaponDef->dynDamageRange:
-						weaponDef->range,
-					weaponDef->dynDamageExp, weaponDef->dynDamageMin,
-					weaponDef->dynDamageInverted);
+			damageArray = weaponDefHandler->DynamicDamages(
+				weaponDef->damages,
+				startpos, pos,
+				weaponDef->dynDamageRange > 0?
+					weaponDef->dynDamageRange:
+					weaponDef->range,
+				weaponDef->dynDamageExp, weaponDef->dynDamageMin,
+				weaponDef->dynDamageInverted);
 		} else {
-			damages = weaponDef->damages;
+			damageArray = weaponDef->damages;
 		}
 
-		helper->Explosion(
+		CGameHelper::ExplosionParams params = {
 			pos,
-			damages,
+			impactDir,
+			damageArray,
+			weaponDef,
+			owner(),
+			unit,
+			NULL,                                            // hitFeature
 			weaponDef->areaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
-			owner(),
-			true,
-			weaponDef->noExplode? 0.3f: 1.0f,
-			weaponDef->noExplode || weaponDef->noSelfDamage,
+			weaponDef->noExplode? 0.3f: 1.0f,                 // gfxMod
 			weaponDef->impactOnly,
-			weaponDef->explosionGenerator,
-			unit,
-			impactDir,
-			weaponDef->id
-		);
+			weaponDef->noExplode || weaponDef->noSelfDamage,  // ignoreOwner
+			true                                              // damageGround
+		};
+		helper->Explosion(params);
 	}
 
 	if (weaponDef->soundhit.getID(0) > 0) {
@@ -215,9 +223,9 @@ void CWeaponProjectile::Collision(CUnit* unit)
 				weaponDef->soundhit.getVolume(0));
 	}
 
-	if (!weaponDef->noExplode)
+	if (!weaponDef->noExplode) {
 		CProjectile::Collision(unit);
-	else {
+	} else {
 		if (TraveledRange())
 			CProjectile::Collision();
 	}
@@ -304,18 +312,7 @@ void CWeaponProjectile::PostLoad()
 //	if(weaponDef->interceptedByShieldType)
 //		interceptHandler.AddShieldInterceptableProjectile(this);
 
-	if (!weaponDef->visuals.modelName.empty()) {
-		if (weaponDef->visuals.model == NULL) {
-			std::string modelname = "objects3d/" + weaponDef->visuals.modelName;
-			if (modelname.find(".") == std::string::npos) {
-				modelname += ".3do";
-			}
-			const_cast<WeaponDef*>(weaponDef)->visuals.model = modelParser->Load3DModel(modelname);
-		}
-		if (weaponDef->visuals.model) {
-			model = weaponDef->visuals.model;
-		}
-	}
+	model = weaponDef->LoadModel();
 
 //	collisionFlags = weaponDef->collisionFlags;
 }

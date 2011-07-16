@@ -1,27 +1,28 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <map>
 #include <SDL_keysym.h>
 #include <SDL_timer.h>
 #include <set>
 #include <cfloat>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "PreGame.h"
 
 #include "ClientSetup.h"
-#include "FPUCheck.h"
+#include "System/FPUCheck.h"
 #include "Game.h"
 #include "GameData.h"
 #include "GameServer.h"
 #include "GameSetup.h"
 #include "GameVersion.h"
+#include "GlobalUnsynced.h"
 #include "LoadScreen.h"
 #include "Player.h"
 #include "PlayerHandler.h"
-#include "TimeProfiler.h"
+#include "System/TimeProfiler.h"
 #include "UI/InfoConsole.h"
 
 #include "aGui/Gui.h"
@@ -160,7 +161,7 @@ bool CPreGame::Update()
 void CPreGame::StartServer(const std::string& setupscript)
 {
 	assert(!gameServer);
-	ScopedOnceTimer startserver("Starting GameServer");
+	ScopedOnceTimer startserver("PreGame::StartServer");
 	GameData* startupData = new GameData();
 	CGameSetup* setup = new CGameSetup();
 	setup->Init(setupscript);
@@ -291,7 +292,7 @@ void CPreGame::UpdateClientNet()
 
 void CPreGame::ReadDataFromDemo(const std::string& demoName)
 {
-	ScopedOnceTimer startserver("Reading demo data");
+	ScopedOnceTimer startserver("PreGame::ReadDataFromDemo");
 	assert(!gameServer);
 	logOutput.Print("Pre-scanning demo file for game data...");
 	CDemoReader scanner(demoName, 0);
@@ -392,7 +393,7 @@ void CPreGame::ReadDataFromDemo(const std::string& demoName)
 
 void CPreGame::GameDataReceived(boost::shared_ptr<const netcode::RawPacket> packet)
 {
-	ScopedOnceTimer startserver("Loading client data");
+	ScopedOnceTimer startserver("PreGame::GameDataReceived");
 
 	try {
 		GameData *data = new GameData(packet);

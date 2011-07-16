@@ -7,8 +7,8 @@
 #include <vector>
 #include <map>
 
-#include "EventClient.h"
-#include "EventBatchHandler.h"
+#include "System/EventClient.h"
+#include "System/EventBatchHandler.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Projectiles/Projectile.h"
@@ -38,11 +38,11 @@ class CEventHandler
 
 	public:
 		// Synced events
-		void Load(CArchiveBase* archive);
+		void Load(IArchive* archive);
 
 		void GamePreload();
 		void GameStart();
-		void GameOver( std::vector<unsigned char> winningAllyTeams );
+		void GameOver(const std::vector<unsigned char>& winningAllyTeams);
 		void GamePaused(int playerID, bool paused);
 		void GameFrame(int gameFrame);
 
@@ -65,9 +65,9 @@ class CEventHandler
 		void RenderUnitCloakChanged(const CUnit* unit, int cloaked);
 		void RenderUnitLOSChanged(const CUnit* unit, int allyTeam, int newStatus);
 
-		void DeleteSyncedUnits();
-		void UpdateDrawUnits();
 		void UpdateUnits();
+		void UpdateDrawUnits();
+		void DeleteSyncedUnits();
 
 		void UnitIdle(const CUnit* unit);
 		void UnitCommand(const CUnit* unit, const Command& command);
@@ -107,9 +107,9 @@ class CEventHandler
 		void RenderFeatureDestroyed(const CFeature* feature);
 		void RenderFeatureMoved(const CFeature* feature);
 
-		void DeleteSyncedFeatures();
-		void UpdateDrawFeatures();
 		void UpdateFeatures();
+		void UpdateDrawFeatures();
+		void DeleteSyncedFeatures();
 
 		void ProjectileCreated(const CProjectile* proj, int allyTeam);
 		void ProjectileDestroyed(const CProjectile* proj, int allyTeam);
@@ -120,13 +120,14 @@ class CEventHandler
 		void UnsyncedProjectileCreated(const CProjectile* proj);
 		void UnsyncedProjectileDestroyed(const CProjectile* proj);
 
-		void DeleteSyncedProjectiles();
-		void UpdateDrawProjectiles();
 		void UpdateProjectiles();
+		void UpdateDrawProjectiles();
+		void DeleteSyncedProjectiles();
 
 		void UpdateObjects();
+		void DeleteSyncedObjects();
 
-		bool Explosion(int weaponID, const float3& pos, const CUnit* owner);
+		bool Explosion(int weaponDefID, const float3& pos, const CUnit* owner);
 
 		void StockpileChanged(const CUnit* unit,
 		                      const CWeapon* weapon, int oldCount);
@@ -180,7 +181,12 @@ class CEventHandler
 		void DrawScreen();
 		void DrawInMiniMap();
 
+		/// @brief this UNSYNCED event is generated every gameProgressFrameInterval ( defined in gameserver.cpp ), skips network queuing and caching and it's useful
+		/// to calculate the current fast-forwarding % compared to the real game
+		void GameProgress(int gameFrame);
+
 		// FIXME: void ShockFront(float power, const float3& pos, float areaOfEffect);
+		inline void LoadedModelRequested();
 
 	private:
 		typedef vector<CEventClient*> EventClientList;
@@ -332,6 +338,8 @@ class CEventHandler
 		EventClientList listDrawScreenEffects;
 		EventClientList listDrawScreen;
 		EventClientList listDrawInMiniMap;
+
+		EventClientList listGameProgress;
 };
 
 
@@ -507,7 +515,7 @@ inline void CEventHandler::UnitCloaked(const CUnit* unit)
 		CEventClient* ec = listUnitCloaked[i];
 		if (ec->CanReadAllyTeam(unitAllyTeam)) {
 			ec->UnitCloaked(unit);
-		} 
+		}
 	}
 }
 
@@ -521,7 +529,7 @@ inline void CEventHandler::UnitDecloaked(const CUnit* unit)
 		CEventClient* ec = listUnitDecloaked[i];
 		if (ec->CanReadAllyTeam(unitAllyTeam)) {
 			ec->UnitDecloaked(unit);
-		} 
+		}
 	}
 }
 
@@ -552,12 +560,6 @@ inline void CEventHandler::UnitFeatureCollision(const CUnit* collider, const CFe
 		}
 	}
 }
-
-
-
-inline void CEventHandler::UpdateUnits(void) { eventBatchHandler->UpdateUnits(); }
-inline void CEventHandler::UpdateDrawUnits() { eventBatchHandler->UpdateDrawUnits(); }
-inline void CEventHandler::DeleteSyncedUnits() { eventBatchHandler->DeleteSyncedUnits(); }
 
 
 
@@ -742,12 +744,6 @@ inline void CEventHandler::RenderFeatureMoved(const CFeature* feature)
 
 
 
-inline void CEventHandler::UpdateFeatures(void) { eventBatchHandler->UpdateFeatures(); }
-inline void CEventHandler::UpdateDrawFeatures() { eventBatchHandler->UpdateDrawFeatures(); }
-inline void CEventHandler::DeleteSyncedFeatures() { eventBatchHandler->DeleteSyncedFeatures(); }
-
-
-
 inline void CEventHandler::ProjectileCreated(const CProjectile* proj, int allyTeam)
 {
 	if (proj->synced) {
@@ -770,7 +766,11 @@ inline void CEventHandler::ProjectileCreated(const CProjectile* proj, int allyTe
 inline void CEventHandler::ProjectileDestroyed(const CProjectile* proj, int allyTeam)
 {
 	if (proj->synced) {
+#if DETACH_SYNCED
+		(eventBatchHandler->GetSyncedProjectileCreatedDestroyedBatch()).erase_delete(proj);
+#else
 		(eventBatchHandler->GetSyncedProjectileCreatedDestroyedBatch()).erase_remove_synced(proj);
+#endif
 	} else {
 		(eventBatchHandler->GetUnsyncedProjectileCreatedDestroyedBatch()).erase_delete(proj);
 	}
@@ -815,22 +815,14 @@ inline void CEventHandler::RenderProjectileDestroyed(const CProjectile* proj)
 
 
 
-inline void CEventHandler::UpdateProjectiles() { eventBatchHandler->UpdateProjectiles(); }
-inline void CEventHandler::UpdateDrawProjectiles() { eventBatchHandler->UpdateDrawProjectiles(); }
-inline void CEventHandler::DeleteSyncedProjectiles() { eventBatchHandler->DeleteSyncedProjectiles(); }
-
-inline void CEventHandler::UpdateObjects() {
-	eventBatchHandler->UpdateObjects();
-}
-
-inline bool CEventHandler::Explosion(int weaponID, const float3& pos, const CUnit* owner)
+inline bool CEventHandler::Explosion(int weaponDefID, const float3& pos, const CUnit* owner)
 {
 	const int count = listExplosion.size();
 	bool noGfx = false;
 	for (int i = 0; i < count; i++) {
 		CEventClient* ec = listExplosion[i];
 		if (ec->GetFullRead()) {
-			noGfx = noGfx || ec->Explosion(weaponID, pos, owner);
+			noGfx = noGfx || ec->Explosion(weaponDefID, pos, owner);
 		}
 	}
 	return noGfx;
@@ -868,5 +860,9 @@ inline bool CEventHandler::DefaultCommand(const CUnit* unit,
 	return false;
 }
 
+inline void CEventHandler::LoadedModelRequested() {
+	eventBatchHandler->LoadedModelRequested();
+}
 
 #endif /* EVENT_HANDLER_H */
+

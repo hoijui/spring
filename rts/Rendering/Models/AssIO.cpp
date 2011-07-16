@@ -1,12 +1,9 @@
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <string>
-#ifdef _MSC_VER
-#define _INC_MATH // a hack to prevent ambiguous math calls
-#endif
 #include "AssIO.h"
 
-#include "FileSystem/FileHandler.h"
+#include "System/FileSystem/FileHandler.h"
 
 AssVFSStream::AssVFSStream(const std::string& pFile, const std::string& pMode)
 {
@@ -46,6 +43,7 @@ aiReturn AssVFSStream::Seek( size_t pOffset, aiOrigin pOrigin)
 			if ( pOffset >= file->FileSize() ) return AI_FAILURE;
 			file->Seek( pOffset, std::ios_base::end );
 			break;
+		case _AI_ORIGIN_ENFORCE_ENUM_SIZE: ; // this prevents a compile-warning
 	}
 	return AI_SUCCESS;
 }

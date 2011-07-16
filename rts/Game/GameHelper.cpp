@@ -1,18 +1,17 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Camera.h"
 #include "GameSetup.h"
 #include "GameHelper.h"
+#include "Game/GlobalUnsynced.h"
 #include "UI/LuaUI.h"
 #include "Lua/LuaRules.h"
 #include "Map/Ground.h"
 #include "Map/MapDamage.h"
 #include "Map/ReadMap.h"
-#include "Rendering/Env/BaseWater.h"
-#include "Rendering/GroundDecalHandler.h"
 #include "Rendering/Models/3DModel.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Misc/CollisionHandler.h"
@@ -26,6 +25,7 @@
 #include "Sim/Misc/RadarHandler.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
+#include "Sim/Projectiles/ExplosionListener.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Units/CommandAI/MobileCAI.h"
 #include "Sim/Units/UnitTypes/Factory.h"
@@ -35,7 +35,6 @@
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
-#include "System/GlobalUnsynced.h"
 #include "System/EventHandler.h"
 #include "System/myMath.h"
 #include "System/Sync/SyncTracer.h"
@@ -71,10 +70,12 @@ CGameHelper::~CGameHelper()
 // Explosions/Damage
 //////////////////////////////////////////////////////////////////////
 
-void CGameHelper::DoExplosionDamage(CUnit* unit,
+void CGameHelper::DoExplosionDamage(
+	CUnit* unit,
+	CUnit* owner,
 	const float3& expPos, float expRad, float expSpeed,
-	bool ignoreOwner, CUnit* owner, float edgeEffectiveness,
-	const DamageArray& damages, int weaponId)
+	bool ignoreOwner, float edgeEffectiveness,
+	const DamageArray& damages, int weaponDefID)
 {
 	if (ignoreOwner && (unit == owner)) {
 		return;
@@ -157,9 +158,9 @@ void CGameHelper::DoExplosionDamage(CUnit* unit,
 	const float3 addedImpulse = diffPos * (damages.impulseFactor * mod * (damages[0] + damages.impulseBoost) * 3.2f);
 
 	if (expDist2 < (expSpeed * 4.0f)) { // damage directly
-		unit->DoDamage(damageDone, owner, addedImpulse, weaponId);
+		unit->DoDamage(damageDone, owner, addedImpulse, weaponDefID);
 	} else { // damage later
-		WaitingDamage* wd = new WaitingDamage((owner? owner->id: -1), unit->id, damageDone, addedImpulse, weaponId);
+		WaitingDamage* wd = new WaitingDamage((owner? owner->id: -1), unit->id, damageDone, addedImpulse, weaponDefID);
 		waitingDamages[(gs->frameNum + int(expDist2 / expSpeed) - 3) & 127].push_front(wd);
 	}
 }
@@ -193,45 +194,50 @@ void CGameHelper::DoExplosionDamage(CFeature* feature,
 
 
 
-void CGameHelper::Explosion(
-	float3 expPos, const DamageArray& damages,
-	float expRad, float edgeEffectiveness,
-	float expSpeed, CUnit* owner,
-	bool damageGround, float gfxMod,
-	bool ignoreOwner, bool impactOnly,
-	IExplosionGenerator* explosionGenerator,
-	CUnit* hitUnit,
-	const float3& impactDir, int weaponId,
-	CFeature* hitFeature
-) {
-	const WeaponDef* wd = weaponDefHandler->GetWeaponById(weaponId);
+void CGameHelper::Explosion(const ExplosionParams& params) {
+	const float3& pos = params.pos;
+	const float3& dir = params.dir;
+	const DamageArray& damages = params.damages;
 
-	if (luaUI) {
-		if (wd != NULL && wd->cameraShake > 0.0f) {
-			luaUI->ShockFront(wd->cameraShake, expPos, expRad);
-		}
-	}
+	const WeaponDef* weaponDef = params.weaponDef;
+	const int weaponDefID = (weaponDef != NULL)? weaponDef->id: -1;
+
+	const float3 expPos = pos;
+
+	CUnit* owner = params.owner;
+	CUnit* hitUnit = params.hitUnit;
+	CFeature* hitFeature = params.hitFeature;
+
+	const float expRad = std::max(1.0f, params.areaOfEffect);
+	const float edgeEffectiveness = params.edgeEffectiveness;
+	const float expSpeed = params.explosionSpeed;
+	const float gfxMod = params.gfxMod;
+	const float realHeight = ground->GetHeightReal(expPos.x, expPos.z);
+	const float altitude = expPos.y - realHeight;
+
+	const bool impactOnly = params.impactOnly;
+	const bool ignoreOwner = params.ignoreOwner;
+	const bool damageGround = params.damageGround;
+	const bool noGfx = eventHandler.Explosion(weaponDefID, expPos, owner);
 
 #ifdef TRACE_SYNC
 	tracefile << "Explosion: ";
 	tracefile << expPos.x << " " << damages[0] <<  " " << expRad << "\n";
 #endif
 
-	const bool noGfx = eventHandler.Explosion(weaponId, expPos, owner);
-	const float h2 = ground->GetHeightReal(expPos.x, expPos.z);
-
-	expPos.y = std::max(expPos.y, h2);
-	expRad = std::max(expRad, 1.0f);
+	if (luaUI) {
+		if (weaponDef != NULL && weaponDef->cameraShake > 0.0f) {
+			luaUI->ShockFront(weaponDef->cameraShake, expPos, expRad);
+		}
+	}
 
 	if (impactOnly) {
 		if (hitUnit) {
-			DoExplosionDamage(hitUnit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
+			DoExplosionDamage(hitUnit, owner, expPos, expRad, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
 		} else if (hitFeature) {
 			DoExplosionDamage(hitFeature, expPos, expRad, damages);
 		}
 	} else {
-		float height = std::max(expPos.y - h2, 0.0f);
-
 		{
 			// damage all units within the explosion radius
 			const vector<CUnit*>& units = qf->GetUnitsExact(expPos, expRad);
@@ -244,14 +250,14 @@ void CGameHelper::Explosion(
 					hitUnitDamaged = true;
 				}
 
-				DoExplosionDamage(unit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
+				DoExplosionDamage(unit, owner, expPos, expRad, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
 			}
 
 			// HACK: for a unit with an offset coldet volume, the explosion
 			// (from an impacting projectile) position might not correspond
 			// to its quadfield position so we need to damage it separately
 			if (hitUnit != NULL && !hitUnitDamaged) {
-				DoExplosionDamage(hitUnit, expPos, expRad, expSpeed, ignoreOwner, owner, edgeEffectiveness, damages, weaponId);
+				DoExplosionDamage(hitUnit, owner, expPos, expRad, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
 			}
 		}
 
@@ -275,27 +281,34 @@ void CGameHelper::Explosion(
 			}
 		}
 
-		// deform the map
-		if (damageGround && !mapDamage->disabled && (expRad > height) && (damages.craterMult > 0.0f)) {
-			float damage = damages[0] * (1.0f - (height / expRad));
-			if (damage > (expRad * 10.0f)) {
-				damage = expRad * 10.0f; // limit the depth somewhat
+		// deform the map if the explosion was above-ground
+		// (but had large enough radius to touch the ground)
+		if (altitude >= -1.0f) {
+			if (damageGround && !mapDamage->disabled && (expRad > altitude) && (damages.craterMult > 0.0f)) {
+				// limit the depth somewhat
+				const float craterDepth = damages[0] * (1.0f - (altitude / expRad));
+				const float damageDepth = std::min(expRad * 10.0f, craterDepth);
+
+				mapDamage->Explosion(expPos, (damageDepth + damages.craterBoost) * damages.craterMult, expRad - altitude);
 			}
-			mapDamage->Explosion(expPos, (damage + damages.craterBoost) * damages.craterMult, expRad - height);
 		}
 	}
 
-	// use CStdExplosionGenerator by default
 	if (!noGfx) {
-		if (explosionGenerator == NULL) {
-			explosionGenerator = stdExplosionGenerator;
+		// use CStdExplosionGenerator by default
+		IExplosionGenerator* explosionGenerator = stdExplosionGenerator;
+
+		if (weaponDef != NULL && weaponDef->explosionGenerator != NULL) {
+			explosionGenerator = weaponDef->explosionGenerator;
 		}
-		explosionGenerator->Explosion(0, expPos, damages[0], expRad, owner, gfxMod, hitUnit, impactDir);
+
+		explosionGenerator->Explosion(0, expPos, damages[0], expRad, owner, gfxMod, hitUnit, dir);
 	}
 
-	groundDecals->AddExplosion(expPos, damages[0], expRad, (wd != NULL && wd->visuals.explosionScar));
-	water->AddExplosion(expPos, damages[0], expRad);
+	CExplosionEvent explosionEvent(expPos, damages[0], expRad, weaponDef);
+	FireExplosionEvent(explosionEvent);
 }
+
 
 
 //////////////////////////////////////////////////////////////////////
@@ -607,7 +620,7 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* last
 	const float secDamage = weapon->weaponDef->damages[0] * weapon->salvoSize / weapon->reloadTime * GAME_SPEED;
 	const bool paralyzer  = !!weapon->weaponDef->damages.paralyzeDamageTime;
 
-	const std::vector<int>& quads = qf->GetQuads(pos, radius + (aHeight - std::max(0.f, readmap->minheight)) * heightMod);
+	const std::vector<int>& quads = qf->GetQuads(pos, radius + (aHeight - std::max(0.f, readmap->initMinHeight)) * heightMod);
 
 	const int tempNum = gs->tempNum++;
 
@@ -626,9 +639,16 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* last
 				CUnit* targetUnit = *ui;
 				float targetPriority = 1.0f;
 
-				if (luaRules && luaRules->AllowWeaponTarget(attacker->id, targetUnit->id, weapon->weaponNum, weapon->weaponDef->id, &targetPriority)) {
-					targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
-					continue;
+				if (luaRules != NULL) {
+					const int targetAllowed = luaRules->AllowWeaponTarget(attacker->id, targetUnit->id, weapon->weaponNum, weapon->weaponDef->id, &targetPriority);
+
+					if (targetAllowed >= 0) {
+						if (targetAllowed > 0) {
+							targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
+						}
+
+						continue;
+					}
 				}
 
 
@@ -818,12 +838,12 @@ void CGameHelper::BuggerOff(float3 pos, float radius, bool spherical, bool force
 }
 
 
-float3 CGameHelper::Pos2BuildPos(const float3& pos, const UnitDef* ud)
+float3 CGameHelper::Pos2BuildPos(const float3& pos, const UnitDef* ud, bool synced)
 {
-	return Pos2BuildPos(BuildInfo(ud,pos,0));
+	return Pos2BuildPos(BuildInfo(ud, pos, 0), synced);
 }
 
-float3 CGameHelper::Pos2BuildPos(const BuildInfo& buildInfo)
+float3 CGameHelper::Pos2BuildPos(const BuildInfo& buildInfo, bool synced)
 {
 	float3 pos;
 	if (buildInfo.GetXSize() & 2)
@@ -836,7 +856,7 @@ float3 CGameHelper::Pos2BuildPos(const BuildInfo& buildInfo)
 	else
 		pos.z = floor((buildInfo.pos.z + 8) / (SQUARE_SIZE * 2)) * SQUARE_SIZE * 2;
 
-	pos.y = uh->GetBuildHeight(pos,buildInfo.def);
+	pos.y = uh->GetBuildHeight(pos, buildInfo.def, synced);
 	if (buildInfo.def->floater && pos.y < 0)
 		pos.y = -buildInfo.def->waterline;
 
@@ -893,9 +913,9 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 		const float z = pos.z + ofs[so].dy * SQUARE_SIZE * 2;
 
 		BuildInfo bi(unitDef, float3(x, 0.0f, z), facing);
-		bi.pos = Pos2BuildPos(bi);
+		bi.pos = Pos2BuildPos(bi, false);
 
-		if (uh->TestUnitBuildSquare(bi, feature, allyTeam) && (!feature || feature->allyteam != allyTeam)) {
+		if (uh->TestUnitBuildSquare(bi, feature, allyTeam, false) && (!feature || feature->allyteam != allyTeam)) {
 			const int xs = (int) (x / SQUARE_SIZE);
 			const int zs = (int) (z / SQUARE_SIZE);
 			const int xsize = bi.GetXSize();
@@ -948,7 +968,7 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 	return float3(-1.0f, 0.0f, 0.0f);
 }
 
-void CGameHelper::Update(void)
+void CGameHelper::Update()
 {
 	std::list<WaitingDamage*>* wd = &waitingDamages[gs->frameNum&127];
 	while (!wd->empty()) {

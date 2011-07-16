@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-#include "TdfParser.h"
+#include "System/TdfParser.h"
 
 #include <cassert>
 #include <cstring>
@@ -12,8 +12,8 @@
 #include "TerrainNode.h"
 #include "Textures.h"
 #include "Rendering/Textures/Bitmap.h"
-#include "FileSystem/FileSystem.h"
-#include "float3.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/float3.h"
 #if       defined(TERRAIN_USE_IL)
 #include <IL/il.h>
 #endif // defined(TERRAIN_USE_IL)
@@ -111,9 +111,10 @@ namespace terrain {
 	}
 
 	Blendmap::Blendmap ()
+		: generatorInfo(NULL)
+		, image(NULL)
+		, curAreaResult(AlphaImage::AREA_ONE)
 	{
-		generatorInfo = 0;
-		image = 0;
 	}
 
 	Blendmap::~Blendmap ()
@@ -205,7 +206,7 @@ namespace terrain {
 
 	void Blendmap::Generate (Heightmap *rootHm, int lodLevel, float hmScale, float hmOffset)
 	{
-		Heightmap *heightmap = rootHm->GetLevel(-lodLevel);
+		const Heightmap* heightmap = rootHm->GetLevel(-lodLevel);
 
 		// Allocate the blendmap image
 		AlphaImage *bm = new AlphaImage;
@@ -218,7 +219,7 @@ namespace terrain {
 		{
 			for (int x=0;x<bm->w;x++)
 			{
-				float h = (heightmap->at (x,y) - hmOffset) / hmScale;
+				const float h = (heightmap->atSynced(x, y) - hmOffset) / hmScale;
 				float factor=1.0f;
 
 				if(h < gi->minHeight - gi->minHeightFuzzy) {
@@ -235,7 +236,7 @@ namespace terrain {
 
                 float norm_y = 0.0f;
 				if (heightmap->normalData) {
-					uchar *cnorm = heightmap->GetNormal (x,y);
+					const uchar* cnorm = heightmap->GetNormal(x, y);
 					norm_y = cnorm[1] / 255.0f * 2.0f - 1.0f;
 					if (norm_y > 1.0f) norm_y = 1.0f;
 				} else {

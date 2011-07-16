@@ -1,12 +1,14 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <algorithm>
 #include <cctype>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "GroundDecalHandler.h"
 #include "Game/Camera.h"
+#include "Game/GameHelper.h"
+#include "Game/GlobalUnsynced.h"
 #include "Lua/LuaParser.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Map/Ground.h"
@@ -24,10 +26,11 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitTypes/Building.h"
+#include "Sim/Projectiles/ExplosionListener.h"
+#include "Sim/Weapons/WeaponDef.h"
 #include "System/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/Util.h"
@@ -40,9 +43,11 @@ using std::max;
 CGroundDecalHandler* groundDecals = NULL;
 
 
-CGroundDecalHandler::CGroundDecalHandler(): CEventClient("[CGroundDecalHandler]", 314159, false)
+CGroundDecalHandler::CGroundDecalHandler()
+	: CEventClient("[CGroundDecalHandler]", 314159, false)
 {
 	eventHandler.AddClient(this);
+	helper->AddExplosionListener(this);
 
 	drawDecals = false;
 	decalLevel = std::max(0, configHandler->Get("GroundDecals", 1));
@@ -94,6 +99,7 @@ CGroundDecalHandler::CGroundDecalHandler(): CEventClient("[CGroundDecalHandler]"
 CGroundDecalHandler::~CGroundDecalHandler()
 {
 	eventHandler.RemoveClient(this);
+	if (helper != NULL) helper->RemoveExplosionListener(this);
 
 	for (std::vector<TrackType*>::iterator tti = trackTypes.begin(); tti != trackTypes.end(); ++tti) {
 		for (set<UnitTrackStruct*>::iterator ti = (*tti)->tracks.begin(); ti != (*tti)->tracks.end(); ++ti) {
@@ -216,7 +222,12 @@ inline void CGroundDecalHandler::DrawBuildingDecal(BuildingGroundDecal* decal)
 		return;
 	}
 
-	const float* hm = readmap->GetHeightmap();
+	const float* hm =
+		#ifdef USE_UNSYNCED_HEIGHTMAP
+		readmap->GetCornerHeightMapUnsynced();
+		#else
+		readmap->GetCornerHeightMapSynced();
+		#endif
 	const int gsmx = gs->mapx;
 	const int gsmx1 = gsmx + 1;
 	const int gsmy = gs->mapy;
@@ -325,7 +336,12 @@ inline void CGroundDecalHandler::DrawGroundScar(CGroundDecalHandler::Scar* scar,
 		return;
 	}
 
-	const float* hm = readmap->GetHeightmap();
+	const float* hm =
+		#ifdef USE_UNSYNCED_HEIGHTMAP
+		readmap->GetCornerHeightMapUnsynced();
+		#else
+		readmap->GetCornerHeightMapSynced();
+		#endif
 	const int gsmx = gs->mapx;
 	const int gsmx1 = gsmx + 1;
 
@@ -359,10 +375,10 @@ inline void CGroundDecalHandler::DrawGroundScar(CGroundDecalHandler::Scar* scar,
 				float tx2 = max(0.0f, (pos.x - px2) / radius4 + 0.25f);
 				float tz1 = min(0.5f, (pos.z - pz1) / radius4 + 0.25f);
 				float tz2 = max(0.0f, (pos.z - pz2) / radius4 + 0.25f);
-				float h1 = ground->GetHeightReal(px1, pz1);
-				float h2 = ground->GetHeightReal(px2, pz1);
-				float h3 = ground->GetHeightReal(px2, pz2);
-				float h4 = ground->GetHeightReal(px1, pz2);
+				float h1 = ground->GetHeightReal(px1, pz1, false);
+				float h2 = ground->GetHeightReal(px2, pz1, false);
+				float h3 = ground->GetHeightReal(px2, pz2, false);
+				float h4 = ground->GetHeightReal(px1, pz2, false);
 
 				scar->va->AddVertexTC(float3(px1, h1, pz1), tx1 + tx, tz1 + ty, color);
 				scar->va->AddVertexTC(float3(px2, h2, pz1), tx2 + tx, tz1 + ty, color);
@@ -798,7 +814,7 @@ void CGroundDecalHandler::UnitMovedNow(CUnit* unit)
 	const int xp = (int(unit->pos.x) / SQUARE_SIZE * 2);
 	const int mp = Clamp(zp * gs->hmapx + xp, 0, (gs->mapSquares / 4) - 1);
 
-	if (!mapInfo->terrainTypes[readmap->typemap[mp]].receiveTracks)
+	if (!mapInfo->terrainTypes[readmap->GetTypeMapSynced()[mp]].receiveTracks)
 		return;
 
 	const float3 pos = unit->pos + unit->frontdir * unit->unitDef->trackOffset;
@@ -806,8 +822,8 @@ void CGroundDecalHandler::UnitMovedNow(CUnit* unit)
 	TrackPart* tp = new TrackPart;
 	tp->pos1 = pos + unit->rightdir * unit->unitDef->trackWidth * 0.5f;
 	tp->pos2 = pos - unit->rightdir * unit->unitDef->trackWidth * 0.5f;
-	tp->pos1.y = ground->GetHeightReal(tp->pos1.x, tp->pos1.z);
-	tp->pos2.y = ground->GetHeightReal(tp->pos2.x, tp->pos2.z);
+	tp->pos1.y = ground->GetHeightReal(tp->pos1.x, tp->pos1.z, false);
+	tp->pos2.y = ground->GetHeightReal(tp->pos2.x, tp->pos2.z, false);
 	tp->creationTime = gs->frameNum;
 
 	TrackToAdd tta;
@@ -926,13 +942,14 @@ void CGroundDecalHandler::AddExplosion(float3 pos, float damage, float radius, b
 		return;
 
 	const float lifeTime = decalLevel * damage * 3.0f;
-	const float height = pos.y - ground->GetHeightReal(pos.x, pos.z);
+	const float altitude = pos.y - ground->GetHeightReal(pos.x, pos.z, false);
 
-	if (height >= radius)
-		return;
+	// no decals for below-ground explosions
+	if (altitude <= -1.0f) { return; }
+	if (altitude >= radius) { return; }
 
-	pos.y -= height;
-	radius -= height;
+	pos.y -= altitude;
+	radius -= altitude;
 
 	if (radius < 5.0f)
 		return;
@@ -940,7 +957,7 @@ void CGroundDecalHandler::AddExplosion(float3 pos, float damage, float radius, b
 	if (damage > radius * 30)
 		damage = radius * 30;
 
-	damage *= (radius) / (radius + height);
+	damage *= (radius) / (radius + altitude);
 	if (radius > damage * 0.25f)
 		radius = damage * 0.25f;
 
@@ -1219,4 +1236,8 @@ BuildingGroundDecal::~BuildingGroundDecal() {
 
 CGroundDecalHandler::Scar::~Scar() {
 	SafeDelete(va);
+}
+
+void CGroundDecalHandler::ExplosionOccurred(const CExplosionEvent& event) {
+	AddExplosion(event.GetPos(), event.GetDamage(), event.GetRadius(), ((event.GetWeaponDef() != NULL) && event.GetWeaponDef()->visuals.explosionScar));
 }

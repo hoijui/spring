@@ -1,13 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <assert.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Console.h" 
 
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 #include "Action.h"
 
 void CommandReceiver::RegisterAction(const std::string& name)
@@ -34,21 +34,23 @@ bool Console::ExecuteAction(const Action& action)
 	if (action.command == "commands")
 	{
 		logOutput.Print("Registered commands:");
-		for (std::map<const std::string, CommandReceiver*>::iterator it = commandMap.begin(); it != commandMap.end(); ++it)
+		std::map<const std::string, CommandReceiver*>::const_iterator cri;
+		for (cri = commandMap.begin(); cri != commandMap.end(); ++cri)
 		{
-			logOutput.Print(it->first);
+			logOutput.Print(cri->first);
 		}
 		return true;
 	}
 
-	std::map<const std::string, CommandReceiver*>::iterator it = commandMap.find(action.command);
-	if (it == commandMap.end()) {
+	std::map<const std::string, CommandReceiver*>::iterator cri = commandMap.find(action.command);
+	if (cri == commandMap.end()) {
 		return false;
 	} else {
-		it->second->PushAction(action);
+		cri->second->PushAction(action);
 		return true;
 	}
 }
+
 
 Console::Console()
 {

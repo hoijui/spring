@@ -1,15 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "DynWater.h"
 #include "Game/Game.h"
 #include "Game/Camera.h"
+#include "Game/GameHelper.h"
+#include "Game/GlobalUnsynced.h"
+#include "Game/UI/MouseHandler.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
-#include "Game/UI/MouseHandler.h"
-#include "Game/GameHelper.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/FeatureDrawer.h"
@@ -24,7 +25,6 @@
 #include "Sim/Units/UnitDef.h"
 #include "System/LogOutput.h"
 #include "System/bitops.h"
-#include "System/GlobalUnsynced.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 

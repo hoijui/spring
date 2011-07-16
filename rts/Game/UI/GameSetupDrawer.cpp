@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <assert.h>
 #include <string>
@@ -8,23 +8,24 @@
 #include <SDL_timer.h>
 #include <SDL_keysym.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "GameSetupDrawer.h"
 
 #include "Game/GameServer.h"
 
-#include "NetProtocol.h"
-#include "ConfigHandler.h"
+#include "System/NetProtocol.h"
+#include "System/ConfigHandler.h"
 #include "Game/CameraHandler.h"
 #include "Game/PlayerHandler.h"
 #include "Game/GameSetup.h"
+#include "Game/GlobalUnsynced.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "StartPosSelecter.h"
 #include "Rendering/glFont.h"
 #include "KeyBindings.h"
-#include "EventHandler.h"
+#include "System/EventHandler.h"
 
 GameSetupDrawer* GameSetupDrawer::instance = NULL;
 

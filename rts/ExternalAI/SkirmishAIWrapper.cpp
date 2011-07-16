@@ -1,11 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
+#include "System/StdAfx.h"
 #include "SkirmishAIWrapper.h"
 
 #include "System/StdAfx.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/FileSystem/FileSystemHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/mmgr.h"
 #include "System/Util.h"
 #include "Sim/Units/Unit.h"
@@ -27,6 +28,8 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
+
+#undef DeleteFile
 
 CR_BIND_DERIVED(CSkirmishAIWrapper, CObject, )
 CR_REG_METADATA(CSkirmishAIWrapper, (
@@ -189,7 +192,7 @@ void CSkirmishAIWrapper::Init() {
 	int error = ai->HandleEvent(EVENT_INIT, &evtData);
 	if (error != 0) {
 		// init failed
-		logOutput.Print("Failed to handle init event: AI for team %d, error %d",
+		LOG_L(L_ERROR, "Failed to handle init event: AI for team %d, error %d",
 				teamId, error);
 		skirmishAIHandler.SetLocalSkirmishAIDieing(skirmishAIId, 5 /* = AI failed to init */);
 	} else {
@@ -376,9 +379,14 @@ void CSkirmishAIWrapper::Update(int frame) {
 	ai->HandleEvent(EVENT_UPDATE, &evtData);
 }
 
-void CSkirmishAIWrapper::GotChatMsg(const char* msg, int fromPlayerId) {
-	SMessageEvent evtData = {fromPlayerId, msg};
-	ai->HandleEvent(EVENT_MESSAGE, &evtData);
+void CSkirmishAIWrapper::SendChatMessage(const char* msg, int fromPlayerId) {
+	SChatMessageEvent evtData = {fromPlayerId, msg};
+	ai->HandleEvent(EVENT_CHAT_MESSAGE, &evtData);
+}
+
+void CSkirmishAIWrapper::SendLuaMessage(const char* inData, const char** outData) {
+	SLuaMessageEvent evtData = {inData, outData};
+	ai->HandleEvent(EVENT_LUA_MESSAGE, &evtData);
 }
 
 void CSkirmishAIWrapper::WeaponFired(int unitId, int weaponDefId) {

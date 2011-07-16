@@ -1,11 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "BaseGroundDrawer.h"
 
 #include "Game/Camera.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/SelectedUnits.h"
 #include "Game/UI/GuiHandler.h"
 #include "Ground.h"
@@ -14,7 +15,7 @@
 #include "ReadMap.h"
 #include "MapInfo.h"
 #include "Rendering/IPathDrawer.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
+#include "Rendering/Env/ITreeDrawer.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/RadarHandler.h"
 #include "System/ConfigHandler.h"
@@ -43,8 +44,8 @@ CBaseGroundDrawer::CBaseGroundDrawer(void)
 	extractDepthMap = NULL;
 
 #ifdef USE_GML	
-	multiThreadDrawGroundShadow=0;
-	multiThreadDrawGround=0;
+	multiThreadDrawGroundShadow = false;
+	multiThreadDrawGround = false;
 #endif
 
 	extraTexPBO.Bind();
@@ -134,7 +135,7 @@ void CBaseGroundDrawer::DrawTrees(bool drawReflection) const
 
 
 
-//todo: this part of extra textures is a mess really ...
+// XXX this part of extra textures is a mess really ...
 void CBaseGroundDrawer::DisableExtraTexture()
 {
 	if (drawLineOfSight) {
@@ -176,7 +177,7 @@ void CBaseGroundDrawer::SetMetalTexture(const CMetalMap* map)
 		SetDrawMode(drawMetal);
 
 		highResInfoTexWanted = false;
-		extraTex = map->metalMap;
+		extraTex = &map->metalMap[0];
 		extraTexPal = map->metalPal;
 		extractDepthMap = &map->extractionMap[0];
 		updateTextureState = 0;
@@ -299,8 +300,8 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 		return true;
 	}
 
-	const unsigned short* myLos         = &loshandler->losMap[gu->myAllyTeam].front();
-	const unsigned short* myAirLos      = &loshandler->airLosMap[gu->myAllyTeam].front();
+	const unsigned short* myLos         = &loshandler->losMaps[gu->myAllyTeam].front();
+	const unsigned short* myAirLos      = &loshandler->airLosMaps[gu->myAllyTeam].front();
 	const unsigned short* myRadar       = &radarhandler->radarMaps[gu->myAllyTeam].front();
 	const unsigned short* myJammer      = &radarhandler->jammerMaps[gu->myAllyTeam].front();
 #ifdef SONAR_JAMMER_MAPS
@@ -365,11 +366,23 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 
 			case drawHeight: {
 				extraTexPal = heightLinePal->GetData();
+
+				// the extraTexture is guaranteed to be larger than the
+				// corner heightmap (gs->pwr2map* are always set to the
+				// next power of 2 of gs->map*, so > (gs->map* + 1))
+				const float* heightMap =
+					#ifdef USE_UNSYNCED_HEIGHTMAP
+					readmap->GetCornerHeightMapUnsynced();
+					#else
+					readmap->GetCornerHeightMapSynced();
+					#endif
+
 				for (int y = starty; y < endy; ++y) {
 					const int y_pwr2mapx = y * gs->pwr2mapx;
-					const int y_mapx     = y * gs->mapx;
-					for (int x = 0; x  < gs->mapx; ++x) {
-						const float height = readmap->centerheightmap[y_mapx + x];
+					const int y_mapx     = y * gs->mapxp1;
+
+					for (int x = 0; x < gs->mapxp1; ++x) {
+						const float height = heightMap[y_mapx + x];
 						const unsigned int value = (((unsigned int)(height * 8.0f)) % 255) * 3;
 						const int i = (y_pwr2mapx + x) * 4 - offset;
 						infoTexMem[i + COLOR_R] = 64 + (extraTexPal[value]     >> 1);
@@ -390,9 +403,11 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 				const int airSizeY = loshandler->airSizeY;
 				const int losMipLevel = loshandler->losMipLevel + lowRes;
 				const int airMipLevel = loshandler->airMipLevel + lowRes;
+
 				if (drawRadarAndJammer) {
 					const int rxsize = radarhandler->xsize;
 					const int rzsize = radarhandler->zsize;
+
 					for (int y = starty; y < endy; ++y) {
 						for (int x = 0; x < endx; ++x) {
 							int totalLos = 255;
@@ -402,7 +417,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 								totalLos = inLos + inAir;
 							}
 #ifdef SONAR_JAMMER_MAPS
-							const bool useRadar = (ground->GetHeightReal(xPos, zPos) >= 0.0f);
+							const bool useRadar = (ground->GetHeightReal(xPos, zPos, false) >= 0.0f);
 							const unsigned short* radarMap  = useRadar ? myRadar  : mySonar;
 							const unsigned short* jammerMap = useRadar ? myJammer : mySonarJammer;
 #else
@@ -468,7 +483,7 @@ bool CBaseGroundDrawer::UpdateExtraTexture()
 			glGenTextures(1,&infoTex);
 			glBindTexture(GL_TEXTURE_2D, infoTex);
 
-			//todo: maybe use GL_RGB5 as internalformat?
+			// XXX maybe use GL_RGB5 as internalformat?
 			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);

@@ -1,28 +1,29 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <fstream>
 #include <SDL_keysym.h>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Game/Camera/CameraController.h"
 #include "Game/Camera.h"
 #include "Game/CameraHandler.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/SelectedUnits.h"
-#include "Sim/Misc/TeamHandler.h"
-#include "LogOutput.h"
-#include "Map/Ground.h"
+#include "KeyBindings.h"
 #include "MouseHandler.h"
-#include "FileSystem/FileSystem.h"
 #include "SelectionKeyHandler.h"
+#include "Map/Ground.h"
 #include "Sim/Misc/CategoryHandler.h"
+#include "Sim/Misc/TeamHandler.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitTypes/Building.h"
-#include "KeyBindings.h"
-#include "myMath.h"
+#include "System/LogOutput.h"
+#include "System/myMath.h"
+#include "System/FileSystem/FileSystem.h"
 #include <boost/cstdint.hpp>
 
 CSelectionKeyHandler* selectionKeys;
@@ -93,42 +94,29 @@ void CSelectionKeyHandler::LoadSelectionKeys()
 	}
 }
 
-std::string CSelectionKeyHandler::ReadToken(std::string& s)
+std::string CSelectionKeyHandler::ReadToken(std::string& str)
 {
 	std::string ret;
-	// change made.  avoiding repeated substr calls...
-/*	int index = 0;
-	//char c=s[index];
 
-	while ( index < s.length() && s[index] != '_' && s[index++] != '+' );
-
-	ret = s.substr(0, index);
-	if ( index == s.length() )
-		s.clear();
-	else
-		s = s.substr(index, std::string::npos);
-*/
-	if (s.empty())
-		return std::string();
-
-	char c=s[0];
-	while(c && c!='_' && c!='+'){
-		s=s.substr(1,std::string::npos);
-		ret+=c;
-		c=s[0];
+	size_t index = 0;
+	while ((index < str.length()) && (str[index] != '_') && (str[index] != '+')) {
+		index++;
 	}
+
+	ret = str.substr(0, index);
+	str = str.substr(index, std::string::npos);
 
 	return ret;
 }
 
 
-std::string CSelectionKeyHandler::ReadDelimiter(std::string& s)
+std::string CSelectionKeyHandler::ReadDelimiter(std::string& str)
 {
-	std::string ret = s.substr(0, 1);
-	if (s.size() >= 1) {
-		s = s.substr(1, std::string::npos);
+	std::string ret = str.substr(0, 1);
+	if (str.size() >= 1) {
+		str = str.substr(1, std::string::npos);
 	} else {
-		s = "";
+		str = "";
 	}
 	return ret;
 }
@@ -155,8 +143,10 @@ namespace
 			assert(false);
 		}
 
-		/// Actual filtering, should return false if unit should be removed
-		/// from proposed selection.
+		/**
+		 * Actual filtering, should return false if unit should be removed
+		 * from proposed selection.
+		 */
 		virtual bool ShouldIncludeUnit(const CUnit* unit) const = 0;
 
 		/// Number of arguments this filter has.
@@ -189,7 +179,7 @@ namespace
 	DECLARE_FILTER(Weapons, !unit->weapons.empty());
 	DECLARE_FILTER(Idle, unit->commandAI->commandQue.empty());
 	DECLARE_FILTER(Waiting, !unit->commandAI->commandQue.empty() &&
-	               (unit->commandAI->commandQue.front().id == CMD_WAIT));
+	               (unit->commandAI->commandQue.front().GetID() == CMD_WAIT));
 	DECLARE_FILTER(InHotkeyGroup, unit->group != NULL);
 	DECLARE_FILTER(Radar, unit->radarRadius || unit->sonarRadius || unit->jammerRadius);
 
@@ -312,7 +302,7 @@ void CSelectionKeyHandler::DoSelection(std::string selectString)
 		ReadDelimiter(selectString);
 		float maxDist=atof(ReadToken(selectString).c_str());
 
-		float dist=ground->LineGroundCol(camera->pos,camera->pos+mouse->dir*8000);
+		float dist = ground->LineGroundCol(camera->pos, camera->pos + mouse->dir * 8000, false);
 		float3 mp=camera->pos+mouse->dir*dist;
 		if (cylindrical) {
 			mp.y = 0;

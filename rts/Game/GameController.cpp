@@ -1,28 +1,29 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "GameController.h"
-#include "Platform/Clipboard.h"
+#include "System/Platform/Clipboard.h"
 
 
 CGameController* activeController = NULL;
 
 
 CGameController::CGameController()
+	: userWriting(false)
+	, writingPos(0)
+	, ignoreNextChar(false)
+	, ignoreChar(0)
 {
-	userWriting = false;
-	writingPos = 0;
-	ignoreNextChar = false;
-	ignoreChar = 0;
 }
 
 
 CGameController::~CGameController()
 {
-	if (activeController == this)
+	if (activeController == this) {
 		activeController = NULL;
+	}
 }
 
 
@@ -38,13 +39,13 @@ bool CGameController::Update()
 }
 
 
-int CGameController::KeyPressed(unsigned short k,bool isRepeat)
+int CGameController::KeyPressed(unsigned short key, bool isRepeat)
 {
 	return 0;
 }
 
 
-int CGameController::KeyReleased(unsigned short k)
+int CGameController::KeyReleased(unsigned short key)
 {
 	return 0;
 }

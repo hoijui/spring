@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "FireBallProjectile.h"
 #include "Game/Camera.h"
@@ -152,11 +152,6 @@ void CFireBallProjectile::EmitSpark()
 
 void CFireBallProjectile::Collision()
 {
-	if (weaponDef->waterweapon && ground->GetHeightReal(pos.x, pos.z) < pos.y) {
-		// make waterweapons not explode in water
-		return;
-	}
-
 	CWeaponProjectile::Collision();
 	deleteMe = false;
 }

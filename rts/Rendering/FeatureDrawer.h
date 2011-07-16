@@ -5,7 +5,7 @@
 
 #include <set>
 #include <vector>
-#include "creg/creg_cond.h"
+#include "System/creg/creg_cond.h"
 #include "System/EventClient.h"
 #include "Rendering/Models/WorldObjectModelRenderer.h"
 
@@ -56,7 +56,7 @@ public:
 #endif
 
 private:
-	void UpdateDrawPos(CFeature* f);
+	static void UpdateDrawPos(CFeature* f);
 
 	void DrawOpaqueFeatures(int);
 	void DrawFarFeatures();

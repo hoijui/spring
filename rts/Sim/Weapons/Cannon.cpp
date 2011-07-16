@@ -1,20 +1,20 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "Cannon.h"
 #include "Game/TraceRay.h"
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
 #include "Sim/Projectiles/Unsynced/HeatCloudProjectile.h"
 #include "Sim/Projectiles/Unsynced/SmokeProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/ExplosiveProjectile.h"
 #include "Sim/Units/Unit.h"
-#include "Sync/SyncTracer.h"
+#include "System/Sync/SyncTracer.h"
 #include "WeaponDefHandler.h"
-#include "myMath.h"
-#include "FastMath.h"
-#include "mmgr.h"
+#include "System/myMath.h"
+#include "System/FastMath.h"
+#include "System/mmgr.h"
 
 CR_BIND_DERIVED(CCannon, CWeapon, (NULL));
 
@@ -131,13 +131,16 @@ bool CCannon::TryTarget(const float3 &pos, bool userTarget, CUnit* unit)
 	}
 	flatdir /= flatlength;
 
-	float gc = ground->TrajectoryGroundCol(weaponMuzzlePos, flatdir, flatlength - 10,
-			dir.y , gravity / (projectileSpeed * projectileSpeed) * 0.5f);
-	if (gc > 0) {
+	const float linear = dir.y;
+	const float quadratic = gravity / (projectileSpeed * projectileSpeed) * 0.5f;
+	const float gc = ((collisionFlags & Collision::NOGROUND) == 0)?
+		ground->TrajectoryGroundCol(weaponMuzzlePos, flatdir, flatlength - 10, linear, quadratic):
+		-1.0f;
+
+	if (gc > 0.0f) {
 		return false;
 	}
 
-	const float quadratic = gravity / (projectileSpeed * projectileSpeed) * 0.5f;
 	const float spread =
 		((accuracy + sprayAngle) * 0.6f) *
 		((1.0f - owner->limExperience * weaponDef->ownerExpAccWeight) * 0.9f);

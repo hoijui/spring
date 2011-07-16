@@ -1,5 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
-#include "StdAfx.h"
+
+#include "System/StdAfx.h"
 #include "FileSystemHandler.h"
 
 #include <cassert>
@@ -28,11 +29,11 @@
 	#endif
 #endif
 
-#include "Util.h"
-#include "LogOutput.h"
-#include "FileSystem/ArchiveScanner.h"
-#include "FileSystem/VFSHandler.h"
-#include "Exceptions.h"
+#include "System/Util.h"
+#include "System/Log/ILog.h"
+#include "System/FileSystem/ArchiveScanner.h"
+#include "System/FileSystem/VFSHandler.h"
+#include "System/Exceptions.h"
 #include "FileSystem.h"
 
 FileSystemHandler* FileSystemHandler::instance = NULL;
@@ -188,16 +189,15 @@ std::string FileSystemHandler::StripTrailingSlashes(const std::string& path)
 
 std::string FileSystemHandler::GetParent(const std::string& path) {
 
-	std::string parent = "";
-
+	std::string parent = path;
 	EnsureNoPathSepAtEnd(parent);
 
-	static const char* PATH_SEP_REGEX = sPS_WIN32 sPS_POSIX;
-	const std::string::size_type slashPos = path.find_last_of(PATH_SEP_REGEX);
+	static const char* PATH_SEP_REGEX = sPS_POSIX sPS_WIN32;
+	const std::string::size_type slashPos = parent.find_last_of(PATH_SEP_REGEX);
 	if (slashPos == std::string::npos) {
 		parent = "";
 	} else {
-		parent.resize(0, slashPos + 1);
+		parent.resize(slashPos + 1);
 	}
 
 	return parent;
@@ -259,13 +259,13 @@ std::string FileSystemHandler::GetFileModificationDate(const std::string& file)
 			NULL);                          // no attr. template
 
 	if (hFile == INVALID_HANDLE_VALUE) {
-		logOutput.Print("WARNING: Failed opening file for retreiving last modification time: %s", file.c_str());
+		LOG_L(L_WARNING, "Failed opening file for retreiving last modification time: %s", file.c_str());
 	} else {
 		FILETIME /*ftCreate, ftAccess,*/ ftWrite;
 
 		// Retrieve the file times for the file.
 		if (GetFileTime(hFile, NULL, NULL, &ftWrite) != 0) {
-			logOutput.Print("WARNING: Failed fetching last modification time from file: %s", file.c_str());
+			LOG_L(L_WARNING, "Failed fetching last modification time from file: %s", file.c_str());
 		} else {
 			// Convert the last-write time to local time.
 			const size_t cTime_size = 20;
@@ -282,7 +282,7 @@ std::string FileSystemHandler::GetFileModificationDate(const std::string& file)
 						stLocal.wHour, stLocal.wMinute, stLocal.wSecond);
 				time = cTime;
 			} else {
-				logOutput.Print("WARNING: Failed converting last modification time to a string");
+				LOG_L(L_WARNING, "Failed converting last modification time to a string");
 			}
 		}
 		CloseHandle(hFile);
@@ -296,12 +296,12 @@ std::string FileSystemHandler::GetFileModificationDate(const std::string& file)
 
 	const int fetchOk = stat(file.c_str(), &attrib); // get the attributes of file
 	if (fetchOk != 0) {
-		logOutput.Print("WARNING: Failed opening file for retreiving last modification time: %s", file.c_str());
+		LOG_L(L_WARNING, "Failed opening file for retreiving last modification time: %s", file.c_str());
 	} else {
 		// Get the last modified time and put it into the time structure
 		clock = gmtime(&(attrib.st_mtime));
 		if (clock == NULL) {
-			logOutput.Print("WARNING: Failed fetching last modification time from file: %s", file.c_str());
+			LOG_L(L_WARNING, "Failed fetching last modification time from file: %s", file.c_str());
 		} else {
 			SNPRINTF(cTime, cTime_size, "%d%02d%02d%02d%02d%02d", 1900+clock->tm_year, clock->tm_mon, clock->tm_mday, clock->tm_hour, clock->tm_min, clock->tm_sec);
 			time = cTime;
@@ -385,7 +385,7 @@ bool FileSystemHandler::mkdir(const std::string& dir)
 #endif
 
 	if (!dirCreated) {
-		logOutput.Print("Could not create directory %s: %s", dir.c_str(), strerror(errno));
+		LOG_L(L_WARNING, "Could not create directory %s: %s", dir.c_str(), strerror(errno));
 	}
 
 	return dirCreated;
@@ -396,7 +396,7 @@ bool FileSystemHandler::DeleteFile(const std::string& file)
 	bool fileDeleted = (remove(file.c_str()) == 0);
 
 	if (!fileDeleted) {
-		logOutput.Print("Could not delete file %s: %s", file.c_str(), strerror(errno));
+		LOG_L(L_WARNING, "Could not delete file %s: %s", file.c_str(), strerror(errno));
 	}
 
 	return fileDeleted;

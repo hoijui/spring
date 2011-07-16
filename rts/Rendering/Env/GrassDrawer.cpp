@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <algorithm>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "GrassDrawer.h"
 #include "Game/Camera.h"
@@ -23,7 +23,6 @@
 #include "System/myMath.h"
 #include "System/ConfigHandler.h"
 #include "System/Exceptions.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Util.h"
 #include "System/FileSystem/FileHandler.h"
 
@@ -104,7 +103,7 @@ CGrassDrawer::CGrassDrawer()
 
 	{
 		CBitmap grassBladeTexBM;
-		if (!grassBladeTexBM.Load(mapInfo->smf.grassBladeTexName)) {
+		if (!grassBladeTexBM.Load(mapInfo->grass.grassBladeTexName)) {
 			//! map didn't define a grasstex, so generate one
 			grassBladeTexBM.channels = 4;
 			grassBladeTexBM.Alloc(256,64);
@@ -259,7 +258,7 @@ public:
 				for (int x2 = 0; x2 < grassBlockSize; ++x2) { //!loop over all squares in block
 					if (*gm) {
 						float3 squarePos((xgbsx + 0.5f) * gSSsq, 0.0f, (ygbsy + 0.5f) * gSSsq);
-							squarePos.y = ground->GetHeightReal(squarePos.x, squarePos.z);
+							squarePos.y = ground->GetHeightReal(squarePos.x, squarePos.z, false);
 
 						/*if (!camera->InView(squarePos, gSSsq * 2.0f)) { //the QuadField visibility check should be enough
 							// double the radius of the check, grass on the left of
@@ -281,8 +280,8 @@ public:
 								const float dy = (ygbsy + fRand(1)) * gSSsq;
 								const float col = 0.62f;
 
-								float3 pos(dx, ground->GetHeightReal(dx, dy), dy);
-									pos.y -= ground->GetSlope(dx, dy) * 10.0f + 0.03f;
+								float3 pos(dx, ground->GetHeightReal(dx, dy, false), dy);
+									pos.y -= ground->GetSlope(dx, dy, false) * 10.0f + 0.03f;
 
 								glColor3f(col, col, col);
 
@@ -347,7 +346,7 @@ public:
 
 			if (!grass->va) {
 				grass->va = new CVertexArray;;
-				grass->pos = float3((x + 0.5f) * bMSsq, ground->GetHeightReal((x + 0.5f) * bMSsq, (y + 0.5f) * bMSsq), (y + 0.5f) * bMSsq);
+				grass->pos = float3((x + 0.5f) * bMSsq, ground->GetHeightReal((x + 0.5f) * bMSsq, (y + 0.5f) * bMSsq, false), (y + 0.5f) * bMSsq);
 
 				va = grass->va;
 				va->Initialize();
@@ -376,8 +375,8 @@ public:
 								const float dy = (ygbsy + fRand(1)) * gSSsq;
 								const float col = 1.0f;
 
-								float3 pos(dx, ground->GetHeightReal(dx, dy) + 0.5f, dy);
-									pos.y -= (ground->GetSlope(dx, dy) * 10.0f + 0.03f);
+								float3 pos(dx, ground->GetHeightReal(dx, dy, false) + 0.5f, dy);
+									pos.y -= (ground->GetSlope(dx, dy, false) * 10.0f + 0.03f);
 
 								va->AddVertexQTN(pos, 0.0f,         0.0f, float3(-partTurfSize, -partTurfSize, col));
 								va->AddVertexQTN(pos, 1.0f / 16.0f, 0.0f, float3( partTurfSize, -partTurfSize, col));
@@ -499,7 +498,7 @@ void CGrassDrawer::Draw(void)
 
 		glMatrixMode(GL_PROJECTION);
 		glPushMatrix();
-		glMultMatrixd(camera->GetViewMat());
+		glMultMatrixf(camera->GetViewMatrix());
 		glMatrixMode(GL_MODELVIEW);
 		glPushMatrix();
 		glLoadIdentity();
@@ -664,7 +663,7 @@ void CGrassDrawer::Draw(void)
 
 		if (grassMap[y * gs->mapx / grassSquareSize + x]) {
 			float3 squarePos((x + 0.5f) * gSSsq, 0.0f, (y + 0.5f) * gSSsq);
-				squarePos.y = ground->GetHeightReal(squarePos.x, squarePos.z);
+				squarePos.y = ground->GetHeightReal(squarePos.x, squarePos.z, false);
 			const float3 billboardDirZ = (squarePos - camera->pos).ANormalize();
 			const float3 billboardDirX = (billboardDirZ.cross(UpVector)).ANormalize();
 			const float3 billboardDirY = billboardDirX.cross(billboardDirZ);
@@ -698,8 +697,8 @@ void CGrassDrawer::Draw(void)
 				const float dy = (y + fRand(1)) * gSSsq;
 				const float col = 1.0f;
 
-				float3 pos(dx, ground->GetHeightReal(dx, dy) + 0.5f, dy);
-					pos.y -= (ground->GetSlope(dx, dy) * 10.0f + 0.03f);
+				float3 pos(dx, ground->GetHeightReal(dx, dy, false) + 0.5f, dy);
+					pos.y -= (ground->GetSlope(dx, dy, false) * 10.0f + 0.03f);
 
 				if (camera->InView(pos, turfSize * 0.7f)) {
 					va->AddVertexQTN(pos,         0.0f, 0.0f, float3(-partTurfSize, -partTurfSize, col));
@@ -859,13 +858,18 @@ void CGrassDrawer::CreateGrassDispList(int listNum)
 
 void CGrassDrawer::CreateGrassBladeTex(unsigned char* buf)
 {
-	float3 col(0.59f+fRand(0.11f),0.81f+fRand(0.08f),0.57f+fRand(0.11f));
+	float3 col( mapInfo->grass.color + float3(fRand(0.11f),fRand(0.08f),fRand(0.11f)) );
+	col.x = Clamp(col.x, 0.f, 1.f);
+	col.y = Clamp(col.y, 0.f, 1.f);
+	col.z = Clamp(col.z, 0.f, 1.f);
+
 	for(int y=0;y<64;++y){
 		for(int x=0;x<16;++x){
-			buf[(y*256+x)*4+0]=(unsigned char) ((col.x*(0.4f+.6f*y/(64.0f)))*255);
-			buf[(y*256+x)*4+1]=(unsigned char) ((col.y*(0.4f+.6f*y/(64.0f)))*255);
-			buf[(y*256+x)*4+2]=(unsigned char) ((col.z*(0.4f+.6f*y/(64.0f)))*255);
-			buf[(y*256+x)*4+3]=1;
+			const float brightness = (0.4f + 0.6f * (y/64.0f)) * 255.f;
+			buf[(y*256+x)*4+0] = (unsigned char)(col.x * brightness);
+			buf[(y*256+x)*4+1] = (unsigned char)(col.y * brightness);
+			buf[(y*256+x)*4+2] = (unsigned char)(col.z * brightness);
+			buf[(y*256+x)*4+3] = 1;
 		}
 	}
 }

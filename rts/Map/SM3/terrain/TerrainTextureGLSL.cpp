@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "TerrainBase.h"
 #include "TerrainTexture.h"
@@ -9,12 +9,11 @@
 #include "TerrainTextureGLSL.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/GlobalRendering.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "bitops.h"
-#include "Util.h"
-#include "GlobalUnsynced.h"
-#include "Exceptions.h"
+#include "System/bitops.h"
+#include "System/Util.h"
+#include "System/Exceptions.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/FileSystem.h"
 
 #include <fstream>
 #include <list>

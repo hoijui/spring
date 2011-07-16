@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "lib/gml/gml.h"
 #include <windows.h>
 #include <process.h>
@@ -9,18 +9,22 @@
 
 #include "System/Platform/CrashHandler.h"
 #include "System/Platform/errorhandler.h"
-#include "LogOutput.h"
-#include "NetProtocol.h"
+#include "System/Log/ILog.h"
+#include "System/LogOutput.h"
+#include "System/NetProtocol.h"
 #include "seh.h"
-#include "Util.h"
+#include "System/Util.h"
 #include "Game/GameVersion.h"
 
 
 #define BUFFER_SIZE 2048
 #define MAX_STACK_DEPTH 4096
 
-
 namespace CrashHandler {
+
+CRITICAL_SECTION stackLock;
+int stackLockInit() { InitializeCriticalSection(&stackLock); return 0; }
+int dummyStackLock = stackLockInit();
 
 static void SigAbrtHandler(int signal)
 {
@@ -30,8 +34,9 @@ static void SigAbrtHandler(int signal)
 }
 
 // Set this to the desired printf style output function.
-// Currently we write through the logOutput class to infolog.txt
-#define PRINT logOutput.Print
+// Currently we write through the ILog.h frontend to logOutput to infolog.txt
+#define PRINT(fmt, ...) \
+		LOG_L(L_ERROR, fmt, ##__VA_ARGS__)
 
 /** Convert exception code to human readable string. */
 static const char* ExceptionName(DWORD exceptionCode)
@@ -96,6 +101,10 @@ static bool InitImageHlpDll()
 	}
 #endif // _MSC_VER >= 1500
 
+static DWORD __stdcall AllocTest(void *param) {
+	GlobalFree(GlobalAlloc(GMEM_FIXED, 16384));
+	return 0;
+}
 
 /** Print out a stacktrace. */
 static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hThread = INVALID_HANDLE_VALUE)
@@ -120,22 +129,79 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 	if (e) {
 		c = *e->ContextRecord;
 		thread = GetCurrentThread();
-	} else {
-		SuspendThread(hThread);
+	} else if (hThread != INVALID_HANDLE_VALUE) {
+		for (int allocIter = 0; ; ++allocIter) {
+			HANDLE allocThread = CreateThread(NULL, 0, &AllocTest, NULL, CREATE_SUSPENDED, NULL);
+			SuspendThread(hThread);
+			ResumeThread(allocThread);
+			if (WaitForSingleObject(allocThread, 10) == WAIT_OBJECT_0) {
+				CloseHandle(allocThread);
+				break;
+			}
+			ResumeThread(hThread);
+			if (WaitForSingleObject(allocThread, 10) != WAIT_OBJECT_0)
+				TerminateThread(allocThread, 0);
+			CloseHandle(allocThread);
+			if (allocIter < 10)
+				continue;
+			PRINT("Error: Stacktrace failed, allocator deadlock");
+			return;
+		}
+
 		suspended = true;
 		memset(&c, 0, sizeof(CONTEXT));
 		c.ContextFlags = CONTEXT_FULL;
-		// FIXME: This does not work if you want to dump the current thread's stack
+
 		if (!GetThreadContext(hThread, &c)) {
 			ResumeThread(hThread);
+			PRINT("Error: Stacktrace failed, failed to get context");
 			return;
 		}
 		thread = hThread;
 	}
+	else {
+#ifdef _M_IX86
+		ZeroMemory( &c, sizeof( CONTEXT ) );
+		c.ContextFlags = CONTEXT_CONTROL;
+#ifdef _MSC_VER
+		__asm
+		{
+			call func;
+			func: pop eax;
+			mov [c.Eip], eax;
+			mov [c.Ebp], ebp;
+			mov [c.Esp], esp;
+		}
+#else
+		DWORD eip, esp, ebp;
+		__asm__ __volatile__ ("call func; func: pop %%eax; mov %%eax, %0;" : "=m" (eip) : : "%eax" );
+		__asm__ __volatile__ ("mov %%ebp, %0;" : "=m" (ebp) : : );
+		__asm__ __volatile__ ("mov %%esp, %0;" : "=m" (esp) : : );
+		c.Eip=eip;
+		c.Ebp=ebp;
+		c.Esp=esp;
+#endif
+#else
+		RtlCaptureContext( &c );
+#endif
+		thread = GetCurrentThread();
+	}
+
+	DWORD MachineType = 0;
 	ZeroMemory(&sf, sizeof(sf));
+#ifdef _M_IX86
+	MachineType = IMAGE_FILE_MACHINE_I386;
 	sf.AddrPC.Offset = c.Eip;
 	sf.AddrStack.Offset = c.Esp;
 	sf.AddrFrame.Offset = c.Ebp;
+#elif _M_X64
+	MachineType = IMAGE_FILE_MACHINE_AMD64;
+	sf.AddrPC.Offset = c.Rip;
+	sf.AddrStack.Offset = c.Rsp;
+	sf.AddrFrame.Offset = c.Rsp;
+#else
+	#error "CrashHandler: Unsupported platform"
+#endif
 	sf.AddrPC.Mode = AddrModeFlat;
 	sf.AddrStack.Mode = AddrModeFlat;
 	sf.AddrFrame.Mode = AddrModeFlat;
@@ -147,7 +213,7 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 	bool containsOglDll = false;
 	while (true) {
 		more = StackWalk(
-			IMAGE_FILE_MACHINE_I386, // TODO: fix this for 64 bit windows?
+			MachineType,
 			process,
 			thread,
 			&sf,
@@ -196,8 +262,8 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 		containsOglDll = containsOglDll || strstr(modname, "atiogl");
 		// OpenGL lib names (Nvidia): "nvoglnt.dll" "nvoglv32.dll" "nvoglv64.dll" (last one is a guess)
 		containsOglDll = containsOglDll || strstr(modname, "nvogl");
-		// OpenGL lib names (Intel): "ig4dev32.dll" "ig4dev64.dll"
-		containsOglDll = containsOglDll || strstr(modname, "ig4dev");
+		// OpenGL lib names (Intel): "ig4dev32.dll" "ig4dev64.dll" "ig4icd32.dll"
+		containsOglDll = containsOglDll || strstr(modname, "ig4");
 
 		++count;
 	}
@@ -228,6 +294,8 @@ void Stacktrace(Threading::NativeThreadHandle thread, const std::string& threadN
 }
 
 void PrepareStacktrace() {
+	EnterCriticalSection( &stackLock );
+
 	InitImageHlpDll();
 
 	// Record list of loaded DLLs.
@@ -238,6 +306,30 @@ void PrepareStacktrace() {
 void CleanupStacktrace() {
 	// Unintialize IMAGEHLP.DLL
 	SymCleanup(GetCurrentProcess());
+
+	LeaveCriticalSection( &stackLock );
+
+}
+
+void OutputStacktrace() {
+	PRINT("Error handler invoked for Spring %s.", SpringVersion::GetFull().c_str());
+#ifdef USE_GML
+	PRINT("MT with %d threads.", gmlThreadCount);
+#endif
+
+	InitImageHlpDll();
+
+	// Record list of loaded DLLs.
+	PRINT("DLL information:");
+	SymEnumerateModules(GetCurrentProcess(), EnumModules, NULL);
+
+	PRINT("Stacktrace:");
+	Stacktrace(NULL,NULL);
+
+	// Unintialize IMAGEHLP.DLL
+	SymCleanup(GetCurrentProcess());
+
+	logOutput.Flush();
 }
 
 /** Called by windows if an exception happens. */

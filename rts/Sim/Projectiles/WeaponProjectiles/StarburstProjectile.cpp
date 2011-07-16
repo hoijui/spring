@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "StarburstProjectile.h"
 #include "Game/Camera.h"
@@ -17,7 +17,6 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/Sync/SyncTracer.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Matrix44f.h"
 #include "System/myMath.h"
 
@@ -129,8 +128,15 @@ CStarburstProjectile::CStarburstProjectile(
 	cegID = gCEG->Load(explGenHandler, cegTag);
 }
 
+void CStarburstProjectile::Detach()
+{
+	// SYNCED
+	CWeaponProjectile::Detach();
+}
+
 CStarburstProjectile::~CStarburstProjectile()
 {
+	// UNSYNCED
 	delete numCallback;
 	if (curCallback) {
 		curCallback->drawCallbacker = 0;
@@ -144,16 +150,6 @@ CStarburstProjectile::~CStarburstProjectile()
 
 void CStarburstProjectile::Collision()
 {
-	const float h = ground->GetHeightReal(pos.x, pos.z);
-
-	if (weaponDef->waterweapon && h < pos.y) {
-		// prevent impact on water if waterweapon is set
-		return;
-	}
-	if (h > pos.y) {
-		pos += (speed * (h - pos.y) / speed.y);
-	}
-
 	if (weaponDef->visuals.smokeTrail) {
 		new CSmokeTrailProjectile(pos, oldSmoke, dir, oldSmokeDir, owner(), false, true, 7, SMOKE_TIME, 0.7f, drawTrail, 0, weaponDef->visuals.texture2);
 	}

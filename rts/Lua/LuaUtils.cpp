@@ -1,30 +1,45 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <set>
 #include <cctype>
 #include <zlib.h>
 #include <boost/cstdint.hpp>
+#include <string.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaUtils.h"
 
-#include "LogOutput.h"
-#include "Util.h"
+#include "System/LogOutput.h"
+#include "System/Util.h"
+#include "LuaConfig.h"
+#include <boost/thread/recursive_mutex.hpp>
 
-
-static       int depth = 0;
 static const int maxDepth = 256;
+int backupSize = 0;
 
+
+boost::recursive_mutex luaprimmutex, luasecmutex;
+
+boost::recursive_mutex* getLuaMutex(bool userMode, bool primary) {
+#if (LUA_MT_OPT & LUA_MUTEX)
+	if(userMode)
+		return new boost::recursive_mutex();
+	else // LuaGaia & LuaRules will share mutexes to avoid deadlocks during XCalls etc.
+		return primary ? &luaprimmutex : &luasecmutex;
+#else
+		return &luaprimmutex;
+#endif
+}
 
 /******************************************************************************/
 /******************************************************************************/
 
 
-static bool CopyPushData(lua_State* dst, lua_State* src, int index);
-static bool CopyPushTable(lua_State* dst, lua_State* src, int index);
+static bool CopyPushData(lua_State* dst, lua_State* src, int index, int depth);
+static bool CopyPushTable(lua_State* dst, lua_State* src, int index, int depth);
 
 
 static inline int PosLuaIndex(lua_State* src, int index)
@@ -37,7 +52,7 @@ static inline int PosLuaIndex(lua_State* src, int index)
 }
 
 
-static bool CopyPushData(lua_State* dst, lua_State* src, int index)
+static bool CopyPushData(lua_State* dst, lua_State* src, int index, int depth)
 {
 	const int type = lua_type(src, index);
 	switch (type) {
@@ -56,7 +71,7 @@ static bool CopyPushData(lua_State* dst, lua_State* src, int index)
 			break;
 		}
 		case LUA_TTABLE: {
-			CopyPushTable(dst, src, index);
+			CopyPushTable(dst, src, index, depth);
 			break;
 		}
 		default: {
@@ -68,22 +83,20 @@ static bool CopyPushData(lua_State* dst, lua_State* src, int index)
 }
 
 
-static bool CopyPushTable(lua_State* dst, lua_State* src, int index)
+static bool CopyPushTable(lua_State* dst, lua_State* src, int index, int depth)
 {
-	if (depth > maxDepth) {
+	if (depth++ > maxDepth) {
 		lua_pushnil(dst); // push something
 		return false;
 	}
 
-	depth++;
 	lua_newtable(dst);
 	const int table = PosLuaIndex(src, index);
 	for (lua_pushnil(src); lua_next(src, table) != 0; lua_pop(src, 1)) {
-		CopyPushData(dst, src, -2); // copy the key
-		CopyPushData(dst, src, -1); // copy the value
+		CopyPushData(dst, src, -2, depth); // copy the key
+		CopyPushData(dst, src, -1, depth); // copy the value
 		lua_rawset(dst, -3);
 	}
-	depth--;
 
 	return true;
 }
@@ -98,12 +111,142 @@ int LuaUtils::CopyData(lua_State* dst, lua_State* src, int count)
 	}
 	lua_checkstack(dst, count); // FIXME: not enough for table chains
 
-	depth = 0;
+	const int startIndex = (srcTop - count + 1);
+	const int endIndex   = srcTop;
+	for (int i = startIndex; i <= endIndex; i++) {
+		CopyPushData(dst, src, i, 0);
+	}
+	lua_settop(dst, dstTop + count);
+
+	return count;
+}
+
+/******************************************************************************/
+/******************************************************************************/
+
+static bool BackupData(LuaUtils::DataDump &d, lua_State* src, int index, int depth);
+static bool RestoreData(const LuaUtils::DataDump &d, lua_State* dst, int depth);
+static bool BackupTable(LuaUtils::DataDump &d, lua_State* src, int index, int depth);
+static bool RestoreTable(const LuaUtils::DataDump &d, lua_State* dst, int depth);
+
+
+static bool BackupData(LuaUtils::DataDump &d, lua_State* src, int index, int depth) {
+	++backupSize;
+	const int type = lua_type(src, index);
+	d.type = type;
+	switch (type) {
+		case LUA_TBOOLEAN: {
+			d.bol = lua_toboolean(src, index);
+			break;
+		}
+		case LUA_TNUMBER: {
+			d.num = lua_tonumber(src, index);
+			break;
+		}
+		case LUA_TSTRING: {
+			size_t len = 0;
+			const char* data = lua_tolstring(src, index, &len);
+			if (len > 0) {
+				d.str.resize(len);
+				memcpy(&d.str[0], data, len);
+			}
+			break;
+		}
+		case LUA_TTABLE: {
+			if(!BackupTable(d, src, index, depth))
+				d.type = LUA_TNIL;
+			break;
+		}
+		default: {
+			d.type = LUA_TNIL;
+			break;
+		}
+	}
+	return true;
+}
+
+static bool RestoreData(const LuaUtils::DataDump &d, lua_State* dst, int depth) {
+	const int type = d.type;
+	switch (type) {
+		case LUA_TBOOLEAN: {
+			lua_pushboolean(dst, d.bol);
+			break;
+		}
+		case LUA_TNUMBER: {
+			lua_pushnumber(dst, d.num);
+			break;
+		}
+		case LUA_TSTRING: {
+			lua_pushlstring(dst, d.str.c_str(), d.str.size());
+			break;
+		}
+		case LUA_TTABLE: {
+			RestoreTable(d, dst, depth);
+			break;
+		}
+		default: {
+			lua_pushnil(dst);
+			break;
+		}
+	}
+	return true;
+}
+
+static bool BackupTable(LuaUtils::DataDump &d, lua_State* src, int index, int depth) {
+	if (depth++ > maxDepth)
+		return false;
+
+	const int table = PosLuaIndex(src, index);
+	for (lua_pushnil(src); lua_next(src, table) != 0; lua_pop(src, 1)) {
+		LuaUtils::DataDump dk, dv;
+		BackupData(dk, src, -2, depth);
+		BackupData(dv, src, -1, depth);
+		d.table.push_back(std::pair<LuaUtils::DataDump, LuaUtils::DataDump>(dk ,dv));
+	}
+
+	return true;
+}
+
+static bool RestoreTable(const LuaUtils::DataDump &d, lua_State* dst, int depth) {
+	if (depth++ > maxDepth) {
+		lua_pushnil(dst);
+		return false;
+	}
+
+	lua_newtable(dst);
+	for (std::vector<std::pair<LuaUtils::DataDump, LuaUtils::DataDump> >::const_iterator i = d.table.begin(); i != d.table.end(); ++i) {
+		RestoreData((*i).first, dst, depth);
+		RestoreData((*i).second, dst, depth);
+		lua_rawset(dst, -3);
+	}
+
+	return true;
+}
+
+
+int LuaUtils::Backup(std::vector<LuaUtils::DataDump> &dv, lua_State* src, int count) {
+	const int srcTop = lua_gettop(src);
+	if (srcTop < count)
+		return 0;
 
 	const int startIndex = (srcTop - count + 1);
 	const int endIndex   = srcTop;
 	for (int i = startIndex; i <= endIndex; i++) {
-		CopyPushData(dst, src, i);
+		dv.push_back(DataDump());
+		BackupData(dv.back(), src, i, 0);
+	}
+
+	return count;
+}
+
+
+int LuaUtils::Restore(const std::vector<LuaUtils::DataDump> &dv, lua_State* dst) {
+	const int dstTop = lua_gettop(dst);
+	int count = dv.size();
+	lua_checkstack(dst, count); // FIXME: not enough for table chains
+
+	for (std::vector<DataDump>::const_iterator i = dv.begin(); i != dv.end(); ++i) {
+		RestoreData(*i, dst, 0);
 	}
 	lua_settop(dst, dstTop + count);
 
@@ -337,7 +480,8 @@ void LuaUtils::ParseCommand(lua_State* L, const char* caller,
 	if (!lua_isnumber(L, idIndex)) {
 		luaL_error(L, "%s(): bad command ID", caller);
 	}
-	cmd.id = lua_toint(L, idIndex);
+	const int id = lua_toint(L, idIndex);
+	cmd.SetID(id);
 
 	// params
 	const int paramTable = (idIndex + 1);
@@ -369,7 +513,8 @@ void LuaUtils::ParseCommandTable(lua_State* L, const char* caller,
 	if (!lua_isnumber(L, -1)) {
 		luaL_error(L, "%s(): bad command ID", caller);
 	}
-	cmd.id = lua_toint(L, -1);
+	const int id = lua_toint(L, -1);
+	cmd.SetID(id);
 	lua_pop(L, 1);
 
 	// params
@@ -698,3 +843,36 @@ void LuaUtils::PushStringVector(lua_State* L, const vector<string>& vec)
 
 /******************************************************************************/
 /******************************************************************************/
+
+void LuaUtils::PushCommandDesc(lua_State* L, const CommandDescription& cd)
+{
+	const int numParams = cd.params.size();
+	const int numTblKeys = 12;
+
+	lua_checkstack(L, 1 + 1 + 1 + 1);
+	lua_createtable(L, 0, numTblKeys);
+
+	HSTR_PUSH_NUMBER(L, "id",          cd.id);
+	HSTR_PUSH_NUMBER(L, "type",        cd.type);
+	HSTR_PUSH_STRING(L, "name",        cd.name);
+	HSTR_PUSH_STRING(L, "action",      cd.action);
+	HSTR_PUSH_STRING(L, "tooltip",     cd.tooltip);
+	HSTR_PUSH_STRING(L, "texture",     cd.iconname);
+	HSTR_PUSH_STRING(L, "cursor",      cd.mouseicon);
+	HSTR_PUSH_BOOL(L,   "hidden",      cd.hidden);
+	HSTR_PUSH_BOOL(L,   "disabled",    cd.disabled);
+	HSTR_PUSH_BOOL(L,   "showUnique",  cd.showUnique);
+	HSTR_PUSH_BOOL(L,   "onlyTexture", cd.onlyTexture);
+
+	HSTR_PUSH(L, "params");
+
+	lua_createtable(L, 0, numParams);
+
+	for (int p = 0; p < numParams; p++) {
+		lua_pushsstring(L, cd.params[p]);
+		lua_rawseti(L, -2, p + 1);
+	}
+
+	// CmdDesc["params"] = {[1] = "string1", [2] = "string2", ...}
+	lua_settable(L, -3);
+}

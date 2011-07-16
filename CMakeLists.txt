@@ -1,4 +1,4 @@
-
+ 
 project(Spring)
 
 # CMake 2.4:
@@ -31,20 +31,31 @@ if    (WIN32)
 	SET(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS 1)
 endif (WIN32)
 
+if    (APPLE)
+	set(MACOSX_BUNDLE FALSE CACHE BOOL "Compile spring to work as a Bundle.app")
+	if    (MACOSX_BUNDLE)
+		add_definitions(-DMACOSX_BUNDLE)
+	endif (MACOSX_BUNDLE)
+else  (APPLE)
+	set(MACOSX_BUNDLE FALSE)
+endif (APPLE)
+
 ### Install path (relative to CMAKE_INSTALL_PREFIX)
 if    (UNIX AND NOT MINGW)
 	set (BINDIR  "bin"                CACHE STRING "Where to install binaries")
 	set (LIBDIR  "lib"                CACHE STRING "Where to install libraries")
 	set (MANDIR  "share/man"          CACHE STRING "Where to install man pages")
+	set (DOCDIR  "share/doc/spring-VERSION" CACHE STRING "Where to install basic project documentation (README, LICENSE, etc.)") # TODO set correct version here, and re-enable userdocs in doc/CMakeLists.txt
 	set (DATADIR "share/games/spring" CACHE STRING "Where to install game content")
 
 	set (APPLICATIONS_DIR "share/applications" CACHE STRING "Where to install desktop files")
-	set (PIXMAPS_DIR "share/pixmaps" CACHE STRING "Where to install icons")
-	set (MIME_DIR "share/mime"CACHE STRING "Where MIME definitions are located")
+	set (PIXMAPS_DIR      "share/pixmaps"      CACHE STRING "Where to install icons")
+	set (MIME_DIR         "share/mime"         CACHE STRING "Where MIME definitions are located")
 	set (STABS_DEBUG_SYMBOLS FALSE CACHE BOOL "Use stabs debug symbols (-stabs) instead of the GDB format (-gdb). This probably makes gdb and eg. addr2line work better with windows binaries (depends mainly on the tools version).")
 else  (UNIX AND NOT MINGW)
 	set (BINDIR  "." CACHE STRING "Where to install binaries")
 	set (LIBDIR  "." CACHE STRING "Where to install libraries")
+	set (DOCDIR  "doc" CACHE STRING "Where to install basic project documentation (README, LICENSE, etc.)")
 	set (DATADIR "." CACHE STRING "Where to install game content")
 
 	if    (NOT MINGWLIBS)
@@ -77,6 +88,19 @@ if    (HEADLESS_SYSTEM AND NOT NO_SOUND)
 	message(FATAL_ERROR "HEADLESS_SYSTEM requires NO_SOUND to be set!")
 endif (HEADLESS_SYSTEM AND NOT NO_SOUND)
 
+set(LOG_LEVEL "DEFAULT" CACHE STRING
+		"The minimum log level.
+		Log messages below this level
+		will not be compiled into the binary.
+		Available levels:
+		* DEFAULT (DEBUG on debug builds, INFO on release builds)
+		* DEBUG (log everything)
+		* INFO
+		* WARNING (only use this if you know what you are doing!)")
+if    (NOT "${LOG_LEVEL}" STREQUAL "DEFAULT")
+	add_definitions(-D_LOG_LEVEL_MIN=LOG_LEVEL_${LOG_LEVEL})
+endif (NOT "${LOG_LEVEL}" STREQUAL "DEFAULT")
+
 set(SYNCCHECK TRUE CACHE BOOL "Check sync during gameplay (Required for online play!)")
 if    (SYNCCHECK)
 	add_definitions(-DSYNCCHECK)
@@ -93,8 +117,20 @@ if    (WIN32)
 	endif (NOT WINDOWS_CONSOLE)
 endif (WIN32)
 
+set(OPENMP FALSE CACHE BOOL "Enable local multithreading")
+if    (OPENMP)
+	include(FindOpenMP)
+	if(OPENMP_FOUND)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+		# Currently FindOpenMP fails and doesn't give _any_ linker flags
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fopenmp -lgomp")
+		set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fopenmp -lgomp")
+	endif(OPENMP_FOUND)
+endif (OPENMP)
+
 set(BUILTIN_DATADIRS "")
-if    (NOT MINGW)
+if    (NOT MINGW AND NOT MACOSX_BUNDLE)
 	set (SPRING_DATADIR CACHE STRING "Path to game content (in addition to /etc/spring/datadir)")
 	set (SPRING_DATADIR_INTERNAL "")
 	if    (SPRING_DATADIR)
@@ -104,7 +140,7 @@ if    (NOT MINGW)
 		set (SPRING_DATADIR_INTERNAL "${SPRING_DATADIR_INTERNAL}${CMAKE_INSTALL_PREFIX}${PATH_SEP_T}${DATADIR}")
 	endif (CMAKE_INSTALL_PREFIX)
 	set(BUILTIN_DATADIRS "${SPRING_DATADIR_INTERNAL}")
-endif (NOT MINGW)
+endif (NOT MINGW AND NOT MACOSX_BUNDLE)
 if    (NOT "${AI_LIBS_DIR}" STREQUAL "${DATADIR}")
 	# If the AI library dir is not the same as the normal data dir,
 	# add it to the internal list of data dirs
@@ -173,6 +209,11 @@ else  ($ENV{CXX} MATCHES "icpc")
 	set(CXX_FLAGS_DEBUG_ADDITIONAL "")
 endif ($ENV{CXX} MATCHES "icpc")
 
+# Add Link-Time-Optimization flags, if supported (GCC >= 4.5) and enabled
+Set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS}           ${LTO_FLAGS}")
+Set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS}    ${LTO_FLAGS}")
+Set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${LTO_FLAGS}")
+
 set(SIGNAL_NANS FALSE CACHE BOOL "Enable NaN-Signalling")
 if (SIGNAL_NANS)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsignaling-nans")
@@ -185,22 +226,28 @@ if    (NOT CMAKE_BUILD_TYPE)
 		FORCE)
 endif (NOT CMAKE_BUILD_TYPE)
 
+set(COMMON_WARNINGS "")
+if    (NOT OPENMP)
+	# disable warnings about unknown pragmas because of:
+	# "#pragma omp parallel for *"
+	set(COMMON_WARNINGS "${COMMON_WARNINGS} -Wno-unknown-pragmas")
+endif (NOT OPENMP)
 # This would produce the maximum on warnings
-#set(DEBUG_WARNINGS "-Wall -Wconversion")
+#set(DEBUG_WARNINGS "-Wall -Wconversion ${COMMON_WARNINGS}")
 # This should produce a sane amount of warnings
-set(DEBUG_WARNINGS "-Wall -Wno-sign-compare")
+set(DEBUG_WARNINGS "-Wall -Wno-sign-compare ${COMMON_WARNINGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsingle-precision-constant -frounding-math")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${IEEE_FP_FLAG} -pipe -fno-strict-aliasing ${VISIBILITY_HIDDEN} ${VISIBILITY_INLINES_HIDDEN}")
 add_definitions(-DSTREFLOP_SSE) # would break AI compiling, but is undefined in ./AI/CMakeLists.txt
 if (UNIX)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif (UNIX)
-set(CMAKE_CXX_FLAGS_DEBUG           "${CXX_FLAGS_DEBUG_ADDITIONAL} -O1 ${DEBUG_WARNINGS} -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
-set(CMAKE_CXX_FLAGS_DEBUG2          "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0 ${DEBUG_WARNINGS} -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
-set(CMAKE_CXX_FLAGS_DEBUG3          "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0 ${DEBUG_WARNINGS} -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CXX_FLAGS_DEBUG_ADDITIONAL} -O2 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE         "-O2 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_PROFILE         "-O2 -pg ${DEBUG_WARNINGS} -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG           "${CXX_FLAGS_DEBUG_ADDITIONAL} -O1     ${DEBUG_WARNINGS}  -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
+set(CMAKE_CXX_FLAGS_DEBUG2          "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0     ${DEBUG_WARNINGS}  -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
+set(CMAKE_CXX_FLAGS_DEBUG3          "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0     ${DEBUG_WARNINGS}  -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CXX_FLAGS_DEBUG_ADDITIONAL} -O2     ${COMMON_WARNINGS} -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE         "                              -O2     ${COMMON_WARNINGS} -DNDEBUG")
+set(CMAKE_CXX_FLAGS_PROFILE         "                              -O2 -pg ${DEBUG_WARNINGS}  -DNDEBUG")
 set(CMAKE_MODULE_LINKER_FLAGS_PROFILE "-pg")
 set(CMAKE_SHARED_LINKER_FLAGS_PROFILE "-pg")
 if (STABS_DEBUG_SYMBOLS)
@@ -223,6 +270,7 @@ IF (MINGW)
 	FIND_PACKAGE(Win32Libs REQUIRED)
 ENDIF (MINGW)
 
+
 ### Where the other CMakeLists.txt are
 
 # As the libs are required by all the other sub-projects, we add them first
@@ -232,10 +280,13 @@ if    (NOT "${AI_TYPES}" STREQUAL "NONE")
 	Add_Subdirectory(AI)
 endif (NOT "${AI_TYPES}" STREQUAL "NONE")
 
+# As tools/unitsync/ depends on sources from here, we add this one first
+Add_Subdirectory(rts/System)
+
 # additional tools
 Add_Subdirectory(tools)
 
-# man pages
+# man pages & user-docs
 Add_Subdirectory(doc)
 
 ### Handle game content

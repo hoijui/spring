@@ -7,7 +7,7 @@
 #include <list>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include "creg/creg_cond.h"
+#include "System/creg/creg_cond.h"
 #include "FeatureDef.h"
 #include "FeatureSet.h"
 
@@ -46,8 +46,11 @@ public:
 	const CFeatureSet& GetActiveFeatures() const { return activeFeatures; }
 
 private:
+	FeatureDef* CreateDefaultTreeFeatureDef(const std::string& name) const;
+	FeatureDef* CreateDefaultGeoFeatureDef(const std::string& name) const;
+	FeatureDef* CreateFeatureDef(const LuaTable& luaTable, const std::string& name) const;
+
 	void AddFeatureDef(const std::string& name, FeatureDef* feature);
-	void CreateFeatureDef(const LuaTable& luaTable, const std::string& name);
 
 private:
 	std::map<std::string, const FeatureDef*> featureDefs;

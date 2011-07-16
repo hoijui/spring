@@ -75,6 +75,8 @@ CallInsList = {
   "Explosion",
   "ShockFront",
 
+  "RecvSkirmishAIMessage",
+
   "GameFrame",
   "CobCallback",
   "AllowCommand",
@@ -86,6 +88,8 @@ CallInsList = {
   "AllowFeatureBuildStep",
   "AllowResourceLevel",
   "AllowResourceTransfer",
+
+  "GameProgress",
 }
 
 
@@ -98,3 +102,4 @@ end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+

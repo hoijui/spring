@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <algorithm>
 #include <assert.h>
 #include <locale>
@@ -8,13 +8,13 @@
 #include <string>
 #include <vector>
 #include <map>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
-#include "GlobalUnsynced.h"
-#include "LogOutput.h"
 #include "Messages.h"
+#include "Game/GlobalUnsynced.h"
 #include "Lua/LuaParser.h"
-#include "Util.h"
+#include "System/LogOutput.h"
+#include "System/Util.h"
 
 using std::string;
 using std::vector;

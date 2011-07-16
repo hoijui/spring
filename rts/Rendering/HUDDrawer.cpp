@@ -3,6 +3,7 @@
 #include "System/StdAfx.h"
 
 #include "Game/Camera.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/PlayerHandler.h"
 #include "Rendering/glFont.h"
 #include "Rendering/HUDDrawer.h"
@@ -14,7 +15,6 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "Sim/Misc/GlobalSynced.h"
-#include "System/GlobalUnsynced.h"
 #include "System/myMath.h"
 
 HUDDrawer* HUDDrawer::GetInstance()
@@ -50,7 +50,7 @@ void HUDDrawer::DrawModel(const CUnit* unit)
 	glPushMatrix();
 		glMatrixMode(GL_PROJECTION);
 			glTranslatef(-0.8f, -0.4f, 0.0f);
-			glMultMatrixd(camera->GetProjMat());
+			glMultMatrixf(camera->GetProjectionMatrix());
 		glMatrixMode(GL_MODELVIEW);
 
 		glTranslatef(0.0f, 0.0f, -unit->radius);
@@ -193,10 +193,10 @@ void HUDDrawer::DrawTargetReticle(const CUnit* unit)
 	// draw the reticle in world coordinates
 	glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
-		glMultMatrixd(camera->GetProjMat());
+		glMultMatrixf(camera->GetProjectionMatrix());
 	glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
-		glMultMatrixd(camera->GetViewMat());
+		glMultMatrixf(camera->GetViewMatrix());
 
 	glPushMatrix();
 

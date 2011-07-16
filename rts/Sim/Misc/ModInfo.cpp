@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "ModInfo.h"
 
@@ -11,7 +11,6 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitTypes/Builder.h"
 #include "Rendering/GlobalRendering.h"
-#include "System/GlobalUnsynced.h"
 #include "System/LogOutput.h"
 #include "System/ConfigHandler.h"
 #include "System/FileSystem/ArchiveScanner.h"
@@ -127,7 +126,7 @@ void CModInfo::Init(const char* modArchive)
 	requireSonarUnderWater = sensors.GetBool("requireSonarUnderWater", true);
 	/// LoS
 	const LuaTable los = sensors.SubTable("los");
-	// losMipLevel is used as index to readmap->mipHeightmap,
+	// losMipLevel is used as index to readmap->mipHeightmaps,
 	// so the max value is CReadMap::numHeightMipMaps - 1
 	losMipLevel = los.GetInt("losMipLevel", 1);
 	losMul = los.GetFloat("losMul", 1.0f);
@@ -143,4 +142,7 @@ void CModInfo::Init(const char* modArchive)
 		                    "The minimum value is 0. The maximum value is 30.");
 	}
 	airLosMul = los.GetFloat("airLosMul", 1.0f);
+
+	const LuaTable system = root.SubTable("system");
+	luaThreadingModel = system.GetInt("luaThreadingModel", 2);
 }

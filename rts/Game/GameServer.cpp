@@ -6,8 +6,8 @@
 #	include <windows.h>
 #endif
 
-#include "Net/UDPListener.h"
-#include "Net/UDPConnection.h"
+#include "System/Net/UDPListener.h"
+#include "System/Net/UDPConnection.h"
 
 #include <stdarg.h>
 #include <ctime>
@@ -23,32 +23,26 @@
 #endif
 #include <stdlib.h> // why is this here?
 
-#include "Net/Connection.h"
-#include "mmgr.h"
+#include "System/Net/Connection.h"
+#include "System/mmgr.h"
 
 #include "GameServer.h"
 
-#include "LogOutput.h"
 #include "GameSetup.h"
 #include "Action.h"
 #include "ChatMessage.h"
 #include "CommandMessage.h"
-#include "BaseNetProtocol.h"
+#include "System/BaseNetProtocol.h"
 #include "PlayerHandler.h"
-#include "Net/LocalConnection.h"
-#include "Net/UnpackPacket.h"
-#include "LoadSave/DemoReader.h"
 #ifdef DEDICATED
-	#include "LoadSave/DemoRecorder.h"
+	#include "System/LoadSave/DemoRecorder.h"
 #endif
-#include "AutohostInterface.h"
-#include "Util.h"
-#include "TdfParser.h"
+#include "System/AutohostInterface.h"
+#include "System/Util.h"
+#include "System/TdfParser.h"
 #include "GlobalUnsynced.h" // for syncdebug
 #include "Sim/Misc/GlobalConstants.h"
-#include "ConfigHandler.h"
-#include "FileSystem/CRC.h"
-#include "FileSystem/SimpleParser.h"
+
 #include "Player.h"
 #include "IVideoCapturing.h"
 #include "Server/GameParticipant.h"
@@ -60,6 +54,15 @@
 	#undef interface
 #endif
 #include "Server/MsgStrings.h"
+#include "System/ConfigHandler.h"
+#include "System/GlobalConfig.h"
+#include "System/LogOutput.h"
+#include "System/FileSystem/CRC.h"
+#include "System/FileSystem/SimpleParser.h"
+#include "System/Net/LocalConnection.h"
+#include "System/Net/UnpackPacket.h"
+#include "System/LoadSave/DemoReader.h"
+
 
 #define PKTCACHE_VECSIZE 1000
 
@@ -81,12 +84,16 @@ const unsigned serverKeyframeIntervall = 16;
 /// players incoming bandwidth new allowance every X milliseconds
 const unsigned playerBandwidthInterval = 100;
 
+/// every 10 sec we'll broadcast current frame in a message that skips queue & cache
+/// to let clients that are fast-forwarding to current point to know their loading %
+const unsigned gameProgressFrameInterval = GAME_SPEED * 10;
+
 const std::string commands[numCommands] = {
 	"kick", "kickbynum", "setminspeed", "setmaxspeed",
 	"nopause", "nohelp", "cheat", "godmode", "globallos",
 	"nocost", "forcestart", "nospectatorchat", "nospecdraw",
 	"skip", "reloadcob", "reloadcegs", "devlua", "editdefs",
-	"luagaia", "singlestep"
+	"singlestep"
 };
 using boost::format;
 
@@ -139,11 +146,6 @@ CGameServer::CGameServer(const std::string& hostIP, int hostPort, const GameData
 
 	medianCpu = 0.0f;
 	medianPing = 0;
-	// speedControl - throttles speed based on:
-	// 0 : players (max cpu)
-	// 1 : players (median cpu)
-	// 2 : (same as 0)
-	// -x: same as x, but ignores votes from players that may change the speed control mode
 	curSpeedCtrl = 0;
 	speedControl = configHandler->Get("SpeedControl", 0);
 	UpdateSpeedControl(--speedControl + 1);
@@ -229,7 +231,7 @@ CGameServer::CGameServer(const std::string& hostIP, int hostPort, const GameData
 	}
 
 	canReconnect = false;
-	linkMinPacketSize = gc->linkIncomingMaxPacketRate > 0 ? (gc->linkIncomingSustainedBandwidth / gc->linkIncomingMaxPacketRate) : 1;
+	linkMinPacketSize = globalConfig->linkIncomingMaxPacketRate > 0 ? (globalConfig->linkIncomingSustainedBandwidth / globalConfig->linkIncomingMaxPacketRate) : 1;
 	lastBandwidthUpdate = spring_gettime();
 
 	thread = new boost::thread(boost::bind<void, CGameServer, CGameServer*>(&CGameServer::UpdateLoop, this));
@@ -272,7 +274,7 @@ CGameServer::~CGameServer()
 
 void CGameServer::AddLocalClient(const std::string& myName, const std::string& myVersion)
 {
-	boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex);
+	Threading::RecursiveScopedLock scoped_lock(gameServerMutex);
 	assert(!hasLocalClient);
 	hasLocalClient = true;
 	localClientNumber = BindConnection(myName, "", myVersion, true, boost::shared_ptr<netcode::CConnection>(new netcode::CLocalConnection()));
@@ -299,7 +301,7 @@ void CGameServer::AddAutohostInterface(const std::string& autohostIP, const int 
 
 void CGameServer::PostLoad(unsigned newlastTick, int newServerFrameNum)
 {
-	boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex);
+	Threading::RecursiveScopedLock scoped_lock(gameServerMutex);
 #if SPRING_TIME
 	lastTick = newlastTick;
 #else
@@ -313,47 +315,40 @@ void CGameServer::PostLoad(unsigned newlastTick, int newServerFrameNum)
 	}
 }
 
-void CGameServer::SkipTo(int targetFrame)
+void CGameServer::SkipTo(int targetFrameNum)
 {
 	const bool wasPaused = isPaused;
 
-	if ((serverFrameNum < targetFrame) && demoReader) {
-		CommandMessage msg(str(boost::format("skip start %d") %targetFrame), SERVER_PLAYER);
-		Broadcast(boost::shared_ptr<const netcode::RawPacket>(msg.Pack()));
+	if (!gameHasStarted) { return; }
+	if (serverFrameNum >= targetFrameNum) { return; }
+	if (demoReader == NULL) { return; }
 
-		// fast-read and send demo data
-		// if SendDemoData reaches EOS, demoReader becomes NULL
-		while ((serverFrameNum < targetFrame) && demoReader) {
-			float toSkipSecs = 0.1f; // ~ 3 frames
-			if ((targetFrame - serverFrameNum) < 10) {
-				// we only want to advance one frame at most, so
-				// the next time-index must be "close enough" not
-				// to move past more than 1 NETMSG_NEWFRAME
-				toSkipSecs = (1.0f / (GAME_SPEED * 2)); // 1 frame
-			}
-			// skip time
-			gameTime += toSkipSecs;
-			modGameTime += toSkipSecs;
+	CommandMessage startMsg(str(boost::format("skip start %d") %targetFrameNum), SERVER_PLAYER);
+	CommandMessage endMsg("skip end", SERVER_PLAYER);
+	Broadcast(boost::shared_ptr<const netcode::RawPacket>(startMsg.Pack()));
 
-			SendDemoData(true);
-			if (((serverFrameNum % 20) == 0) && UDPNet) {
-				// send data every few frames, as otherwise packets would grow too big
-				UDPNet->Update();
-			}
-		}
+	// fast-read and send demo data
+	//
+	// note that we must maintain <modGameTime> ourselves
+	// since we do we NOT go through ::Update when skipping
+	while (SendDemoData(targetFrameNum)) {
+		gameTime = GetDemoTime();
+		modGameTime = demoReader->GetModGameTime() + 0.001f;
 
-		CommandMessage msg2("skip end", SERVER_PLAYER);
-		Broadcast(boost::shared_ptr<const netcode::RawPacket>(msg2.Pack()));
+		if (UDPNet == NULL) { continue; }
+		if ((serverFrameNum % 20) != 0) { continue; }
 
-		if (UDPNet)
-			UDPNet->Update();
-
-		lastUpdate = spring_gettime();
+		// send data every few frames, as otherwise packets would grow too big
+		UDPNet->Update();
 	}
 
-	// note: unnecessary, pause-commands from
-	// demos are not broadcast anyway so /skip
-	// cannot change the state
+	Broadcast(boost::shared_ptr<const netcode::RawPacket>(endMsg.Pack()));
+
+	if (UDPNet) {
+		UDPNet->Update();
+	}
+
+	lastUpdate = spring_gettime();
 	isPaused = wasPaused;
 }
 
@@ -375,7 +370,7 @@ void CGameServer::UpdatePlayerNumberMap() {
 	for (int i = 0; i < 256; ++i, ++player) {
 		if (i < players.size() && !players[i].isFromDemo)
 			++player;
-		playerNumberMap[i] = (i < 250) ? player : i; // ignore SERVER_PLAYER, ChatMessage::TO_XXX etc
+		playerNumberMap[i] = (i < MAX_PLAYERS) ? player : i; // ignore SERVER_PLAYER, ChatMessage::TO_XXX etc
 	}
 }
 
@@ -401,16 +396,26 @@ bool CGameServer::AdjustPlayerNumber(netcode::RawPacket* buf, int pos, int val) 
 }
 
 
-void CGameServer::SendDemoData(const bool skipping)
+bool CGameServer::SendDemoData(int targetFrameNum)
 {
-	netcode::RawPacket* buf = 0;
+	bool ret = false;
+	netcode::RawPacket* buf = NULL;
+
+	// if we reached EOS before, demoReader has become NULL
+	if (demoReader == NULL)
+		return ret;
+
+	// get all packets from the stream up to <modGameTime>
 	while ((buf = demoReader->GetData(modGameTime))) {
 		boost::shared_ptr<const RawPacket> rpkt(buf);
+
 		if (buf->length <= 0) {
 			Message(str(format("Warning: Discarding zero size packet in demo")));
 			continue;
 		}
-		unsigned msgCode = buf->data[0];
+
+		const unsigned msgCode = buf->data[0];
+
 		switch (msgCode) {
 			case NETMSG_NEWFRAME:
 			case NETMSG_KEYFRAME: {
@@ -418,13 +423,16 @@ void CGameServer::SendDemoData(const bool skipping)
 				lastTick = spring_gettime();
 				serverFrameNum++;
 #ifdef SYNCCHECK
-				if (!skipping)
+				if (targetFrameNum == -1) {
+					// not skipping
 					outstandingSyncFrames.insert(serverFrameNum);
+				}
 				CheckSync();
 #endif
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_AI_STATE_CHANGED: /* many of these messages are not likely to be sent by a spec, but there are cheats */
 			case NETMSG_ALLIANCE:
 			case NETMSG_CUSTOM_DATA:
@@ -445,6 +453,7 @@ void CGameServer::SendDemoData(const bool skipping)
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_AI_CREATED:
 			case NETMSG_MAPDRAW:
 			case NETMSG_PLAYERNAME: {
@@ -453,12 +462,14 @@ void CGameServer::SendDemoData(const bool skipping)
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_CHAT: {
 				if (!AdjustPlayerNumber(buf, 2) || !AdjustPlayerNumber(buf, 3))
 					continue;
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_AICOMMAND:
 			case NETMSG_AISHARE:
 			case NETMSG_COMMAND:
@@ -470,6 +481,7 @@ void CGameServer::SendDemoData(const bool skipping)
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_CREATE_NEWPLAYER: {
 				if (!AdjustPlayerNumber(buf, 3, players.size()))
 					continue;
@@ -490,13 +502,15 @@ void CGameServer::SendDemoData(const bool skipping)
 				Broadcast(rpkt);
 				break;
 			}
+
 			case NETMSG_GAMEDATA:
 			case NETMSG_SETPLAYERNUM:
 			case NETMSG_USER_SPEED:
 			case NETMSG_INTERNAL_SPEED: {
-				// dont send these from demo
+				// never send these from demos
 				break;
 			}
+
 			default: {
 				Broadcast(rpkt);
 				break;
@@ -504,11 +518,19 @@ void CGameServer::SendDemoData(const bool skipping)
 		}
 	}
 
+	if (targetFrameNum > 0) {
+		// skipping
+		ret = (serverFrameNum < targetFrameNum);
+	}
+
 	if (demoReader->ReachedEnd()) {
 		demoReader.reset();
 		Message(DemoEnd);
 		gameEndTime = spring_gettime();
+		ret = false;
 	}
+
+	return ret;
 }
 
 void CGameServer::Broadcast(boost::shared_ptr<const netcode::RawPacket> packet)
@@ -658,7 +680,7 @@ void CGameServer::CheckSync()
 				}
 
 				// send spectator desyncs as private messages to reduce spam
-				for(std::map<int, unsigned>::const_iterator s = desyncSpecs.begin(); s != desyncSpecs.end(); ++s) {
+				for (std::map<int, unsigned>::const_iterator s = desyncSpecs.begin(); s != desyncSpecs.end(); ++s) {
 					int playerNum = s->first;
 					PrivateMessage(playerNum, str(format(SyncError) %players[playerNum].name %(*f) %(s->second ^ correctChecksum)));
 				}
@@ -686,18 +708,24 @@ void CGameServer::CheckSync()
 }
 
 float CGameServer::GetDemoTime() const {
-	return !gameHasStarted ? gameTime : startTime + (float)serverFrameNum / (float)GAME_SPEED;
+	if (!gameHasStarted) return gameTime;
+	return (startTime + serverFrameNum / float(GAME_SPEED));
 }
 
 void CGameServer::Update()
 {
-	float tdif = float(spring_tomsecs(spring_gettime() - lastUpdate)) * 0.001f;
+	const float tdif = float(spring_tomsecs(spring_gettime() - lastUpdate)) * 0.001f;
+
 	gameTime += tdif;
-	if (!isPaused && gameHasStarted) {
-		if (!demoReader || !hasLocalClient || (serverFrameNum - players[localClientNumber].lastFrameResponse) < GAME_SPEED)
-			modGameTime += tdif * internalSpeed;
-	}
 	lastUpdate = spring_gettime();
+
+	if (!isPaused && gameHasStarted) {
+		// if we are not playing a demo, or have no local client, or the
+		// local client is less than <GAME_SPEED> frames behind, advance
+		// <modGameTime>
+		if (!demoReader || !hasLocalClient || (serverFrameNum - players[localClientNumber].lastFrameResponse) < GAME_SPEED)
+			modGameTime += (tdif * internalSpeed);
+	}
 
 	if (lastPlayerInfo < (spring_gettime() - playerInfoTime)) {
 		lastPlayerInfo = spring_gettime();
@@ -714,7 +742,7 @@ void CGameServer::Update()
 						players[a].isReconn = false;
 					Broadcast(CBaseNetProtocol::Get().SendPlayerInfo(a, players[a].cpuUsage, curPing));
 					float correctedCpu = players[a].isLocal ? players[a].cpuUsage :
-						std::max(0.0f, std::min(players[a].cpuUsage - 0.0025f * (float)players[a].luaDrawTime, 1.0f));
+						std::max(0.0f, std::min(players[a].cpuUsage - 0.0025f * (float)players[a].luaLockTime, 1.0f));
 					if (demoReader ? !players[a].isFromDemo : !players[a].spectator) {
 						if (!players[a].isReconn && correctedCpu > refCpu)
 							refCpu = correctedCpu;
@@ -793,7 +821,7 @@ void CGameServer::Update()
 		}
 	}
 
-	if (spring_gettime() > serverStartTime + spring_secs(gc->initialNetworkTimeout) || gameHasStarted) {
+	if (spring_gettime() > serverStartTime + spring_secs(globalConfig->initialNetworkTimeout) || gameHasStarted) {
 		bool hasPlayers = false;
 		for (size_t i = 0; i < players.size(); ++i) {
 			if (players[i].link) {
@@ -812,7 +840,6 @@ void CGameServer::Update()
 
 /// has to be consistent with Game.cpp/CPlayerHandler
 static std::vector<int> getPlayersInTeam(const std::vector<GameParticipant>& players, const int teamId) {
-
 	std::vector<int> playersInTeam;
 
 	for (size_t p = 0; p < players.size(); ++p) {
@@ -853,6 +880,8 @@ static int countNumSkirmishAIsInTeam(const std::map<size_t, GameSkirmishAI>& ais
 	return getSkirmishAIIds(ais, teamId).size();
 }
 
+
+
 void CGameServer::ProcessPacket(const unsigned playerNum, boost::shared_ptr<const netcode::RawPacket> packet)
 {
 	const boost::uint8_t* inbuf = packet->data;
@@ -862,7 +891,7 @@ void CGameServer::ProcessPacket(const unsigned playerNum, boost::shared_ptr<cons
 	switch (msgCode) {
 		case NETMSG_KEYFRAME: {
 			const int frameNum = *(int*)&inbuf[1];
-			if(frameNum <= serverFrameNum && frameNum > players[a].lastFrameResponse)
+			if (frameNum <= serverFrameNum && frameNum > players[a].lastFrameResponse)
 				players[a].lastFrameResponse = frameNum;
 			break;
 		}
@@ -916,16 +945,17 @@ void CGameServer::ProcessPacket(const unsigned playerNum, boost::shared_ptr<cons
 				Message(str(format(WrongPlayer) %msgCode %a %playerNum));
 				break;
 			}
-			switch(inbuf[2]) {
+			const enum CustomData dataType = (enum CustomData)inbuf[2];
+			switch (dataType) {
 				case CUSTOM_DATA_SPEEDCONTROL:
 					players[a].speedControl = *((int*)&inbuf[3]);
 					UpdateSpeedControl(speedControl);
 					break;
 				case CUSTOM_DATA_LUADRAWTIME:
-					players[a].luaDrawTime = *((int*)&inbuf[3]);
+					players[a].luaLockTime = *((int*)&inbuf[3]);
 					break;
 				default:
-					Message(str(format("Player %s sent invalid CustomData type %d") %players[a].name %inbuf[2]));
+					Message(str(format("Player %s sent invalid CustomData type %d") %players[a].name %dataType));
 			}
 			break;
 		}
@@ -1489,18 +1519,18 @@ void CGameServer::ProcessPacket(const unsigned playerNum, boost::shared_ptr<cons
 			try {
 				CommandMessage msg(packet);
 
-				if (static_cast<unsigned>(msg.player) == a) {
-					if ((commandBlacklist.find(msg.action.command) != commandBlacklist.end()) && players[a].isLocal) {
+				if (static_cast<unsigned>(msg.GetPlayerID()) == a) {
+					if ((commandBlacklist.find(msg.GetAction().command) != commandBlacklist.end()) && players[a].isLocal) {
 						// command is restricted to server but player is allowed to execute it
-						PushAction(msg.action);
+						PushAction(msg.GetAction());
 					}
-					else if (commandBlacklist.find(msg.action.command) == commandBlacklist.end()) {
+					else if (commandBlacklist.find(msg.GetAction().command) == commandBlacklist.end()) {
 						// command is save
 						Broadcast(packet);
 					}
 					else {
 						// hack!
-						Message(str(boost::format(CommandNotAllowed) %msg.player %msg.action.command.c_str()));
+						Message(str(boost::format(CommandNotAllowed) %msg.GetPlayerID() %msg.GetAction().command.c_str()));
 					}
 				}
 			} catch (netcode::UnpackPacketException &e) {
@@ -1530,12 +1560,11 @@ void CGameServer::ProcessPacket(const unsigned playerNum, boost::shared_ptr<cons
 					break;
 				}
 
-				if (totalSize <= fixedSize) {
-					throw netcode::UnpackPacketException("invalid size for NETMSG_GAMEOVER (no winning allyteams received)");
+				if (totalSize > fixedSize) {
+					// if empty, the game has no defined winner(s)
+					winningAllyTeams.resize(totalSize - fixedSize);
+					pckt >> winningAllyTeams;
 				}
-
-				winningAllyTeams.resize(totalSize - fixedSize);
-				pckt >> winningAllyTeams;
 
 				if (hostif)
 					hostif->SendGameOver(playerNum, winningAllyTeams);
@@ -1608,11 +1637,11 @@ void CGameServer::ServerReadNet()
 		}
 	}
 
-	float updateBandwidth = (float)(spring_gettime() - lastBandwidthUpdate) / (float)playerBandwidthInterval;
-	if(updateBandwidth >= 1.0f)
+	const float updateBandwidth = (float)(spring_gettime() - lastBandwidthUpdate) / (float)playerBandwidthInterval;
+	if (updateBandwidth >= 1.0f)
 		lastBandwidthUpdate = spring_gettime();
 
-	for(size_t a=0; a < players.size(); a++) {
+	for (size_t a=0; a < players.size(); a++) {
 		if (!players[a].link)
 			continue; // player not connected
 		if (players[a].link->CheckTimeout(0, !gameHasStarted)) {
@@ -1625,39 +1654,39 @@ void CGameServer::ServerReadNet()
 			continue;
 		}
 
-		bool bwLimitWasReached = (gc->linkIncomingPeakBandwidth > 0 && players[a].bandwidthUsage > gc->linkIncomingPeakBandwidth);
+		bool bwLimitWasReached = (globalConfig->linkIncomingPeakBandwidth > 0 && players[a].bandwidthUsage > globalConfig->linkIncomingPeakBandwidth);
 
-		if(updateBandwidth >= 1.0f && gc->linkIncomingSustainedBandwidth > 0)
-			players[a].bandwidthUsage = std::max(0, players[a].bandwidthUsage - std::max(1, (int)((float)gc->linkIncomingSustainedBandwidth / (1000.0f / (playerBandwidthInterval * updateBandwidth)))));
+		if (updateBandwidth >= 1.0f && globalConfig->linkIncomingSustainedBandwidth > 0)
+			players[a].bandwidthUsage = std::max(0, players[a].bandwidthUsage - std::max(1, (int)((float)globalConfig->linkIncomingSustainedBandwidth / (1000.0f / (playerBandwidthInterval * updateBandwidth)))));
 
 		int numDropped = 0;
 		boost::shared_ptr<const RawPacket> packet;
 
-		bool dropPacket = gc->linkIncomingMaxWaitingPackets > 0 && (gc->linkIncomingPeakBandwidth <= 0 || bwLimitWasReached);
+		bool dropPacket = globalConfig->linkIncomingMaxWaitingPackets > 0 && (globalConfig->linkIncomingPeakBandwidth <= 0 || bwLimitWasReached);
 		int ahead = 0;
-		bool bwLimitIsReached = gc->linkIncomingPeakBandwidth > 0 && players[a].bandwidthUsage > gc->linkIncomingPeakBandwidth;
+		bool bwLimitIsReached = globalConfig->linkIncomingPeakBandwidth > 0 && players[a].bandwidthUsage > globalConfig->linkIncomingPeakBandwidth;
 		while(players[a].link) {
-			if(dropPacket)
-				dropPacket = (packet = players[a].link->Peek(gc->linkIncomingMaxWaitingPackets));
+			if (dropPacket)
+				dropPacket = (packet = players[a].link->Peek(globalConfig->linkIncomingMaxWaitingPackets));
 			packet = (!bwLimitIsReached || dropPacket) ? players[a].link->GetData() : players[a].link->Peek(ahead++);
-			if(!packet)
+			if (!packet)
 				break;
 			bool droppablePacket = (packet->length <= 0 || (packet->data[0] != NETMSG_SYNCRESPONSE && packet->data[0] != NETMSG_KEYFRAME));
-			if(dropPacket && droppablePacket)
+			if (dropPacket && droppablePacket)
 				++numDropped;
-			else if(!bwLimitIsReached || !droppablePacket) {
+			else if (!bwLimitIsReached || !droppablePacket) {
 				ProcessPacket(a, packet); // non droppable packets may be processed more than once, but this does no harm
-				if(gc->linkIncomingPeakBandwidth > 0 && droppablePacket) {
+				if (globalConfig->linkIncomingPeakBandwidth > 0 && droppablePacket) {
 					players[a].bandwidthUsage += std::max((unsigned)linkMinPacketSize, packet->length);
-					if(!bwLimitIsReached)
-						bwLimitIsReached = (players[a].bandwidthUsage > gc->linkIncomingPeakBandwidth);
+					if (!bwLimitIsReached)
+						bwLimitIsReached = (players[a].bandwidthUsage > globalConfig->linkIncomingPeakBandwidth);
 				}
 			}
 		}
-		if(numDropped > 0)
+		if (numDropped > 0)
 			PrivateMessage(a, str(format("Warning: Waiting packet limit was reached for %s [packets dropped]") %players[a].name));
 
-		if(!bwLimitWasReached && bwLimitIsReached)
+		if (!bwLimitWasReached && bwLimitIsReached)
 			PrivateMessage(a, str(format("Warning: Bandwidth limit was reached for %s [packets delayed]") %players[a].name));
 	}
 
@@ -1911,6 +1940,13 @@ void CGameServer::PushAction(const Action& action)
 				std::vector<GameParticipant>::iterator participantIter = std::find(players.begin(), players.end(), gp);
 
 				if (participantIter != players.end()) {
+					const GameParticipant::customOpts &opts = participantIter->GetAllValues();
+					GameParticipant::customOpts::const_iterator it;
+					if ((it = opts.find("origpass")) == opts.end() || it->second == "") {
+						it = opts.find("password");
+						if(it != opts.end())
+							participantIter->SetValue("origpass", it->second);
+					}
 					participantIter->SetValue("password", password);
 					logOutput.Print("Changed player/spectator password: \"%s\" \"%s\"", name.c_str(), password.c_str());
 				} else {
@@ -1948,7 +1984,7 @@ void CGameServer::PushAction(const Action& action)
 
 bool CGameServer::HasFinished() const
 {
-	boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex);
+	Threading::RecursiveScopedLock scoped_lock(gameServerMutex);
 	return quitServer;
 }
 
@@ -1956,13 +1992,7 @@ void CGameServer::CreateNewFrame(bool fromServerThread, bool fixedFrameTime)
 {
 	if (!demoReader) {
 		// use NEWFRAME_MSGes from demo otherwise
-#if BOOST_VERSION >= 103500
-		boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex, boost::defer_lock);
-		if (!fromServerThread)
-			scoped_lock.lock();
-#else
-		boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex, !fromServerThread);
-#endif
+		Threading::RecursiveScopedLock(gameServerMutex, !fromServerThread);
 
 		CheckSync();
 		int newFrames = 1;
@@ -2000,6 +2030,14 @@ void CGameServer::CreateNewFrame(bool fromServerThread, bool fixedFrameTime)
 					Broadcast(CBaseNetProtocol::Get().SendKeyFrame(serverFrameNum));
 				else
 					Broadcast(CBaseNetProtocol::Get().SendNewFrame());
+
+				// every gameProgressFrameInterval, we broadcast current frame in a special message that doesn't get cached and skips normal queue, to let players know their loading %
+				if ((serverFrameNum%gameProgressFrameInterval) == 0) {
+					CBaseNetProtocol::PacketType progressPacket = CBaseNetProtocol::Get().SendCurrentFrameProgress(serverFrameNum);
+					// we cannot use broadcast here, since we want to skip caching
+					for (size_t p = 0; p < players.size(); ++p)
+						players[p].SendData(progressPacket);
+				}
 #ifdef SYNCCHECK
 				outstandingSyncFrames.insert(serverFrameNum);
 #endif
@@ -2007,7 +2045,7 @@ void CGameServer::CreateNewFrame(bool fromServerThread, bool fixedFrameTime)
 		}
 	} else {
 		CheckSync();
-		SendDemoData();
+		SendDemoData(-1);
 	}
 }
 
@@ -2018,28 +2056,52 @@ void CGameServer::UpdateSpeedControl(int speedCtrl) {
 	}
 	if (speedControl >= 0) {
 		int oldSpeedCtrl = curSpeedCtrl;
-		int avgvotes = 0;
-		int maxvotes = 0;
+		int avgVotes = 0;
+		int maxVotes = 0;
 		for (size_t i = 0; i < players.size(); ++i) {
 			if (players[i].link) {
 				int sc = players[i].speedControl;
 				if (sc == 1 || sc == -1)
-					++avgvotes;
+					++avgVotes;
 				else if (sc == 2 || sc == -2)
-					++maxvotes;
+					++maxVotes;
 			}
 		}
 
-		if (avgvotes > maxvotes)
+		if (avgVotes > maxVotes)
 			curSpeedCtrl = 1;
-		else if (avgvotes < maxvotes)
+		else if (avgVotes < maxVotes)
 			curSpeedCtrl = 0;
 		else
 			curSpeedCtrl = (speedControl == 1) ? 1 : 0;
 
-		if (curSpeedCtrl != oldSpeedCtrl)
-			Message(str(format("Server speed control: %s CPU [%d/%d]") %(curSpeedCtrl ? "Average" : "Maximum") %(curSpeedCtrl ? avgvotes : maxvotes) %(avgvotes + maxvotes)));
+		if (curSpeedCtrl != oldSpeedCtrl) {
+			Message(str(format("Server speed control: %s CPU [%d/%d]")
+					%(curSpeedCtrl ? "Average" : "Maximum")
+					%(curSpeedCtrl ? avgVotes : maxVotes)
+					%(avgVotes + maxVotes)));
+		}
 	}
+}
+
+std::string CGameServer::SpeedControlToString(int speedCtrl) {
+
+	std::string desc;
+	if (speedCtrl == 0) {
+		desc = "Default";
+	} else if ((speedCtrl == 1) || (speedCtrl == -1)) {
+		desc = "Average CPU";
+	} else if ((speedCtrl == 2) || (speedCtrl == -2)) {
+		desc = "Maximum CPU";
+	} else {
+		desc = "<invalid>";
+	}
+
+	if (speedCtrl < 0) {
+		desc += " (server voting disabled)";
+	}
+
+	return desc;
 }
 
 void CGameServer::UpdateLoop()
@@ -2050,7 +2112,7 @@ void CGameServer::UpdateLoop()
 		if (UDPNet)
 			UDPNet->Update();
 
-		boost::recursive_mutex::scoped_lock scoped_lock(gameServerMutex);
+		Threading::RecursiveScopedLock scoped_lock(gameServerMutex);
 		ServerReadNet();
 		Update();
 	}
@@ -2114,7 +2176,9 @@ unsigned CGameServer::BindConnection(std::string name, const std::string& passwd
 		if (name == players[i].name) {
 			if (!players[i].isFromDemo) {
 				if (!players[i].link) {
-					if (canReconnect || !gameHasStarted)
+					if (reconnect)
+						errmsg = "User is not ingame";
+					else if (canReconnect || !gameHasStarted)
 						newPlayerNumber = i;
 					else
 						errmsg = "Game has already started";
@@ -2149,12 +2213,14 @@ unsigned CGameServer::BindConnection(std::string name, const std::string& passwd
 	// check for user's password
 	if (errmsg == "" && !isLocal) {
 		if (newPlayerNumber < players.size()) {
-			GameParticipant::customOpts::const_iterator it = players[newPlayerNumber].GetAllValues().find("password");
-			bool passwdFound = (it != players[newPlayerNumber].GetAllValues().end());
-			if (passwdFound) {
-				if (passwd != it->second)
+			const GameParticipant::customOpts &opts = players[newPlayerNumber].GetAllValues();
+			GameParticipant::customOpts::const_iterator it;
+			if ((it = opts.find("password")) != opts.end() && passwd != it->second) {
+				if ((!reconnect || (it = opts.find("origpass")) == opts.end() || it->second == "" || passwd != it->second))
 					errmsg = "Incorrect password";
 			}
+			else if (!reconnect) // forget about origpass whenever a real mid-game join succeeds
+				players[newPlayerNumber].SetValue("origpass", "");
 		}
 	}
 

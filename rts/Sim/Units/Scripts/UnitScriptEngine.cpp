@@ -5,18 +5,18 @@
 #include "UnitScriptEngine.h"
 #include "UnitScript.h"
 
-#include "LogOutput.h"
-#include "FileSystem/FileHandler.h"
+#include "System/LogOutput.h"
+#include "System/FileSystem/FileHandler.h"
 
 #ifndef _CONSOLE
-#  include "TimeProfiler.h"
+	#include "System/TimeProfiler.h"
 #else
-#  define START_TIME_PROFILE(a) {}
-#  define END_TIME_PROFILE(a) {}
-#  define SCOPED_TIMER(a) {}
+	#define START_TIME_PROFILE(a) {}
+	#define END_TIME_PROFILE(a) {}
+	#define SCOPED_TIMER(a) {}
 #endif
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 
 CUnitScriptEngine GUnitScriptEngine;
@@ -26,7 +26,7 @@ CUnitScriptEngine GUnitScriptEngine;
 /******************************************************************************/
 
 
-CUnitScriptEngine::CUnitScriptEngine()
+CUnitScriptEngine::CUnitScriptEngine() : currentScript(NULL)
 {
 }
 
@@ -52,34 +52,45 @@ void CUnitScriptEngine::CheckForDuplicates(const char* name, CUnitScript* instan
 
 void CUnitScriptEngine::AddInstance(CUnitScript *instance)
 {
-	animating.push_front(instance);
+	if (instance != currentScript)
+		animating.push_front(instance);
 
 	// Error checking
-	//CheckForDuplicates(__FUNCTION__, instance);
+#ifdef _DEBUG
+	CheckForDuplicates(__FUNCTION__, instance);
+#endif
 }
 
 
 void CUnitScriptEngine::RemoveInstance(CUnitScript *instance)
 {
 	// Error checking
-	//CheckForDuplicates(__FUNCTION__, instance);
+#ifdef _DEBUG
+	CheckForDuplicates(__FUNCTION__, instance);
+#endif
 
 	//This is slow. would be better if instance was a hashlist perhaps
-	animating.remove(instance);
+	if (instance != currentScript)
+		animating.remove(instance);
 }
 
 
 void CUnitScriptEngine::Tick(int deltaTime)
 {
-	SCOPED_TIMER("Scripts");
+	SCOPED_TIMER("UnitScriptEngine::Tick");
 
 	// Tick all instances that have registered themselves as animating
 	for (std::list<CUnitScript*>::iterator it = animating.begin(); it != animating.end(); ) {
-		if ((*it)->Tick(deltaTime) == -1)
-			it = animating.erase(it);
-		else
+		currentScript = *it;
+
+		if (currentScript->Tick(deltaTime)) {
 			++it;
+		} else {
+			it = animating.erase(it);
+		}
 	}
+
+	currentScript = NULL;
 }
 
 

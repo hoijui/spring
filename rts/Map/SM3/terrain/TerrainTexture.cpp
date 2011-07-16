@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-#include "TdfParser.h"
+#include "System/TdfParser.h"
 
 #include <cassert>
 #include <deque>
@@ -16,7 +16,7 @@
 #include "TerrainTexEnvCombine.h"
 #include "TerrainTextureGLSL.h"
 #include "Lightcalc.h"
-#include "Util.h"
+#include "System/Util.h"
 
 #include <SDL_keysym.h>
 extern unsigned char *keys;
@@ -605,7 +605,12 @@ namespace terrain {
 #ifndef TERRAINRENDERERLIB_EXPORTS
 	void TerrainTexture::DebugPrint (IFontRenderer *fontRenderer)
 	{
-		fontRenderer->printf(0,75,16.0f,"Numpasses: %d, curshader=%d, texture units: %d, sundir(%1.3f,%1.3f,%1.3f)", maxPasses, debugShader, shaderHandler->MaxTextureUnits (), wsLightDir.x,wsLightDir.y,wsLightDir.z);
+		if (fontRenderer != NULL) { 
+			fontRenderer->printf(0, 75, 16.0f,
+					"Numpasses: %d, curshader=%d, texture units: %d, sundir(%1.3f,%1.3f,%1.3f)",
+					maxPasses, debugShader, shaderHandler->MaxTextureUnits(),
+					wsLightDir.x, wsLightDir.y, wsLightDir.z);
+		}
 	}
 #endif
 

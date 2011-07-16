@@ -18,8 +18,10 @@ using std::fclose;
 #include "Game/GameSetup.h"
 #include "Map/MapInfo.h"
 #include "Map/MetalMap.h"
-#include "FileSystem/FileSystem.h"
-#include "LogOutput.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/LogOutput.h"
+
+#include <stdexcept>
 
 static const float3 ERRORVECTOR(-1, 0, 0);
 static std::string CACHE_BASE("");
@@ -262,9 +264,6 @@ void CResourceMapAnalyzer::GetResourcePoints() {
 						}
 					}
 				}
-
-				// comment out for debug
-				totalResources = totalResources;
 			}
 
 			// set that spot's resource making ability
@@ -544,42 +543,70 @@ void CResourceMapAnalyzer::GetResourcePoints() {
 }
 
 
+template<typename T>
+static inline void writeToFile(const T& value, FILE* file) {
+
+	if (fwrite(&value, sizeof(T), 1, file) != 1) {
+		throw std::runtime_error("failed to write value to file");
+	}
+}
+
 void CResourceMapAnalyzer::SaveResourceMap() {
 
-	std::string map = GetCacheFileName();
-	FILE* saveFile = fopen(map.c_str(), "wb");
+	const std::string cacheFileName = GetCacheFileName();
+	FILE* saveFile = fopen(cacheFileName.c_str(), "wb");
 
-	assert(saveFile != NULL);
+	try {
+		if (saveFile == NULL) {
+			throw std::runtime_error("failed to open file for writing");
+		}
 
-	fwrite(&numSpotsFound, sizeof(int), 1, saveFile);
-	fwrite(&averageIncome, sizeof(float), 1, saveFile);
-
-	for (int i = 0; i < numSpotsFound; i++) {
-		fwrite(&vectoredSpots[i], sizeof(float3), 1, saveFile);
+		writeToFile(numSpotsFound, saveFile);
+		writeToFile(averageIncome, saveFile);
+		for (int i = 0; i < numSpotsFound; i++) {
+			writeToFile(vectoredSpots[i], saveFile);
+		}
+	} catch (const std::runtime_error& err) {
+		logOutput.Print(
+				"Failed to save the analyzed resource-map to file %s, reason: %s",
+				cacheFileName.c_str(), err.what());
 	}
 
 	fclose(saveFile);
 }
 
+static void fileReadChecked(void* buf, size_t size, size_t count, FILE* fstream) {
+
+	if (fread(buf, size, count, fstream) != count) {
+		throw std::runtime_error("Failed to read the required number of items");
+	}
+}
+
 bool CResourceMapAnalyzer::LoadResourceMap() {
 
-	std::string map = GetCacheFileName();
-	FILE* loadFile = fopen(map.c_str(), "rb");
+	bool loaded = false;
 
-	if (loadFile != NULL) {
-		fread(&numSpotsFound, sizeof(int), 1, loadFile);
-		vectoredSpots.resize(numSpotsFound);
-		fread(&averageIncome, sizeof(float), 1, loadFile);
+	const std::string cacheFileName = GetCacheFileName();
 
-		for (int i = 0; i < numSpotsFound; i++) {
-			fread(&vectoredSpots[i], sizeof(float3), 1, loadFile);
+	FILE* cacheFile = fopen(cacheFileName.c_str(), "rb");
+
+	if (cacheFile != NULL) {
+		try {
+			fileReadChecked(&numSpotsFound, sizeof(int), 1, cacheFile);
+			vectoredSpots.resize(numSpotsFound);
+			fileReadChecked(&averageIncome, sizeof(float), 1, cacheFile);
+			for (int i = 0; i < numSpotsFound; i++) {
+				fileReadChecked(&vectoredSpots[i], sizeof(float3), 1, cacheFile);
+			}
+			loaded = true;
+		} catch (const std::runtime_error& err) {
+			logOutput.Print("Failed to load the resource map cache from file "
+					+ cacheFileName + ": " + err.what());
 		}
-
-		fclose(loadFile);
-		return true;
+		fclose(cacheFile);
 	}
 
-	return false;
+	return loaded;
 }
 
 

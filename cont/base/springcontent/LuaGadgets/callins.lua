@@ -88,6 +88,10 @@ CallInsList = {
 	"TerraformComplete",
 	"AllowWeaponTargetCheck",
 	"AllowWeaponTarget",
+
+	"RecvSkirmishAIMessage",
+
+	"GameProgress",
 }
 
 
@@ -100,3 +104,4 @@ end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+

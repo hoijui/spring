@@ -3,8 +3,8 @@
 #include <SDL_keysym.h>
 #include <SDL_mouse.h>
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 #include "lib/gml/ThreadSafeContainers.h"
 
 #include "CommandColors.h"
@@ -19,8 +19,10 @@
 #include "Game/Camera.h"
 #include "Game/CameraHandler.h"
 #include "Game/GameHelper.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/Player.h"
 #include "Game/SelectedUnits.h"
+#include "Game/UI/LuaUI.h" // FIXME: for GML
 #include "Game/UI/UnitTracker.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Lua/LuaUnsyncedCtrl.h"
@@ -30,6 +32,7 @@
 #include "Map/MetalMap.h"
 #include "Map/ReadMap.h"
 #include "Rendering/IconHandler.h"
+#include "Rendering/LineDrawer.h"
 #include "Rendering/ProjectileDrawer.hpp"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/GL/myGL.h"
@@ -39,7 +42,6 @@
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/RadarHandler.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
-#include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
@@ -486,7 +488,7 @@ void CMiniMap::MoveView(int x, int y)
 {
 	const float3& pos = camera->pos;
 	const float3& dir = camera->forward;
-	float dist = ground->LineGroundCol(pos, pos + (dir * globalRendering->viewRange * 1.4f));
+	float dist = ground->LineGroundCol(pos, pos + (dir * globalRendering->viewRange * 1.4f), false);
 	float3 dif(0,0,0);
 	if (dist > 0) {
 		dif = dir * dist;
@@ -790,7 +792,7 @@ CUnit* CMiniMap::GetSelectUnit(const float3& pos) const
 
 float3 CMiniMap::GetMapPosition(int x, int y) const
 {
-	const float mapHeight = readmap->maxheight + 1000.0f;
+	const float mapHeight = readmap->initMaxHeight + 1000.0f;
 	const float mapX = gs->mapx * SQUARE_SIZE;
 	const float mapY = gs->mapy * SQUARE_SIZE;
 	const float3 pos(mapX * float(x - xpos) / width, mapHeight,
@@ -808,7 +810,7 @@ void CMiniMap::ProxyMousePress(int x, int y, int button)
 			mapPos = unit->midPos;
 		} else {
 			mapPos = helper->GetUnitErrorPos(unit, gu->myAllyTeam);
-			mapPos.y = readmap->maxheight + 1000.0f;
+			mapPos.y = readmap->initMaxHeight + 1000.0f;
 		}
 	}
 
@@ -822,12 +824,6 @@ void CMiniMap::ProxyMousePress(int x, int y, int button)
 
 void CMiniMap::ProxyMouseRelease(int x, int y, int button)
 {
-	// is this really needed?
-//	CCamera *c = camera;
-//	camera = new CCamera(*c);
-
-//	const float3 tmpMouseDir = mouse->dir;
-
 	float3 mapPos = GetMapPosition(x, y);
 	const CUnit* unit = GetSelectUnit(mapPos);
 	if (unit) {
@@ -835,19 +831,14 @@ void CMiniMap::ProxyMouseRelease(int x, int y, int button)
 			mapPos = unit->midPos;
 		} else {
 			mapPos = helper->GetUnitErrorPos(unit, gu->myAllyTeam);
-			mapPos.y = readmap->maxheight + 1000.0f;
+			mapPos.y = readmap->initMaxHeight + 1000.0f;
 		}
 	}
 
 	float3 mousedir = float3(0.0f, -1.0f, 0.0f);
 	float3 campos = mapPos;
-//	float3 camfwd = mousedir; // not used?
 
 	guihandler->MouseRelease(x, y, -button, campos, mousedir);
-
-//	mouse->dir = tmpMouseDir;
-//	delete camera;
-//	camera = c;
 }
 
 
@@ -902,12 +893,13 @@ std::string CMiniMap::GetTooltip(int x, int y)
 		return buildTip;
 	}
 
-	GML_RECMUTEX_LOCK(sel); // GetToolTip - anti deadlock
-	GML_RECMUTEX_LOCK(quad); // GetToolTip - called from TooltipConsole::Draw --> MouseHandler::GetCurrentTooltip
+	{
+		GML_THRMUTEX_LOCK(unit, GML_DRAW); // GetTooltip
 
-	const CUnit* unit = GetSelectUnit(GetMapPosition(x, y));
-	if (unit) {
-		return CTooltipConsole::MakeUnitString(unit);
+		const CUnit* unit = GetSelectUnit(GetMapPosition(x, y));
+		if (unit) {
+			return CTooltipConsole::MakeUnitString(unit);
+		}
 	}
 
 	const string selTip = selectedUnits.GetTooltip();
@@ -988,7 +980,7 @@ void CMiniMap::Draw()
 
 void CMiniMap::DrawForReal(bool use_geo)
 {
-	SCOPED_TIMER("Draw minimap");
+	SCOPED_TIMER("MiniMap::DrawForReal");
 
 	//glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

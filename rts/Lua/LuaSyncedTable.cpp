@@ -1,13 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 //  FIXME: it'd probably be faster overall to have a Script.NewSyncTable()
 //         available to the synced side, that checks data assignments in a
 //         __newindex call. This could be used in conjunction with the
 //         current setup to avoid table creation in WrapTable().
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaSyncedTable.h"
 
@@ -39,6 +39,7 @@ bool LuaSyncedTable::PushEntries(lua_State* L)
 {
 	HSTR_PUSH(L, "SYNCED");
 	lua_pushvalue(L, LUA_GLOBALSINDEX);
+
 	WrapTable(L); // replace the GLOBAL table with a proxy
 	lua_rawset(L, -3);
 

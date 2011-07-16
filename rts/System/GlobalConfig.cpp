@@ -1,9 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "ConfigHandler.h"
+#include "System/StdAfx.h"
+#include "Rendering/GL/myGL.h"
+#include "System/ConfigHandler.h"
+#include "System/GlobalConfig.h"
+#include "Sim/Misc/ModInfo.h"
 
-GlobalConfig* gc = NULL;
+GlobalConfig* globalConfig = NULL;
 
 GlobalConfig::GlobalConfig() {
 	// Recommended semantics for "expert" type config values:
@@ -28,17 +31,30 @@ GlobalConfig::GlobalConfig() {
 		linkIncomingSustainedBandwidth = linkIncomingPeakBandwidth;
 	if(linkIncomingMaxPacketRate > 0 && linkIncomingSustainedBandwidth <= 0)
 		linkIncomingSustainedBandwidth = linkIncomingPeakBandwidth = 1024 * 1024;
-#ifdef USE_GML
+#if defined(USE_GML) && GML_ENABLE_SIM
 	enableDrawCallIns = !!configHandler->Get("EnableDrawCallIns", 1);
+#endif
+#if (defined(USE_GML) && GML_ENABLE_SIM) || defined(USE_LUA_MT)
+	multiThreadLua = configHandler->Get("MultiThreadLua", 0);
 #endif
 }
 
+
+int GlobalConfig::GetMultiThreadLua() {
+#if (defined(USE_GML) && GML_ENABLE_SIM) || defined(USE_LUA_MT)
+	return std::max(1, std::min((multiThreadLua == 0) ? modInfo.luaThreadingModel : multiThreadLua, 5));
+#else
+	return 0;
+#endif
+}
+
+
 void GlobalConfig::Instantiate() {
 	Deallocate();
-	gc = new GlobalConfig();
+	globalConfig = new GlobalConfig();
 }
 
 void GlobalConfig::Deallocate() {
-	delete gc;
-	gc = NULL;
+	delete globalConfig;
+	globalConfig = NULL;
 }

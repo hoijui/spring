@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-#include "EventClient.h"
+#include "System/EventClient.h"
 
 /******************************************************************************/
 /******************************************************************************/
@@ -10,7 +10,7 @@
 CEventClient::CEventClient(const std::string& _name, int _order, bool _synced)
 	: name(_name)
 	, order(_order)
-	, synced(_synced)
+	, synced_(_synced)
 {
 }
 

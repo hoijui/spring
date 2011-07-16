@@ -3,11 +3,8 @@
 #ifndef UNITHANDLER_H
 #define UNITHANDLER_H
 
-#include <set>
 #include <vector>
 #include <list>
-#include <stack>
-#include <string>
 
 #include "UnitDef.h"
 #include "UnitSet.h"
@@ -34,6 +31,8 @@ public:
 	void Serialize(creg::ISerializer& s) {}
 	void PostLoad();
 
+	unsigned int MaxUnits() const { return maxUnits; }
+
 	///< test if a unit can be built at specified position
 	///<   return values for the following is
 	///<   0 blocked
@@ -42,26 +41,24 @@ public:
 	int TestUnitBuildSquare(
 		const BuildInfo&,
 		CFeature*&,
-		int,
+		int allyteam,
+		bool synced,
 		std::vector<float3>* canbuildpos = NULL,
 		std::vector<float3>* featurepos = NULL,
 		std::vector<float3>* nobuildpos = NULL,
 		const std::vector<Command>* commands = NULL
 	);
 	///< test a single mapsquare for build possibility
-	int TestBuildSquare(const float3& pos, const UnitDef *unitdef,CFeature *&feature, int allyteam);
+	int TestBuildSquare(const float3& pos, const UnitDef *unitdef,CFeature *&feature, int allyteam, bool synced);
 
 	/// Returns true if a unit of type unitID can be built, false otherwise
-	bool CanBuildUnit(const UnitDef* unitdef, int team);
+	bool CanBuildUnit(const UnitDef* unitdef, int team) const;
 
 	void AddBuilderCAI(CBuilderCAI*);
 	void RemoveBuilderCAI(CBuilderCAI*);
-	float GetBuildHeight(const float3& pos, const UnitDef* unitdef);
+	float GetBuildHeight(const float3& pos, const UnitDef* unitdef, bool synced = true);
 
 	Command GetBuildCommand(const float3& pos, const float3& dir);
-
-	unsigned int MaxUnitsPerTeam() const { return maxUnitsPerTeam; }
-	unsigned int MaxUnits() const { return maxUnits; }
 
 
 	// note: negative ID's are implicitly converted
@@ -75,7 +72,7 @@ public:
 	std::vector<CUnit*> units;                        ///< used to get units from IDs (0 if not created)
 	std::list<CBuilderCAI*> builderCAIs;
 
-	float maxUnitRadius; ///< largest radius seen so far
+	float maxUnitRadius;                              ///< largest radius of any unit added so far
 	bool morphUnitToFeature;
 
 private:
@@ -83,8 +80,8 @@ private:
 	std::vector<CUnit*> unitsToBeRemoved;            ///< units that will be removed at start of next update
 	std::list<CUnit*>::iterator slowUpdateIterator;
 
+	///< global unit-limit (derived from the per-team limit)
 	unsigned int maxUnits;
-	unsigned int maxUnitsPerTeam;
 };
 
 extern CUnitHandler* uh;

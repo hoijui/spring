@@ -1,11 +1,11 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
-#include "creg/STL_Map.h"
+#include "System/creg/STL_Map.h"
 #include "GeometricObjects.h"
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 #include "Map/ReadMap.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Projectiles/Unsynced/GeoSquareProjectile.h"
@@ -151,7 +151,7 @@ void CGeometricObjects::MarkSquare(int mapSquare) {
 	float3 startPos;
 	startPos.x = (int) (mapSquare * SQUARE_SIZE) % gs->mapx;
 	startPos.z = (int) (mapSquare * SQUARE_SIZE) / gs->mapx;
-	startPos.y = readmap->centerheightmap[mapSquare];
+	startPos.y = readmap->GetCenterHeightMapSynced()[mapSquare];
 
 	float3 endPos = startPos;
 	endPos.x += SQUARE_SIZE;

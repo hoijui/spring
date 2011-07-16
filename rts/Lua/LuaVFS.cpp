@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <set>
 #include <list>
@@ -9,7 +9,7 @@
 #include <boost/regex.hpp>
 using namespace std;
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaVFS.h"
 
@@ -19,12 +19,12 @@ using namespace std;
 #include "LuaHashString.h"
 #include "LuaIO.h"
 #include "LuaUtils.h"
-#include "LogOutput.h"
-#include "FileSystem/FileHandler.h"
-#include <FileSystem/ArchiveScanner.h>
-#include "FileSystem/VFSHandler.h"
-#include "FileSystem/FileSystem.h"
-#include "Util.h"
+#include "System/LogOutput.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/ArchiveScanner.h"
+#include "System/FileSystem/VFSHandler.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/Util.h"
 
 
 /******************************************************************************/
@@ -378,7 +378,7 @@ int LuaVFS::UseArchive(lua_State* L)
 	}
 
 	int funcIndex = 2;
-	if (CLuaHandle::GetActiveHandle()->GetSynced()) {
+	if (CLuaHandle::GetSynced(L)) {
 		return 0;
 	}
 
@@ -410,7 +410,7 @@ int LuaVFS::UseArchive(lua_State* L)
 
 int LuaVFS::MapArchive(lua_State* L)
 {
-	if (CLuaHandle::GetActiveHandle()->GetSynced()) // only from unsynced
+	if (CLuaHandle::GetSynced(L)) // only from unsynced
 	{
 		return 0;
 	}
@@ -576,9 +576,6 @@ int UnpackType(lua_State* L)
 			lua_pushnumber(L, value);
 			lua_rawseti(L, -2, (i + 1));
 		}
-		lua_pushstring(L, "n");
-		lua_pushnumber(L, tableCount);
-		lua_rawset(L, -3);
 		return 1;
 	}
 

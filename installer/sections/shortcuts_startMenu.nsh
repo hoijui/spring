@@ -6,15 +6,19 @@
 	CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
 	SetOutPath "$INSTDIR"
 
+!ifndef SLIM
 	${If} ${SectionIsSelected} ${SEC_SPRINGLOBBY}
 		CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\SpringLobby.lnk" "$INSTDIR\springlobby.exe"
 	${EndIf}
 	${If} ${SectionIsSelected} ${SEC_ZERO_K_LOBBY}
 		CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Zero-K Lobby.lnk" "$INSTDIR\Zero-K.exe"
 	${EndIf}
+!ifdef RAPID_ARCHIVE
 	${If} ${SectionIsSelected} ${SEC_RAPID}
 		CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\rapid-GUI.lnk" "$INSTDIR\rapid\rapid-gui.exe"
 	${EndIf}
+!endif
+!endif
 	CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Settings.lnk" "$INSTDIR\springsettings.exe"
 	CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring.lnk" "$INSTDIR\spring.exe"
 	!ifdef SEC_GML

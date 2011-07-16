@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include "FileHandler.h"
 
@@ -13,8 +13,8 @@
 #include <limits.h>
 #include <boost/regex.hpp>
 
-#include "mmgr.h"
-#include "lib/gml/gml.h"
+#include "System/mmgr.h"
+#include "lib/gml/gmlmut.h"
 #include "VFSHandler.h"
 #include "FileSystem.h"
 #include "System/Util.h"

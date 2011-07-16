@@ -1,17 +1,17 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "CobEngine.h"
 #include "CobThread.h"
 #include "CobInstance.h"
 #include "CobFile.h"
-#include "LogOutput.h"
-#include "FileSystem/FileHandler.h"
+#include "System/LogOutput.h"
+#include "System/FileSystem/FileHandler.h"
 
 #ifndef _CONSOLE
-#include "TimeProfiler.h"
+#include "System/TimeProfiler.h"
 #endif
 #ifdef _CONSOLE
 #define START_TIME_PROFILE(a) {}
@@ -84,10 +84,7 @@ void CCobEngine::TickThread(int deltaTime, CCobThread* thread)
 {
 	curThread = thread; // for error messages originating in CUnitScript
 
-	int res = thread->Tick(deltaTime);
-	thread->CommitAnims(deltaTime);
-
-	if (res == -1)
+	if (!thread->Tick(deltaTime))
 		delete thread;
 
 	curThread = NULL;
@@ -96,7 +93,7 @@ void CCobEngine::TickThread(int deltaTime, CCobThread* thread)
 
 void CCobEngine::Tick(int deltaTime)
 {
-	SCOPED_TIMER("Scripts");
+	SCOPED_TIMER("CobEngine::Tick");
 
 	GCurrentTime += deltaTime;
 
@@ -105,7 +102,7 @@ void CCobEngine::Tick(int deltaTime)
 #endif
 
 	// Advance all running threads
-	for (std::list<CCobThread *>::iterator i = running.begin(); i != running.end(); ++i) {
+	for (std::list<CCobThread*>::iterator i = running.begin(); i != running.end(); ++i) {
 		//logOutput.Print("Now 1running %d: %s", GCurrentTime, (*i)->GetName().c_str());
 #ifdef _CONSOLE
 		printf("----\n");
@@ -123,13 +120,14 @@ void CCobEngine::Tick(int deltaTime)
 	for (std::list<CCobThread *>::iterator i = wantToRun.begin(); i != wantToRun.end(); ++i) {
 		running.push_front(*i);
 	}
+
 	wantToRun.clear();
 
 	//Check on the sleeping threads
-	if (sleeping.size() > 0) {
-		CCobThread *cur = sleeping.top();
-		while ((cur != NULL) && (cur->GetWakeTime() < GCurrentTime)) {
+	if (!sleeping.empty()) {
+		CCobThread* cur = sleeping.top();
 
+		while ((cur != NULL) && (cur->GetWakeTime() < GCurrentTime)) {
 			// Start with removing the executing thread from the queue
 			sleeping.pop();
 
@@ -147,7 +145,8 @@ void CCobEngine::Tick(int deltaTime)
 			} else {
 				logOutput.Print("CobError: Sleeping thread strange state %d", cur->state);
 			}
-			if (sleeping.size() > 0)
+
+			if (!sleeping.empty())
 				cur = sleeping.top();
 			else
 				cur = NULL;

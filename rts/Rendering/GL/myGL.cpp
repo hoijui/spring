@@ -1,40 +1,35 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <string>
-#include <ostream>
-#include <fstream>
 #include <SDL.h>
-#include "mmgr.h"
 
+#if defined(WIN32) && !defined(HEADLESS) && !defined(_MSC_VER)
+// for APIENTRY
+#include <windef.h>
+#endif
+
+#include "System/mmgr.h"
 #include "myGL.h"
-#include "FBO.h"
 #include "VertexArray.h"
 #include "VertexArrayRange.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/Textures/Bitmap.h"
-#include "System/ConfigHandler.h"
 #include "System/LogOutput.h"
-#include "System/FPUCheck.h"
-#include "System/GlobalUnsynced.h"
-#include "System/Util.h"
 #include "System/Exceptions.h"
 #include "System/TimeProfiler.h"
 #include "System/FileSystem/FileHandler.h"
-#include "System/Platform/CrashHandler.h"
-#include "System/Platform/errorhandler.h"
 
-using namespace std;
 
 
 static CVertexArray* vertexArray1 = NULL;
 static CVertexArray* vertexArray2 = NULL;
-static CVertexArray* currentVertexArray = NULL;
 
 #ifdef USE_GML
 static CVertexArray vertexArrays1[GML_MAX_NUM_THREADS];
 static CVertexArray vertexArrays2[GML_MAX_NUM_THREADS];
 static CVertexArray* currentVertexArrays[GML_MAX_NUM_THREADS];
+#else
+static CVertexArray* currentVertexArray = NULL;
 #endif
 //BOOL gmlVertexArrayEnable=0;
 /******************************************************************************/
@@ -86,7 +81,7 @@ void PrintAvailableResolutions()
 }
 
 #ifdef GL_ARB_debug_output
-#ifdef WIN32
+#if defined(WIN32) && !defined(HEADLESS)
 	#define _APIENTRY APIENTRY
 #else
 	#define _APIENTRY
@@ -166,36 +161,43 @@ void LoadExtensions()
 {
 	glewInit();
 
+	const char* glVersion = (const char*) glGetString(GL_VERSION);
+	const char* glVendor = (const char*) glGetString(GL_VENDOR);
+	const char* glRenderer = (const char*) glGetString(GL_RENDERER);
+	const char* glslVersion = (const char*) glGetString(GL_SHADING_LANGUAGE_VERSION);
+	const char* glewVersion = (const char*) glewGetString(GLEW_VERSION);
+	const char* glExtensions = (const char*) glGetString(GL_EXTENSIONS);
+
 	// log some useful version info
 	logOutput.Print("SDL:  %d.%d.%d\n",
 		SDL_Linked_Version()->major,
 		SDL_Linked_Version()->minor,
 		SDL_Linked_Version()->patch);
-	logOutput.Print("GL:   %s\n", glGetString(GL_VERSION));
-	logOutput.Print("GL:   %s\n", glGetString(GL_VENDOR));
-	logOutput.Print("GL:   %s\n", glGetString(GL_RENDERER));
-	logOutput.Print("GLSL: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
-	logOutput.Print("GLEW: %s\n", glewGetString(GLEW_VERSION));
+	logOutput.Print("GL version:   %s\n", glVersion);
+	logOutput.Print("GL vendor:    %s\n", glVendor);
+	logOutput.Print("GL renderer:  %s\n", glRenderer);
+	logOutput.Print("GLSL version: %s\n", glslVersion); // only non-NULL as of OpenGL 2.0
+	logOutput.Print("GLEW version: %s\n", glewVersion);
 
 #if       !defined DEBUG
-	// Print out warnings for really crappy graphic cards/drivers
 	{
-		const std::string gfxCard_vendor = (const char*) glGetString(GL_VENDOR);
-		const std::string gfxCard_model  = (const char*) glGetString(GL_RENDERER);
-		bool gfxCard_isWorthATry = true;
-		if (gfxCard_vendor == "SiS") {
-			gfxCard_isWorthATry = false;
-		} else if (gfxCard_model.find("Intel") != std::string::npos) {
+		// Print out warnings for really crappy graphic cards/drivers
+		const std::string gfxCardVendor = (glVendor != NULL)? glVendor: "UNKNOWN";
+		const std::string gfxCardModel  = (glRenderer != NULL)? glRenderer: "UNKNOWN";
+		bool gfxCardIsCrap = false;
+
+		if (gfxCardVendor == "SiS") {
+			gfxCardIsCrap = true;
+		} else if (gfxCardModel.find("Intel") != std::string::npos) {
 			// the vendor does not have to be Intel
-			if (gfxCard_model.find(" 945G") != std::string::npos) {
-				gfxCard_isWorthATry = false;
-			} else if (gfxCard_model.find(" 915G") != std::string::npos) {
-				gfxCard_isWorthATry = false;
+			if (gfxCardModel.find(" 945G") != std::string::npos) {
+				gfxCardIsCrap = true;
+			} else if (gfxCardModel.find(" 915G") != std::string::npos) {
+				gfxCardIsCrap = true;
 			}
 		}
 
-		if (!gfxCard_isWorthATry) {
-			logOutput.Print("o_O\n");
+		if (gfxCardIsCrap) {
 			logOutput.Print("WW     WWW     WW    AAA     RRRRR   NNN  NN  II  NNN  NN   GGGGG  \n");
 			logOutput.Print(" WW   WW WW   WW    AA AA    RR  RR  NNNN NN  II  NNNN NN  GG      \n");
 			logOutput.Print("  WW WW   WW WW    AAAAAAA   RRRRR   NN NNNN  II  NN NNNN  GG   GG \n");
@@ -211,22 +213,22 @@ void LoadExtensions()
 	}
 #endif // !defined DEBUG
 
-	std::string s = (char*)glGetString(GL_EXTENSIONS);
-	for (unsigned int i=0; i<s.length(); i++)
-		if (s[i]==' ') s[i]='\n';
+	std::string s = (glExtensions != NULL)? glExtensions: "";
+	for (unsigned int i = 0; i < s.length(); i++)
+		if (s[i] == ' ') s[i] = '\n';
 
 	std::string missingExts = "";
-	if(!GLEW_ARB_multitexture) {
+	if (!GLEW_ARB_multitexture) {
 		missingExts += " GL_ARB_multitexture";
 	}
-	if(!GLEW_ARB_texture_env_combine) {
+	if (!GLEW_ARB_texture_env_combine) {
 		missingExts += " GL_ARB_texture_env_combine";
 	}
-	if(!GLEW_ARB_texture_compression) {
+	if (!GLEW_ARB_texture_compression) {
 		missingExts += " GL_ARB_texture_compression";
 	}
 
-	if(!missingExts.empty()) {
+	if (!missingExts.empty()) {
 		static const unsigned int errorMsg_maxSize = 2048;
 		char errorMsg[errorMsg_maxSize];
 		SNPRINTF(errorMsg, errorMsg_maxSize,
@@ -235,12 +237,13 @@ void LoadExtensions()
 				"Update your graphic-card driver!\n"
 				"graphic card:   %s\n"
 				"OpenGL version: %s\n",
-				missingExts.c_str(), (const char*)glGetString(GL_RENDERER),
-				(const char*)glGetString(GL_RENDERER));
+				missingExts.c_str(),
+				glRenderer,
+				glVersion);
 		handleerror(0, errorMsg, "Update graphic drivers", 0);
 	}
 
-#ifdef GL_ARB_debug_output //! it's not defined in older GLEW versions
+#if defined(GL_ARB_debug_output) && !defined(HEADLESS) //! it's not defined in older GLEW versions
 	if (GLEW_ARB_debug_output) {
 		logOutput.Print("Installing OpenGL-DebugMessageHandler");
 		glDebugMessageCallbackARB(&OpenGLDebugMessageCallback, NULL);
@@ -282,23 +285,24 @@ void glBuildMipmaps(const GLenum target,GLint internalFormat,const GLsizei width
 
 	// create mipmapped texture
 
-	if (glGenerateMipmapEXT_NONGML && !globalRendering->atiHacks) {
+	if (IS_GL_FUNCTION_AVAILABLE(glGenerateMipmapEXT) && !globalRendering->atiHacks) {
 		// newest method
 		glTexImage2D(target, 0, internalFormat, width, height, 0, format, type, data);
 		if (globalRendering->atiHacks) {
 			glEnable(target);
 			glGenerateMipmapEXT(target);
 			glDisable(target);
-		}else{
+		} else {
 			glGenerateMipmapEXT(target);
 		}
-	}else if (GLEW_VERSION_1_4) {
+	} else if (GLEW_VERSION_1_4) {
 		// This required GL-1.4
 		// instead of using glu, we rely on glTexImage2D to create the Mipmaps.
 		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
 		glTexImage2D(target, 0, internalFormat, width, height, 0, format, type, data);
-	} else
+	} else {
 		gluBuild2DMipmaps(target, internalFormat, width, height, format, type, data);
+	}
 }
 
 

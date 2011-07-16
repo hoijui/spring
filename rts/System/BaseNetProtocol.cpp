@@ -1,16 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "BaseNetProtocol.h"
+#include "System/StdAfx.h"
+#include "System/BaseNetProtocol.h"
 
 #include <boost/cstdint.hpp>
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Game/PlayerStatistics.h"
 #include "Sim/Misc/TeamStatistics.h"
-#include "Net/RawPacket.h"
-#include "Net/PackPacket.h"
-#include "Net/ProtocolDef.h"
+#include "System/Net/RawPacket.h"
+#include "System/Net/PackPacket.h"
+#include "System/Net/ProtocolDef.h"
 #if defined(_MSC_VER)
 #include "System.h" // for uint16_t (and possibly other types)
 #endif
@@ -400,6 +400,14 @@ PacketType CBaseNetProtocol::SendCreateNewPlayer( uchar playerNum, bool spectato
 
 }
 
+PacketType CBaseNetProtocol::SendCurrentFrameProgress(int frameNum)
+{
+	PackPacket* packet = new PackPacket(5, NETMSG_GAME_FRAME_PROGRESS);
+	*packet << frameNum;
+	return PacketType(packet);
+}
+
+
 
 #ifdef SYNCDEBUG
 PacketType CBaseNetProtocol::SendSdCheckrequest(int frameNum)
@@ -503,6 +511,7 @@ CBaseNetProtocol::CBaseNetProtocol()
 
 	proto->AddType(NETMSG_AI_CREATED, -1);
 	proto->AddType(NETMSG_AI_STATE_CHANGED, 7);
+	proto->AddType(NETMSG_GAME_FRAME_PROGRESS,5);
 
 #ifdef SYNCDEBUG
 	proto->AddType(NETMSG_SD_CHKREQUEST, 5);

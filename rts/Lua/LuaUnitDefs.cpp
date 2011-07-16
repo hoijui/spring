@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <set>
 #include <string>
@@ -9,7 +9,7 @@
 #include <map>
 #include <cctype>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaUnitDefs.h"
 
@@ -44,14 +44,13 @@
 #include "Sim/Units/CommandAI/Command.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/CommandAI/FactoryCAI.h"
-#include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
-#include "LogOutput.h"
-#include "FileSystem/FileHandler.h"
-#include "FileSystem/SimpleParser.h"
-#include "FileSystem/FileSystem.h"
-#include "Util.h"
+#include "System/LogOutput.h"
+#include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/SimpleParser.h"
+#include "System/FileSystem/FileSystem.h"
+#include "System/Util.h"
 
 using namespace std;
 
@@ -316,7 +315,7 @@ static int WeaponDefToID(lua_State* L, const void* data)
 static int SafeIconType(lua_State* L, const void* data)
 {
 	// the iconType is unsynced because LuaUI has SetUnitDefIcon()
-	if (!CLuaHandle::GetActiveHandle()->GetSynced()) {
+	if (!CLuaHandle::GetSynced(L)) {
 		const icon::CIcon& iconType = *((const icon::CIcon*)data);
 		lua_pushsstring(L, iconType->GetName());
 		return 1;
@@ -356,7 +355,6 @@ static int BuildOptions(lua_State* L, const void* data)
 			lua_rawset(L, -3);
 		}
 	}
-	HSTR_PUSH_NUMBER(L, "n", count);
 	return 1;
 }
 
@@ -424,7 +422,6 @@ static int WeaponsTable(lua_State* L, const void* data)
 		}
 		lua_rawset(L, -3);
 	}
-	HSTR_PUSH_NUMBER(L, "n", weaponCount);
 
 	return 1;
 }
@@ -442,12 +439,11 @@ static void PushGuiSoundSet(lua_State* L, const string& name,
 		const GuiSoundSet::Data& sound = soundSet.sounds[i];
 		HSTR_PUSH_STRING(L, "name",   sound.name);
 		HSTR_PUSH_NUMBER(L, "volume", sound.volume);
-		if (!CLuaHandle::GetActiveHandle()->GetSynced()) {
+		if (!CLuaHandle::GetSynced(L)) {
 			HSTR_PUSH_NUMBER(L, "id", sound.id);
 		}
 		lua_rawset(L, -3);
 	}
-	HSTR_PUSH_NUMBER(L, "n", soundCount);
 	lua_rawset(L, -3);
 }
 
@@ -661,7 +657,6 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 
 	ADD_STRING("name",      ud.name);
 	ADD_STRING("humanName", ud.humanName);
-	ADD_STRING("filename",  ud.filename);
 
 	ADD_STRING("tooltip", ud.tooltip);
 
@@ -727,7 +722,7 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 
 	ADD_FLOAT("mass", ud.mass);
 
-	ADD_FLOAT("maxSlope",      ud.maxSlope);
+	ADD_FLOAT("maxSlope",      ud.maxHeightDif); // NOTE: deprecated, remove after 0.83.*
 	ADD_FLOAT("maxHeightDif",  ud.maxHeightDif);
 	ADD_FLOAT("minWaterDepth", ud.minWaterDepth);
 	ADD_FLOAT("waterline",     ud.waterline);
@@ -774,7 +769,8 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_BOOL("capturable",  ud.capturable);
 	ADD_BOOL("repairable",  ud.repairable);
 
-	ADD_BOOL("canDGun",               ud.canDGun);
+	ADD_BOOL("canDGun",               ud.canManualFire); // NOTE: deprecated, remove after 0.83.*
+	ADD_BOOL("canManualFire",         ud.canManualFire);
 	ADD_BOOL("canCloak",              ud.canCloak);
 	ADD_BOOL("canRestore",            ud.canRestore);
 	ADD_BOOL("canRepair",             ud.canRepair);
@@ -897,8 +893,6 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_INT(  "flareSalvoSize",   ud.flareSalvoSize);
 	ADD_INT(  "flareSalvoDelay",  ud.flareSalvoDelay);
 
-	ADD_BOOL("smoothAnim", ud.smoothAnim);
-
 	ADD_BOOL("levelGround", ud.levelGround);
 	ADD_BOOL("strafeToAttack", ud.strafeToAttack);
 
@@ -913,9 +907,6 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_FLOAT("nanoColorR",   ud.nanoColor.x);
 	ADD_FLOAT("nanoColorG",   ud.nanoColor.y);
 	ADD_FLOAT("nanoColorB",   ud.nanoColor.z);
-
-	ADD_STRING("pieceTrailCEGTag",   ud.pieceTrailCEGTag);
-	ADD_INT(   "pieceTrailCEGRange", ud.pieceTrailCEGRange);
 
 	ADD_STRING("scriptName", ud.scriptName);
 	ADD_STRING("scriptPath", ud.scriptPath);

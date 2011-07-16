@@ -1,10 +1,11 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "Game/Camera.h"
 #include "Game/GameHelper.h"
+#include "Game/GlobalUnsynced.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/myGL.h"
@@ -21,7 +22,6 @@
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Projectiles/Unsynced/SmokeTrailProjectile.h"
 #include "Sim/Units/Unit.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Matrix44f.h"
 #include "System/myMath.h"
 #include "System/Sync/SyncTracer.h"
@@ -76,18 +76,12 @@ CPieceProjectile::CPieceProjectile(const float3& pos, const float3& speed, Local
 	checkCol = false;
 
 	if (owner) {
-		// choose a (synced) random tag-postfix string k from the
-		// range given in UnitDef and stick it onto pieceTrailCEGTag
-		// (assumes all possible "tag + k" CEG identifiers are valid)
-		// if this piece does not override the FBI and wants a trail
 		if ((flags & PF_NoCEGTrail) == 0) {
-			if (!owner->unitDef->pieceTrailCEGTag.empty()) {
-				std::stringstream cegTagStr;
+			const std::vector<std::string>& pieceCEGs = owner->unitDef->pieceCEGTags;
+			const std::string& cegTag = !pieceCEGs.empty()? pieceCEGs[gs->randInt() % pieceCEGs.size()]: "";
 
-				cegTagStr << (owner->unitDef->pieceTrailCEGTag);
-				cegTagStr << (gs->randInt() % owner->unitDef->pieceTrailCEGRange);
-
-				cegID = gCEG->Load(explGenHandler, cegTagStr.str());
+			if (!cegTag.empty()) {
+				cegID = gCEG->Load(explGenHandler, cegTag.c_str());
 			} else {
 				flags |= PF_NoCEGTrail;
 			}
@@ -151,9 +145,15 @@ CPieceProjectile::CPieceProjectile(const float3& pos, const float3& speed, Local
 	ph->AddProjectile(this);
 }
 
+void CPieceProjectile::Detach()
+{
+	// SYNCED
+	CProjectile::Detach();
+}
 
 CPieceProjectile::~CPieceProjectile()
 {
+	// UNSYNCED
 	delete numCallback;
 
 	if (curCallback)
@@ -174,7 +174,24 @@ void CPieceProjectile::Collision()
 		pos += norm * 0.1f;
 	} else {
 		if (flags & PF_Explode) {
-			helper->Explosion(pos, DamageArray(50), 5, 0, 10, owner(), false, 1.0f, false, false, 0, 0, ZeroVector, -1);
+			CGameHelper::ExplosionParams params = {
+				pos,
+				ZeroVector,
+				DamageArray(50),
+				NULL,              // weaponDef
+				owner(),
+				NULL,              // hitUnit
+				NULL,              // hitFeature
+				5.0f,              // areaOfEffect
+				0.0f,              // edgeEffectiveness
+				10.0f,             // explosionSpeed
+				1.0f,              // gfxMod
+				false,             // impactOnly
+				false,             // ignoreOwner
+				true               // damageGround
+			};
+
+			helper->Explosion(params);
 		}
 		if (flags & PF_Smoke) {
 			if (flags & PF_NoCEGTrail) {
@@ -199,7 +216,24 @@ void CPieceProjectile::Collision(CUnit* unit)
 		return;
 	}
 	if (flags & PF_Explode) {
-		helper->Explosion(pos, DamageArray(50), 5, 0, 10, owner(), false, 1.0f, false, false, 0, unit, ZeroVector, -1);
+		CGameHelper::ExplosionParams params = {
+			pos,
+			ZeroVector,
+			DamageArray(50),
+			NULL,                                            // weaponDef
+			owner(),
+			unit,                                            // hitUnit
+			NULL,                                            // hitFeature
+			5.0f,                                            // areaOfEffect
+			0.0f,                                            // edgeEffectiveness
+			10.0f,                                           // explosionSpeed
+			1.0f,                                            // gfxMod
+			false,                                           // impactOnly
+			false,                                           // ignoreOwner
+			true                                             // damageGround
+		};
+
+		helper->Explosion(params);
 	}
 	if (flags & PF_Smoke) {
 		if (flags & PF_NoCEGTrail) {

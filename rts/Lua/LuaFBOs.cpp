@@ -1,10 +1,10 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <map>
 using std::map;
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "LuaFBOs.h"
 
@@ -18,7 +18,7 @@ using std::map;
 #include "LuaRBOs.h"
 #include "LuaTextures.h"
 
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 
 
 /******************************************************************************/
@@ -118,7 +118,7 @@ void LuaFBOs::FBO::Free(lua_State* L)
 	glDeleteFramebuffersEXT(1, &id);
 	id = 0;
 
-	CLuaHandle::GetActiveFBOs().fbos.erase(this);
+	CLuaHandle::GetActiveFBOs(L).fbos.erase(this);
 }
 
 
@@ -266,7 +266,7 @@ bool LuaFBOs::AttachObject(lua_State* L, int index,
 	else if (lua_israwstring(L, index)) {
 		// custom texture
 		const string texName = lua_tostring(L, index);
-		LuaTextures& textures = CLuaHandle::GetActiveTextures();
+		LuaTextures& textures = CLuaHandle::GetActiveTextures(L);
 		const LuaTextures::Texture* tex = textures.GetInfo(texName);
 		if (tex == NULL) {
 			return false;
@@ -428,7 +428,7 @@ int LuaFBOs::CreateFBO(lua_State* L)
 	glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, currentFBO);
 
 	if (fboPtr->luaRef != LUA_NOREF) {
-		CLuaHandle::GetActiveFBOs().fbos.insert(fboPtr);
+		CLuaHandle::GetActiveFBOs(L).fbos.insert(fboPtr);
 	}
 
 	return 1;

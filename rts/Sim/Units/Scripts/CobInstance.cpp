@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "CobEngine.h"
 #include "CobFile.h"
@@ -11,7 +11,7 @@
 #ifndef _CONSOLE
 
 #include "Game/GameHelper.h"
-#include "LogOutput.h"
+#include "Game/GlobalUnsynced.h"
 #include "Map/Ground.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/LosHandler.h"
@@ -38,8 +38,8 @@
 #include "Sim/Weapons/PlasmaRepulser.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
-#include "System/GlobalUnsynced.h"
 #include "System/Util.h"
+#include "System/LogOutput.h"
 #include "System/myMath.h"
 #include "System/Sound/SoundChannels.h"
 #include "System/Sync/SyncTracer.h"
@@ -60,7 +60,6 @@ inline bool CCobInstance::HasFunction(int id) const
 CCobInstance::CCobInstance(CCobFile& _script, CUnit* _unit)
 	: CUnitScript(_unit, pieces)
 	, script(_script)
-	, smoothAnim(unit->unitDef->smoothAnim)
 {
 	staticVars.reserve(script.numStaticVars);
 	for (int i = 0; i < script.numStaticVars; ++i) {
@@ -80,13 +79,15 @@ CCobInstance::~CCobInstance()
 	//this may be dangerous, is it really desired?
 	//Destroy();
 
-	for (std::list<struct AnimInfo *>::iterator i = anims.begin(); i != anims.end(); ++i) {
-		// All threads blocking on animations can be killed safely from here since the scheduler does not
-		// know about them
-		for (std::list<IAnimListener *>::iterator j = (*i)->listeners.begin(); j != (*i)->listeners.end(); ++j) {
-			delete *j;
+	for (int animType = ATurn; animType <= AMove; animType++) {
+		for (std::list<AnimInfo *>::iterator i = anims[animType].begin(); i != anims[animType].end(); ++i) {
+			// All threads blocking on animations can be killed safely from here since the scheduler does not
+			// know about them
+			for (std::list<IAnimListener *>::iterator j = (*i)->listeners.begin(); j != (*i)->listeners.end(); ++j) {
+				delete *j;
+			}
+			// the anims are deleted in ~CUnitScript
 		}
-		// the anims are deleted in ~CUnitScript
 	}
 
 	// Can't delete the thread here because that would confuse the scheduler to no end
@@ -468,33 +469,31 @@ int CCobInstance::RealCall(int functionId, vector<int> &args, CBCobThreadFinish 
 		return -1;
 	}
 
-	CCobThread *t = new CCobThread(script, this);
-	t->Start(functionId, args, false);
+	CCobThread* thread = new CCobThread(script, this);
+	thread->Start(functionId, args, false);
 
 #if COB_DEBUG > 0
 	if (COB_DEBUG_FILTER)
 		logOutput.Print("Calling %s:%s", script.name.c_str(), script.scriptNames[functionId].c_str());
 #endif
 
-	int res = t->Tick(30);
-	t->CommitAnims(30);
+	const bool res = thread->Tick(30);
 
 	// Make sure this is run even if the call terminates instantly
 	if (cb)
-		t->SetCallback(cb, p1, p2);
+		thread->SetCallback(cb, p1, p2);
 
-	if (res == -1) {
-		unsigned int i = 0, argc = t->CheckStack(args.size());
+	if (!res) {
+		unsigned int i = 0, argc = thread->CheckStack(args.size());
 		// Retrieve parameter values from stack
 		for (; i < argc; ++i)
-			args[i] = t->GetStackVal(i);
+			args[i] = thread->GetStackVal(i);
 		// Set erroneous parameters to 0
 		for (; i < args.size(); ++i)
 			args[i] = 0;
-		delete t;
+		delete thread;
 		return 0;
-	}
-	else {
+	} else {
 		// It has already added itself to the correct scheduler (global for sleep, or local for anim)
 		return 1;
 	}

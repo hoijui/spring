@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 
 #include <stdlib.h>
@@ -8,59 +8,67 @@
 #include <cctype>
 #include <locale>
 #include <sstream>
+#include <stdexcept>
 
 #include <boost/thread/thread.hpp>
 #include <boost/bind.hpp>
 
 #include <SDL_keyboard.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "Game.h"
 #include "Camera.h"
 #include "CameraHandler.h"
 #include "ChatMessage.h"
 #include "ClientSetup.h"
+#include "CommandMessage.h"
 #include "ConsoleHistory.h"
 #include "GameHelper.h"
 #include "GameServer.h"
 #include "GameVersion.h"
-#include "CommandMessage.h"
 #include "GameSetup.h"
+#include "GlobalUnsynced.h"
 #include "LoadScreen.h"
 #include "SelectedUnits.h"
 #include "PlayerHandler.h"
 #include "PlayerRoster.h"
-#include "TimeProfiler.h"
 #include "WaitCommandsAI.h"
 #include "WordCompletion.h"
 #include "OSCStatsSender.h"
 #include "IVideoCapturing.h"
+#include "InMapDraw.h"
+#include "InMapDrawModel.h"
+#include "SyncedActionExecutor.h"
+#include "SyncedGameCommands.h"
+#include "UnsyncedActionExecutor.h"
+#include "UnsyncedGameCommands.h"
 #include "Game/UI/UnitTracker.h"
 #ifdef _WIN32
-#  include "winerror.h"
+#  include "winerror.h" // TODO someone on windows (MinGW? VS?) please check if this is required
 #endif
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/IAILibraryManager.h"
 #include "ExternalAI/SkirmishAIHandler.h"
+#include "Rendering/WorldDrawer.h"
 #include "Rendering/Env/BaseSky.h"
-#include "Rendering/Env/BaseTreeDrawer.h"
+#include "Rendering/Env/ITreeDrawer.h"
 #include "Rendering/Env/BaseWater.h"
 #include "Rendering/Env/CubeMapHandler.h"
 #include "Rendering/DebugColVolDrawer.h"
-#include "Rendering/FarTextureHandler.h"
 #include "Rendering/glFont.h"
+#include "Rendering/FeatureDrawer.h"
+#include "Rendering/LineDrawer.h"
 #include "Rendering/Screenshot.h"
 #include "Rendering/GroundDecalHandler.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/FeatureDrawer.h"
 #include "Rendering/ProjectileDrawer.hpp"
-#include "Rendering/UnitDrawer.h"
 #include "Rendering/DebugDrawerAI.h"
 #include "Rendering/HUDDrawer.h"
+#include "Rendering/SmoothHeightMeshDrawer.h"
 #include "Rendering/IPathDrawer.h"
 #include "Rendering/IconHandler.h"
-#include "Rendering/InMapDraw.h"
+#include "Rendering/InMapDrawView.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/TeamHighlight.h"
 #include "Rendering/VerticalSync.h"
@@ -106,7 +114,6 @@
 #include "Sim/Units/Scripts/CobEngine.h"
 #include "Sim/Units/Scripts/UnitScriptEngine.h"
 #include "Sim/Units/UnitDefHandler.h"
-#include "Sim/Units/CommandAI/LineDrawer.h"
 #include "Sim/Units/Groups/GroupHandler.h"
 #include "Sim/Units/UnitLoader.h"
 #include "Sim/Weapons/Weapon.h"
@@ -133,6 +140,7 @@
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 #include "System/FPUCheck.h"
+#include "System/GlobalConfig.h"
 #include "System/NetProtocol.h"
 #include "System/SpringApp.h"
 #include "System/Util.h"
@@ -150,6 +158,7 @@
 #include "System/Sound/SoundChannels.h"
 #include "System/Sync/SyncedPrimitiveIO.h"
 #include "System/Sync/SyncTracer.h"
+#include "System/TimeProfiler.h"
 
 #include <boost/cstdint.hpp>
 
@@ -192,12 +201,12 @@ CR_REG_METADATA(CGame,(
 	CR_MEMBER(showClock),
 	CR_MEMBER(showSpeed),
 	CR_MEMBER(showMTInfo),
+	CR_MEMBER(mtInfoCtrl),
 	CR_MEMBER(noSpectatorChat),
 	CR_MEMBER(gameID),
 //	CR_MEMBER(script),
 //	CR_MEMBER(infoConsole),
 //	CR_MEMBER(consoleHistory),
-//	CR_MEMBER(wordCompletion),
 //	CR_MEMBER(hotBinding),
 //	CR_MEMBER(inputTextPosX),
 //	CR_MEMBER(inputTextPosY),
@@ -217,7 +226,7 @@ CR_REG_METADATA(CGame,(
 
 
 
-CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHandler* saveFile) :
+CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHandler* saveFile) :
 	gameDrawMode(gameNotDrawing),
 	defsParser(NULL),
 	fps(0),
@@ -235,7 +244,6 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 
 	infoConsole(NULL),
 	consoleHistory(NULL),
-	wordCompletion(NULL),
 
 	skipping(false),
 	playing(false),
@@ -245,9 +253,12 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	leastQue(0),
 	timeLeft(0.0f),
 	consumeSpeed(1.0f),
-	luaDrawTime(0),
+	luaLockTime(0),
+	luaExportSize(0),
 
-	saveFile(saveFile)
+	saveFile(saveFile),
+
+	worldDrawer(NULL)
 {
 	game = this;
 
@@ -259,6 +270,14 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	for (int a = 0; a < 8; ++a) { camMove[a] = false; }
 	for (int a = 0; a < 4; ++a) { camRot[a] = false; }
 
+	// set "Headless" in config overlay (not persisted)
+	const bool isHeadless =
+#ifdef HEADLESS
+			true;
+#else
+			false;
+#endif
+	configHandler->Set("Headless", isHeadless ? 1 : 0, true);
 
 	//FIXME move to MouseHandler!
 	windowedEdgeMove   = !!configHandler->Get("WindowedEdgeMove",   1);
@@ -268,6 +287,7 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	showClock = !!configHandler->Get("ShowClock", 1);
 	showSpeed = !!configHandler->Get("ShowSpeed", 0);
 	showMTInfo = !!configHandler->Get("ShowMTInfo", 1);
+	mtInfoCtrl = 0;
 
 	speedControl = configHandler->Get("SpeedControl", 0);
 
@@ -286,9 +306,12 @@ CGame::CGame(const std::string& mapname, const std::string& modName, ILoadSaveHa
 	CLuaHandle::SetModUICtrl(!!configHandler->Get("LuaModUICtrl", 1));
 
 	modInfo.Init(modName.c_str());
+
 	if (!mapInfo) {
 		mapInfo = new CMapInfo(gameSetup->MapFile(), gameSetup->mapName);
 	}
+
+	showMTInfo = (showMTInfo && globalConfig->GetMultiThreadLua() <= 3) ? globalConfig->GetMultiThreadLua() : 0;
 
 	if (!sideParser.Load()) {
 		throw content_error(sideParser.GetErrorLog());
@@ -300,6 +323,10 @@ CGame::~CGame()
 #ifdef TRACE_SYNC
 	tracefile << "[" << __FUNCTION__ << "]";
 #endif
+
+	// TODO move these to the end of this dtor, once all action-executors are registered by their respective engine sub-parts
+	UnsyncedGameCommands::DestroyInstance();
+	SyncedGameCommands::DestroyInstance();
 
 	CLoadScreen::DeleteInstance();
 	IVideoCapturing::FreeInstance();
@@ -313,13 +340,15 @@ CGame::~CGame()
 	CEngineOutHandler::Destroy();
 	CResourceHandler::FreeInstance();
 
+	CWordCompletion::DestroyInstance();
+
+	SafeDelete(worldDrawer);
 	SafeDelete(guihandler);
 	SafeDelete(minimap);
 	SafeDelete(resourceBar);
 	SafeDelete(tooltip); // CTooltipConsole*
 	SafeDelete(infoConsole);
 	SafeDelete(consoleHistory);
-	SafeDelete(wordCompletion);
 	SafeDelete(keyBindings);
 	SafeDelete(keyCodes);
 	SafeDelete(selectionKeys); // CSelectionKeyHandler*
@@ -336,21 +365,15 @@ CGame::~CGame()
 	SafeDelete(camera);
 	SafeDelete(cam2);
 	SafeDelete(icon::iconHandler);
-	SafeDelete(inMapDrawer);
 	SafeDelete(geometricObjects);
-	SafeDelete(farTextureHandler);
 	SafeDelete(texturehandler3DO);
 	SafeDelete(texturehandlerS3O);
 
-	SafeDelete(featureDrawer);
 	SafeDelete(featureHandler); // depends on unitHandler (via ~CFeature)
-	SafeDelete(unitDrawer); // depends on unitHandler, cubeMapHandler, groundDecals
 	SafeDelete(uh); // CUnitHandler*, depends on modelParser (via ~CUnit)
-	SafeDelete(projectileDrawer);
 	SafeDelete(ph); // CProjectileHandler*
 
 	SafeDelete(cubeMapHandler);
-	SafeDelete(groundDecals);
 	SafeDelete(modelParser);
 
 	SafeDelete(unitLoader);
@@ -379,7 +402,7 @@ CGame::~CGame()
 	}
 	grouphandlers.clear();
 
-	SafeDelete(saveFile); // ILoadSaveHandler, depends on vfsHandler via ~CArchiveBase
+	SafeDelete(saveFile); // ILoadSaveHandler, depends on vfsHandler via ~IArchive
 	SafeDelete(vfsHandler);
 	SafeDelete(archiveScanner);
 
@@ -390,12 +413,16 @@ CGame::~CGame()
 }
 
 
-void CGame::LoadGame(const std::string& mapname)
+void CGame::LoadGame(const std::string& mapName)
 {
-	Watchdog::RegisterThread("loadscreen");
+#ifdef USE_GML
+	set_threadnum(GML_LOAD_THREAD_NUM);
+#endif
+
+	Watchdog::RegisterThread(WDT_LOAD);
 
 	if (!gu->globalQuit) LoadDefs();
-	if (!gu->globalQuit) LoadSimulation(mapname);
+	if (!gu->globalQuit) LoadSimulation(mapName);
 	if (!gu->globalQuit) LoadRendering();
 	if (!gu->globalQuit) LoadInterface();
 	if (!gu->globalQuit) LoadLua();
@@ -406,7 +433,7 @@ void CGame::LoadGame(const std::string& mapname)
 		saveFile->LoadGame();
 	}
 
-	Watchdog::DeregisterThread("loadscreen");
+	Watchdog::DeregisterThread(WDT_LOAD);
 }
 
 
@@ -418,7 +445,7 @@ void CGame::LoadDefs()
 	}
 
 	{
-		ScopedOnceTimer timer("Loading GameData Definitions");
+		ScopedOnceTimer timer("Game::LoadDefs (GameData)");
 		loadscreen->SetLoadMessage("Loading GameData Definitions");
 
 		defsParser = new LuaParser("gamedata/defs.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
@@ -456,7 +483,7 @@ void CGame::LoadDefs()
 	}
 
 	{
-		ScopedOnceTimer timer("Loading Sound Definitions");
+		ScopedOnceTimer timer("Game::LoadDefs (Sound)");
 		loadscreen->SetLoadMessage("Loading Sound Definitions");
 
 		sound->LoadSoundDefs("gamedata/sounds.lua");
@@ -464,15 +491,21 @@ void CGame::LoadDefs()
 	}
 }
 
-void CGame::LoadSimulation(const std::string& mapname)
+void CGame::LoadSimulation(const std::string& mapName)
 {
+	// after this, other components are able to register chat action-executors
+	SyncedGameCommands::CreateInstance();
+	UnsyncedGameCommands::CreateInstance();
+
+	CWordCompletion::CreateInstance();
+
 	// simulation components
 	helper = new CGameHelper();
 	ground = new CGround();
 
 	loadscreen->SetLoadMessage("Parsing Map Information");
 
-	readmap = CReadMap::LoadMap(mapname);
+	readmap = CReadMap::LoadMap(mapName);
 	groundBlockingObjectMap = new CGroundBlockingObjectMap(gs->mapSquares);
 
 	loadscreen->SetLoadMessage("Creating Smooth Height Mesh");
@@ -491,10 +524,9 @@ void CGame::LoadSimulation(const std::string& mapname)
 		modelParser = new C3DModelLoader();
 
 		loadscreen->SetLoadMessage("Creating Unit Textures");
-		texturehandler3DO = new C3DOTextureHandler;
-		texturehandlerS3O = new CS3OTextureHandler;
+		texturehandler3DO = new C3DOTextureHandler();
+		texturehandlerS3O = new CS3OTextureHandler();
 
-		farTextureHandler = new CFarTextureHandler();
 		featureDrawer = new CFeatureDrawer();
 	}
 
@@ -524,38 +556,19 @@ void CGame::LoadSimulation(const std::string& mapname)
 
 	CCobInstance::InitVars(teamHandler->ActiveTeams(), teamHandler->ActiveAllyTeams());
 	CEngineOutHandler::Initialize();
+
+	geometricObjects = new CGeometricObjects();
+
+	inMapDrawerModel = new CInMapDrawModel();
+	inMapDrawer = new CInMapDraw();
+
+	syncedGameCommands->AddDefaultActionExecutors();
+	unsyncedGameCommands->AddDefaultActionExecutors();
 }
 
 void CGame::LoadRendering()
 {
-	// rendering components
-	loadscreen->SetLoadMessage("Creating Sky");
-	sky = IBaseSky::GetSky();
-
-	loadscreen->SetLoadMessage("Creating ShadowHandler & DecalHandler");
-	cubeMapHandler = new CubeMapHandler();
-	shadowHandler = new CShadowHandler();
-	groundDecals = new CGroundDecalHandler();
-
-	loadscreen->SetLoadMessage("Creating GroundDrawer");
-	readmap->NewGroundDrawer();
-
-	loadscreen->SetLoadMessage("Creating TreeDrawer");
-	treeDrawer = CBaseTreeDrawer::GetTreeDrawer();
-
-	inMapDrawer = new CInMapDraw();
-	pathDrawer = IPathDrawer::GetInstance();
-
-	geometricObjects = new CGeometricObjects();
-
-	loadscreen->SetLoadMessage("Creating ProjectileDrawer & UnitDrawer");
-	projectileDrawer = new CProjectileDrawer();
-	projectileDrawer->LoadWeaponTextures();
-	unitDrawer = new CUnitDrawer();
-	modelDrawer = IModelDrawer::GetInstance();
-
-	loadscreen->SetLoadMessage("Creating Water");
-	water = CBaseWater::GetWater(NULL, -1);
+	worldDrawer = new CWorldDrawer();
 }
 
 void CGame::SetupRenderingParams()
@@ -566,19 +579,15 @@ void CGame::SetupRenderingParams()
 	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0);
 	glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 0);
 
-	glFogfv(GL_FOG_COLOR, mapInfo->atmosphere.fogColor);
-	glFogf(GL_FOG_START, globalRendering->viewRange * mapInfo->atmosphere.fogStart);
-	glFogf(GL_FOG_END, globalRendering->viewRange);
-	glFogf(GL_FOG_DENSITY, 1.0f);
-	glFogi(GL_FOG_MODE, GL_LINEAR);
-	glEnable(GL_FOG);
+	IBaseSky::SetFog();
+
 	glClearColor(mapInfo->atmosphere.fogColor[0], mapInfo->atmosphere.fogColor[1], mapInfo->atmosphere.fogColor[2], 0.0f);
 }
 
 void CGame::LoadInterface()
 {
 	{
-		ScopedOnceTimer timer("Camera and mouse");
+		ScopedOnceTimer timer("Game::LoadInterface (Camera&Mouse)");
 		camera = new CCamera();
 		cam2 = new CCamera();
 		mouse = new CMouseHandler();
@@ -592,9 +601,8 @@ void CGame::LoadInterface()
 	cmdColors.LoadConfig("cmdcolors.txt");
 
 	{
-		ScopedOnceTimer timer("Loading console");
+		ScopedOnceTimer timer("Game::LoadInterface (Console)");
 		consoleHistory = new CConsoleHistory;
-		wordCompletion = new CWordCompletion;
 		for (int pp = 0; pp < playerHandler->ActivePlayers(); pp++) {
 			wordCompletion->AddWord(playerHandler->Player(pp)->name, false, false, false);
 		}
@@ -618,10 +626,17 @@ void CGame::LoadInterface()
 			wordCompletion->AddWord(*sn + " ", false, false, false);
 		}
 
-		const std::map<std::string, int>& unitMap = unitDefHandler->unitDefIDsByName;
+		const std::map<std::string, int>& unitDefs = unitDefHandler->unitDefIDsByName;
+		const std::map<std::string, const FeatureDef*>& featureDefs = featureHandler->GetFeatureDefs();
+
 		std::map<std::string, int>::const_iterator uit;
-		for (uit = unitMap.begin(); uit != unitMap.end(); ++uit) {
+		std::map<std::string, const FeatureDef*>::const_iterator fit;
+
+		for (uit = unitDefs.begin(); uit != unitDefs.end(); ++uit) {
 			wordCompletion->AddWord(uit->first + " ", false, true, false);
+		}
+		for (fit = featureDefs.begin(); fit != featureDefs.end(); ++fit) {
+			wordCompletion->AddWord(fit->first + " ", false, true, false);
 		}
 	}
 
@@ -781,7 +796,7 @@ int CGame::KeyReleased(unsigned short k)
 	std::deque<CInputReceiver*>& inputReceivers = GetInputReceivers();
 	std::deque<CInputReceiver*>::iterator ri;
 	for (ri = inputReceivers.begin(); ri != inputReceivers.end(); ++ri) {
-		CInputReceiver* recv=*ri;
+		CInputReceiver* recv = *ri;
 		if (recv && recv->KeyReleased(k)) {
 			return 0;
 		}
@@ -795,7 +810,6 @@ int CGame::KeyReleased(unsigned short k)
 			return 0;
 		}
 	}
-
 
 	return 0;
 }
@@ -830,7 +844,17 @@ bool CGame::Update()
 		thisFps = 0;
 
 		starttime = fpstimer;
-
+#if defined(USE_GML) && GML_ENABLE_SIM
+		extern int backupSize;
+		luaExportSize = backupSize;
+		backupSize = 0;
+		luaLockTime = (int)GML_LOCK_TIME();
+		float amount = (showMTInfo <= 2) ? (float)luaLockTime / 10.0f : (float)luaExportSize / 1000.0f;
+		if (amount >= 0.1f) {
+			if((mtInfoCtrl = std::min(mtInfoCtrl + 1, 5)) == 3) mtInfoCtrl = 5;
+		}
+		else if((mtInfoCtrl = std::max(mtInfoCtrl - 1, 0)) == 2) mtInfoCtrl = 0;
+#endif
 		if (!gameServer) {
 			consumeSpeed = ((float)(GAME_SPEED * gs->speedFactor + leastQue - 2));
 			leastQue = 10000;
@@ -854,12 +878,12 @@ bool CGame::Update()
 		gameServer->CreateNewFrame(false, true);
 	}
 
-	if(gs->frameNum == 0 || gs->paused)
+	if (gs->frameNum == 0 || gs->paused)
 		eventHandler.UpdateObjects(); // we must add new rendering objects even if the game has not started yet
 
 	ClientReadNet();
 
-	if(net->NeedsReconnect() && !gameOver) {
+	if (net->NeedsReconnect() && !gameOver) {
 		extern ClientSetup* startsetup;
 		net->AttemptReconnect(startsetup->myPlayerName, startsetup->myPasswd, SpringVersion::GetFull());
 	}
@@ -887,181 +911,6 @@ bool CGame::Update()
 }
 
 
-bool CGame::DrawWorld()
-{
-	SCOPED_TIMER("Draw world");
-
-	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
-
-	if (globalRendering->drawSky) {
-		sky->Draw();
-	}
-
-	if (globalRendering->drawGround) {
-		gd->Draw();
-		if (smoothGround->drawEnabled)
-			smoothGround->DrawWireframe(1);
-		treeDrawer->DrawGrass();
-		gd->DrawTrees();
-	}
-
-	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
-		SCOPED_TIMER("Water");
-
-		water->OcclusionQuery();
-		if (water->drawSolid) {
-			water->UpdateBaseWater(this);
-			water->Draw();
-		}
-	}
-
-	selectedUnits.Draw();
-	eventHandler.DrawWorldPreUnit();
-
-	DebugColVolDrawer::Draw();
-	unitDrawer->Draw(false);
-	modelDrawer->Draw();
-	featureDrawer->Draw();
-	pathDrawer->Draw();
-
-	//! transparent stuff
-	glEnable(GL_BLEND);
-	glDepthFunc(GL_LEQUAL);
-
-	const bool noAdvShading = shadowHandler->shadowsLoaded;
-
-	static const double plane_below[4] = {0.0f, -1.0f, 0.0f, 0.0f};
-	static const double plane_above[4] = {0.0f,  1.0f, 0.0f, 0.0f};
-
-	glClipPlane(GL_CLIP_PLANE3, plane_below);
-	glEnable(GL_CLIP_PLANE3);
-
-		//! draw cloaked part below surface
-		unitDrawer->DrawCloakedUnits(noAdvShading);
-		featureDrawer->DrawFadeFeatures(noAdvShading);
-
-	glDisable(GL_CLIP_PLANE3);
-
-	//! draw water
-	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
-		SCOPED_TIMER("Water");
-
-		if (!water->drawSolid) {
-			//! Water rendering will overwrite features, so save them
-			featureDrawer->SwapFeatures();
-			water->UpdateBaseWater(this);
-			water->Draw();
-			featureDrawer->SwapFeatures();
-		}
-	}
-
-	glClipPlane(GL_CLIP_PLANE3, plane_above);
-	glEnable(GL_CLIP_PLANE3);
-
-		//! draw cloaked part above surface
-		unitDrawer->DrawCloakedUnits(noAdvShading);
-		featureDrawer->DrawFadeFeatures(noAdvShading);
-
-	glDisable(GL_CLIP_PLANE3);
-
-	projectileDrawer->Draw(false);
-
-	if (globalRendering->drawSky) {
-		sky->DrawSun();
-	}
-
-	eventHandler.DrawWorld();
-
-	LuaUnsyncedCtrl::DrawUnitCommandQueues();
-	if (cmdColors.AlwaysDrawQueue() || guihandler->GetQueueKeystate()) {
-		selectedUnits.DrawCommands();
-	}
-
-	lineDrawer.DrawAll();
-	cursorIcons.Draw();
-	cursorIcons.Clear();
-
-	mouse->DrawSelectionBox();
-
-	guihandler->DrawMapStuff(0);
-
-	if (globalRendering->drawMapMarks && !hideInterface) {
-		inMapDrawer->Draw();
-	}
-
-
-	//! underwater overlay
-	if (camera->pos.y < 0.0f) {
-		glEnableClientState(GL_VERTEX_ARRAY);
-		const float3& cpos = camera->pos;
-		const float vr = globalRendering->viewRange * 0.5f;
-		glDepthMask(GL_FALSE);
-		glDisable(GL_TEXTURE_2D);
-		glColor4f(0.0f, 0.5f, 0.3f, 0.50f);
-		{
-			float3 verts[] = {
-				float3(cpos.x - vr, 0.0f, cpos.z - vr),
-				float3(cpos.x - vr, 0.0f, cpos.z + vr),
-				float3(cpos.x + vr, 0.0f, cpos.z + vr),
-				float3(cpos.x + vr, 0.0f, cpos.z - vr)
-			};
-			glVertexPointer(3, GL_FLOAT, 0, verts);
-			glDrawArrays(GL_QUADS, 0, 4);
-		}
-
-		{
-			float3 verts[] = {
-				float3(cpos.x - vr, 0.0f, cpos.z - vr),
-				float3(cpos.x - vr,  -vr, cpos.z - vr),
-				float3(cpos.x - vr, 0.0f, cpos.z + vr),
-				float3(cpos.x - vr,  -vr, cpos.z + vr),
-				float3(cpos.x + vr, 0.0f, cpos.z + vr),
-				float3(cpos.x + vr,  -vr, cpos.z + vr),
-				float3(cpos.x + vr, 0.0f, cpos.z - vr),
-				float3(cpos.x + vr,  -vr, cpos.z - vr),
-				float3(cpos.x - vr, 0.0f, cpos.z - vr),
-				float3(cpos.x - vr,  -vr, cpos.z - vr),
-			};
-			glVertexPointer(3, GL_FLOAT, 0, verts);
-			glDrawArrays(GL_QUAD_STRIP, 0, 10);
-		}
-
-		glDepthMask(GL_TRUE);
-		glDisableClientState(GL_VERTEX_ARRAY);
-	}
-
-	//reset fov
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	gluOrtho2D(0,1,0,1);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
-	glEnable(GL_BLEND);
-	glDisable(GL_DEPTH_TEST);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	// underwater overlay, part 2
-	if (camera->pos.y < 0.0f) {
-		glEnableClientState(GL_VERTEX_ARRAY);
-		glDisable(GL_TEXTURE_2D);
-		glColor4f(0.0f, 0.2f, 0.8f, 0.333f);
-		float3 verts[] = {
-			float3 (0.f, 0.f, -1.f),
-			float3 (1.f, 0.f, -1.f),
-			float3 (1.f, 1.f, -1.f),
-			float3 (0.f, 1.f, -1.f),
-		};
-		glVertexPointer(3, GL_FLOAT, 0, verts);
-		glDrawArrays(GL_QUADS, 0, 4);
-		glDisableClientState(GL_VERTEX_ARRAY);
-	}
-
-	return true;
-}
-
-
-
 #if defined(USE_GML) && GML_ENABLE_DRAW
 bool CGame::Draw() {
 	gmlProcessor->Work(&CGame::DrawMTcb,NULL,NULL,this,gmlThreadCount,TRUE,NULL,1,2,2,FALSE);
@@ -1084,13 +933,13 @@ bool CGame::Draw() {
 	//! timings and frame interpolation
 	const unsigned currentTime = SDL_GetTicks();
 
-	if(skipping) {
-		if(skipLastDraw + 500 > currentTime) // render at 2 FPS
+	if (skipping) {
+		if (skipLastDraw + 500 > currentTime) // render at 2 FPS
 			return true;
 		skipLastDraw = currentTime;
 #if defined(USE_GML) && GML_ENABLE_SIM
 		extern volatile int gmlMultiThreadSim;
-		if(!gmlMultiThreadSim)
+		if (!gmlMultiThreadSim)
 #endif
 		{
 			DrawSkip();
@@ -1121,7 +970,7 @@ bool CGame::Draw() {
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 	if (doDrawWorld) {
 		{
-			SCOPED_TIMER("Ground Update");
+			SCOPED_TIMER("GroundDrawer::Update");
 			gd->Update();
 		}
 
@@ -1149,7 +998,7 @@ bool CGame::Draw() {
 				lastUpdate = currentTime;
 
 				{
-					SCOPED_TIMER("ExtraTexture");
+					SCOPED_TIMER("GroundDrawer::UpdateExtraTex");
 					gd->UpdateExtraTexture();
 				}
 
@@ -1166,7 +1015,7 @@ bool CGame::Draw() {
 
 	SetDrawMode(gameNormalDraw);
 
- 	if (luaUI)    { luaUI->CheckStack(); }
+ 	if (luaUI)    { luaUI->CheckStack(); luaUI->ExecuteDelayedXCalls(); luaUI->ExecuteUIEventBatch(); }
 	if (luaGaia)  { luaGaia->CheckStack(); }
 	if (luaRules) { luaRules->CheckStack(); }
 
@@ -1185,14 +1034,10 @@ bool CGame::Draw() {
 	CNamedTextures::Update();
 	texturehandlerS3O->Update();
 	modelParser->Update();
-	treeDrawer->Update();
-	readmap->UpdateDraw();
-	unitDrawer->Update();
-	featureDrawer->Update();
+	worldDrawer->Update();
 	mouse->UpdateCursors();
 	mouse->EmptyMsgQueUpdate();
 	guihandler->Update();
-	lineDrawer.UpdateLineStipple();
 
 	LuaUnsyncedCtrl::ClearUnitCommandQueues();
 	eventHandler.Update();
@@ -1210,21 +1055,32 @@ bool CGame::Draw() {
 	}
 
 	if (doDrawWorld) {
-		SCOPED_TIMER("Shadows/Reflections");
-
 		if (shadowHandler->shadowsLoaded && (gd->drawMode != CBaseGroundDrawer::drawLos)) {
 			// NOTE: shadows don't work in LOS mode, gain a few fps (until it's fixed)
+			SCOPED_TIMER("ShadowHandler::CreateShadows");
 			SetDrawMode(gameShadowDraw);
 			shadowHandler->CreateShadows();
 			SetDrawMode(gameNormalDraw);
 		}
 
-		cubeMapHandler->UpdateReflectionTexture();
+		{
+			SCOPED_TIMER("CubeMapHandler::UpdateReflTex");
+			cubeMapHandler->UpdateReflectionTexture();
+		}
 
 		if (sky->GetLight()->IsDynamic()) {
-			cubeMapHandler->UpdateSpecularTexture();
-			sky->UpdateSkyTexture();
-			readmap->UpdateShadingTexture();
+			{
+				SCOPED_TIMER("CubeMapHandler::UpdateSpecTex");
+				cubeMapHandler->UpdateSpecularTexture();
+			}
+			{
+				SCOPED_TIMER("Sky::UpdateSkyTex");
+				sky->UpdateSkyTexture();
+			}
+			{
+				SCOPED_TIMER("ReadMap::UpdateShadingTex");
+				readmap->UpdateShadingTexture();
+			}
 		}
 
 		if (FBO::IsSupported())
@@ -1242,9 +1098,8 @@ bool CGame::Draw() {
 	camera->Update(false);
 
 	if (doDrawWorld) {
-		DrawWorld();
-	}
-	else {
+		worldDrawer->Draw();
+	} else {
 		//reset fov
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
@@ -1269,11 +1124,9 @@ bool CGame::Draw() {
 	glEnable(GL_TEXTURE_2D);
 
 	{
-		SCOPED_TIMER("Draw interface");
-		if (hideInterface) {
-			//luaInputReceiver->Draw();
-		}
-		else {
+		SCOPED_TIMER("InputReceivers::Draw");
+
+		if (!hideInterface) {
 			std::deque<CInputReceiver*>& inputReceivers = GetInputReceivers();
 			std::deque<CInputReceiver*>::reverse_iterator ri;
 			for (ri = inputReceivers.rbegin(); ri != inputReceivers.rend(); ++ri) {
@@ -1350,20 +1203,27 @@ bool CGame::Draw() {
 		}
 
 #if defined(USE_GML) && GML_ENABLE_SIM
-		int cit = (int)GML_DRAW_CALLIN_TIME() * (int)fps;
-		if(cit > luaDrawTime)
-			++luaDrawTime;
-		else if(cit < luaDrawTime)
-			--luaDrawTime;
-
-		if(showMTInfo) {
-			float drawPercent = (float)luaDrawTime / 10.0f;
-			char buf[32];
-			SNPRINTF(buf, sizeof(buf), "LUA-DRAW(MT): %2.0f%%", drawPercent);
-			float4 warncol(drawPercent >= 10.0f && (currentTime & 128) ?
-				0.5f : std::max(0.0f, std::min(drawPercent / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - drawPercent / 5.0f, 1.0f)), 0.0f, 1.0f);
-			smallFont->SetColors(&warncol, NULL);
-			smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
+		if (showMTInfo == 1 || showMTInfo == 2) {
+			float lockPercent = (float)luaLockTime / 10.0f;
+			if (mtInfoCtrl >= 3) {
+				char buf[40];
+				SNPRINTF(buf, sizeof(buf), "LUA-SYNC-CPU(MT): %2.1f%%", lockPercent);
+				float4 warncol(lockPercent >= 10.0f && (currentTime & 128) ?
+					0.5f : std::max(0.0f, std::min(lockPercent / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - lockPercent / 5.0f, 1.0f)), 0.0f, 1.0f);
+				smallFont->SetColors(&warncol, NULL);
+				smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
+			}
+		}
+		else if (showMTInfo == 3) {
+			float ek = (float)luaExportSize / 1000.0f;
+			if (mtInfoCtrl >= 3) {
+				char buf[40];
+				SNPRINTF(buf, sizeof(buf), "LUA-EXP-SIZE(MT): %2.1fK", ek);
+				float4 warncol(ek >= 10.0f && (currentTime & 128) ?
+					0.5f : std::max(0.0f, std::min(ek / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - ek / 5.0f, 1.0f)), 0.0f, 1.0f);
+				smallFont->SetColors(&warncol, NULL);
+				smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
+			}
 		}
 #endif
 
@@ -1382,7 +1242,7 @@ bool CGame::Draw() {
 				const CPlayer* p = playerHandler->Player(indices[a]);
 				unsigned char color[3] = {255, 255, 255};
 				unsigned char allycolor[3] = {255, 255, 255};
-				if(p->ping != PATHING_FLAG || gs->frameNum != 0) {
+				if (p->ping != PATHING_FLAG || gs->frameNum != 0) {
 					if (p->spectator)
 						prefix = "S";
 					else {
@@ -1407,7 +1267,7 @@ bool CGame::Draw() {
 						(currentTime & 128) ? 0.5f : std::max(0.01f, std::min(1.0f, p->cpuUsage * 2.0f / 0.75f)),
 							std::min(1.0f, std::max(0.01f, (1.0f - p->cpuUsage / 0.75f) * 2.0f)), 0.01f, 1.0f);
 					int ping = (int)(((p->ping) * 1000) / (GAME_SPEED * gs->speedFactor));
-					float4 pingcolor(!p->spectator && gc->reconnectTimeout > 0 && ping > 1000 * gc->reconnectTimeout &&
+					float4 pingcolor(!p->spectator && globalConfig->reconnectTimeout > 0 && ping > 1000 * globalConfig->reconnectTimeout &&
 							(currentTime & 128) ? 0.5f : std::max(0.01f, std::min(1.0f, (ping - 250) / 375.0f)),
 							std::min(1.0f, std::max(0.01f, (1000 - ping) / 375.0f)), 0.01f, 1.0f);
 					SNPRINTF(buf, sizeof(buf), "\xff%c%c%c%c \t%i \t%s   \t\xff%c%c%c%s   \t\xff%c%c%c%.0f%%  \t\xff%c%c%c%dms",
@@ -1438,7 +1298,7 @@ bool CGame::Draw() {
 	}
 
 #if defined(USE_GML) && GML_ENABLE_SIM
-	if(skipping)
+	if (skipping)
 		DrawSkip(false);
 #endif
 
@@ -1578,25 +1438,30 @@ void CGame::StartPlaying()
 				skirmishAIHandler.CreateLocalSkirmishAI(*ai);
 			}
 		}
-
-		if (a == gu->myTeam) {
-			minimap->AddNotification(team->startPos, float3(1.0f, 1.0f, 1.0f), 1.0f);
-			game->infoConsole->SetLastMsgPos(team->startPos);
-		}
 	}
 
 	eventHandler.GameStart();
 	net->Send(CBaseNetProtocol::Get().SendSpeedControl(gu->myPlayerNum, speedControl));
 #if defined(USE_GML) && GML_ENABLE_SIM
-	if(showMTInfo) {
-		CKeyBindings::HotkeyList lslist = keyBindings->GetHotkeys("luaui selector");
-		std::string lskey = lslist.empty() ? "<none>" : lslist.front();
+	if (showMTInfo >= 1) {
 		logOutput.Print("\n************** SPRING MULTITHREADING VERSION IMPORTANT NOTICE **************");
-		logOutput.Print("LUA BASED GRAPHICS WILL CAUSE HIGH CPU LOAD AND SEVERE SLOWDOWNS");
-		logOutput.Print("For best results disable LuaShaders in SpringSettings or the Edit Settings menu");
-		logOutput.Print("Press " + lskey + " to open the widget list, which allows specific widgets to be disabled");
-		logOutput.Print("The LUA-DRAW(MT) value in the upper right corner can be used for guidance");
-		logOutput.Print("Safe to use: Autoquit, ImmobileBuilder, MetalMakers, MiniMap Start Boxes\n");
+		logOutput.Print("Engine or game settings have forced Spring MT to use compatibility mode %d", showMTInfo);
+		if(showMTInfo == 1) {
+			CKeyBindings::HotkeyList lslist = keyBindings->GetHotkeys("luaui selector");
+			std::string lskey = lslist.empty() ? "<none>" : lslist.front();
+			logOutput.Print("If your game uses lua based rendering, it may run very slow with Spring MT");
+			logOutput.Print("A high LUA-SYNC-CPU(MT) value in the upper right corner could indicate a problem");
+			logOutput.Print("Consider changing the engine setting 'MultiThreadLua' to 2 to improve performance,");
+			logOutput.Print("or try to disable LuaShaders and all rendering widgets (press " + lskey + ")\n");
+		}
+		else if(showMTInfo == 2) {
+			logOutput.Print("If your game uses lua gadget based rendering, it may run very slow with Spring MT");
+			logOutput.Print("A high LUA-SYNC-CPU(MT) value in the upper right corner could indicate a problem\n");
+		}
+		else if(showMTInfo == 3) {
+			logOutput.Print("If your game uses lua gadgets that export data, it may run very slow with Spring MT");
+			logOutput.Print("A high LUA-EXP-SIZE(MT) value in the upper right corner could indicate a problem\n");
+		}
 	}
 #endif
 }
@@ -1604,7 +1469,7 @@ void CGame::StartPlaying()
 
 
 void CGame::SimFrame() {
-	ScopedTimer cputimer("CPU load"); // SimFrame
+	ScopedTimer cputimer("Game::SimFrame", true); // SimFrame
 
 	good_fpu_control_registers("CGame::SimFrame");
 	lastFrameTime = SDL_GetTicks();
@@ -1615,7 +1480,7 @@ void CGame::SimFrame() {
 #endif
 
 #ifdef USE_MMGR
-	if(!(gs->frameNum & 31))
+	if (!(gs->frameNum & 31))
 		m_validateAllAllocUnits();
 #endif
 
@@ -1643,7 +1508,8 @@ void CGame::SimFrame() {
 	}
 
 	// everything from here is simulation
-	ScopedTimer forced("Sim time"); // don't use SCOPED_TIMER here because this is the only timer needed always
+	// don't use SCOPED_TIMER here because this is the only timer needed always
+	ScopedTimer forced("Game::SimFrame (Update)");
 
 	helper->Update();
 	mapDamage->Update();
@@ -1661,6 +1527,8 @@ void CGame::SimFrame() {
 	playerHandler->GameFrame(gs->frameNum);
 
 	lastUpdate = SDL_GetTicks();
+
+	DumpState(-1, -1, 1);
 }
 
 
@@ -1768,7 +1636,7 @@ void CGame::UpdateUI(bool updateCam)
 			writingPos = 0;
 		}
 
-		if (inMapDrawer->wantLabel && !userWriting) {
+		if (inMapDrawer->IsWantLabel() && !userWriting) {
 			if (userInput.size() > 200) {
 				// avoid troubles with long lines
 				userInput = userInput.substr(0, 200);
@@ -1785,46 +1653,212 @@ void CGame::UpdateUI(bool updateCam)
 
 
 
-void CGame::MakeMemDump(void)
+void CGame::DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod)
 {
-	std::ofstream file(gameServer ? "memdump.txt" : "memdumpclient.txt");
+	#ifdef NDEBUG
+	// must be in debug-mode for this
+	return;
+	#endif
 
-	if (file.bad() || !file.is_open()) {
-		return;
+	static std::fstream file;
+
+	static int gMinFrameNum = -1;
+	static int gMaxFrameNum = -1;
+	static int gFramePeriod =  1;
+
+	const int oldMinFrameNum = gMinFrameNum;
+	const int oldMaxFrameNum = gMaxFrameNum;
+	const int oldFramePeriod = gFramePeriod;
+
+	if (!gs->cheatEnabled) { return; }
+	// check if the range is valid
+	if (newMaxFrameNum < newMinFrameNum) { return; }
+	// adjust the bounds if the new values are valid
+	if (newMinFrameNum >= 0) { gMinFrameNum = newMinFrameNum; }
+	if (newMaxFrameNum >= 0) { gMaxFrameNum = newMaxFrameNum; }
+	if (newFramePeriod >= 1) { gFramePeriod = newFramePeriod; }
+
+	if ((gMinFrameNum != oldMinFrameNum) || (gMaxFrameNum != oldMaxFrameNum)) {
+		// bounds changed, open a new file
+		if (file.is_open()) {
+			file.flush();
+			file.close();
+		}
+
+		std::string name = (gameServer != NULL)? "Server": "Client";
+		name += "GameState-";
+		name += IntToString(gu->usRandInt());
+		name += "-[";
+		name += IntToString(gMinFrameNum);
+		name += "-";
+		name += IntToString(gMaxFrameNum);
+		name += "].txt";
+
+		file.open(name.c_str(), std::ios::out);
+
+		if (file.is_open()) {
+			file << "map name: " << gameSetup->mapName << "\n";
+			file << "mod name: " << gameSetup->modName << "\n";
+			file << "minFrame: " << gMinFrameNum << ", maxFrame: " << gMaxFrameNum << "\n";
+		}
 	}
 
-	file << "Frame " << gs->frameNum <<"\n";
-	for (std::list<CUnit*>::iterator usi = uh->activeUnits.begin(); usi != uh->activeUnits.end(); ++usi) {
-		CUnit* u = *usi;
-		file << "Unit " << u->id << "\n";
-		file << "  xpos " << u->pos.x << " ypos " << u->pos.y << " zpos " << u->pos.z << "\n";
-		file << "  heading " << u->heading << " power " << u->power << " experience " << u->experience << "\n";
-		file << " health " << u->health << "\n";
+	if (file.bad() || !file.is_open()) { return; }
+	// check if the CURRENT frame lies within the bounds
+	if (gs->frameNum < gMinFrameNum) { return; }
+	if (gs->frameNum > gMaxFrameNum) { return; }
+	if ((gs->frameNum % gFramePeriod) != 0) { return; }
+
+	// we only care about the synced projectile data here
+	const std::list<CUnit*>& units = uh->activeUnits;
+	const CFeatureSet& features = featureHandler->GetActiveFeatures();
+	      ProjectileContainer& projectiles = ph->syncedProjectiles;
+
+	std::list<CUnit*>::const_iterator unitsIt;
+	CFeatureSet::const_iterator featuresIt;
+	ProjectileContainer::iterator projectilesIt;
+	std::vector<LocalModelPiece*>::const_iterator piecesIt;
+	std::vector<CWeapon*>::const_iterator weaponsIt;
+
+	file << "frame: " << gs->frameNum << "\n";
+	file << "\tunits: " << units.size() << "\n";
+
+	#define DUMP_UNIT_DATA
+	#define DUMP_UNIT_PIECE_DATA
+	#define DUMP_UNIT_WEAPON_DATA
+	#define DUMP_FEATURE_DATA
+	#define DUMP_PROJECTILE_DATA
+	#define DUMP_TEAM_DATA
+	// #define DUMP_ALLYTEAM_DATA
+
+	#ifdef DUMP_UNIT_DATA
+	for (unitsIt = units.begin(); unitsIt != units.end(); ++unitsIt) {
+		const CUnit* u = *unitsIt;
+		const std::vector<CWeapon*>& weapons = u->weapons;
+		const LocalModel* lm = u->localmodel;
+		const S3DModel* om = u->localmodel->original;
+		const std::vector<LocalModelPiece*>& pieces = lm->pieces;
+		const float3& pos = u->pos;
+		const float3& xdir = u->rightdir;
+		const float3& ydir = u->updir;
+		const float3& zdir = u->frontdir;
+
+		file << "\t\tunitID: " << u->id << " (name: " << u->unitDef->name << ")\n";
+		file << "\t\t\tpos: <" << pos.x << ", " << pos.y << ", " << pos.z << "\n";
+		file << "\t\t\txdir: <" << xdir.x << ", " << xdir.y << ", " << xdir.z << "\n";
+		file << "\t\t\tydir: <" << ydir.x << ", " << ydir.y << ", " << ydir.z << "\n";
+		file << "\t\t\tzdir: <" << zdir.x << ", " << zdir.y << ", " << zdir.z << "\n";
+		file << "\t\t\theading: " << int(u->heading) << ", mapSquare: " << u->mapSquare << "\n";
+		file << "\t\t\thealth: " << u->health << ", experience: " << u->experience << "\n";
+		file << "\t\t\tisDead: " << u->isDead << ", activated: " << u->activated << "\n";
+		file << "\t\t\tinAir: " << u->inAir << ", inWater: " << u->inWater << "\n";
+		file << "\t\t\tfireState: " << u->fireState << ", moveState: " << u->moveState << "\n";
+		file << "\t\t\tmodelID: " << om->id << " (name: " << om->name << ")\n";
+		file << "\t\t\tmodelRadius: " << om->radius << ", modelHeight: " << om->height << "\n";
+		file << "\t\t\tpieces: " << pieces.size() << "\n";
+
+		#ifdef DUMP_UNIT_PIECE_DATA
+		for (piecesIt = pieces.begin(); piecesIt != pieces.end(); ++piecesIt) {
+			const LocalModelPiece* lmp = *piecesIt;
+			const S3DModelPiece* omp = lmp->original;
+			const float3& ppos = lmp->GetPosition();
+			const float3& prot = lmp->GetRotation();
+
+			file << "\t\t\t\tname: " << omp->name << " (parentName: " << omp->parentName << ")\n";
+			file << "\t\t\t\tpos: <" << ppos.x << ", " << ppos.y << ", " << ppos.z << ">\n";
+			file << "\t\t\t\trot: <" << prot.x << ", " << prot.y << ", " << prot.z << ">\n";
+			file << "\t\t\t\tvisible: " << lmp->visible << "\n";
+			file << "\n";
+		}
+		#endif
+
+		file << "\t\t\tweapons: " << weapons.size() << "\n";
+
+		#ifdef DUMP_UNIT_WEAPON_DATA
+		for (weaponsIt = weapons.begin(); weaponsIt != weapons.end(); ++weaponsIt) {
+			const CWeapon* w = *weaponsIt;
+			const float3& awp = w->weaponPos;
+			const float3& rwp = w->relWeaponPos;
+			const float3& amp = w->weaponMuzzlePos;
+			const float3& rmp = w->relWeaponMuzzlePos;
+
+			file << "\t\t\t\tweaponID: " << w->weaponNum << " (name: " << w->weaponDef->name << ")\n";
+			file << "\t\t\t\tweaponDir: <" << w->weaponDir.x << ", " << w->weaponDir.y << ", " << w->weaponDir.z << ">\n";
+			file << "\t\t\t\tabsWeaponPos: <" << awp.x << ", " << awp.y << ", " << awp.z << ">\n";
+			file << "\t\t\t\trelWeaponPos: <" << rwp.x << ", " << rwp.y << ", " << rwp.z << ">\n";
+			file << "\t\t\t\tabsWeaponMuzzlePos: <" << amp.x << ", " << amp.y << ", " << amp.z << ">\n";
+			file << "\t\t\t\trelWeaponMuzzlePos: <" << rmp.x << ", " << rmp.y << ", " << rmp.z << ">\n";
+			file << "\n";
+		}
+		#endif
 	}
-	//! we only care about the synced projectile data here
-	for (ProjectileContainer::iterator psi = ph->syncedProjectiles.begin(); psi != ph->syncedProjectiles.end(); ++psi) {
-		CProjectile* p = *psi;
-		file << "Projectile " << p->radius << "\n";
-		file << "  xpos " << p->pos.x << " ypos " << p->pos.y << " zpos " << p->pos.z << "\n";
-		file << "  xspeed " << p->speed.x << " yspeed " << p->speed.y << " zspeed " << p->speed.z << "\n";
+	#endif
+
+	file << "\tfeatures: " << features.size() << "\n";
+
+	#ifdef DUMP_FEATURE_DATA
+	for (featuresIt = features.begin(); featuresIt != features.end(); ++featuresIt) {
+		const CFeature* f = *featuresIt;
+
+		file << "\t\tfeatureID: " << f->id << " (name: " << f->def->myName << ")\n";
+		file << "\t\t\tpos: <" << f->pos.x << ", " << f->pos.y << ", " << f->pos.z << ">\n";
+		file << "\t\t\thealth: " << f->health << ", reclaimLeft: " << f->reclaimLeft << "\n";
 	}
-	for(int a=0;a<teamHandler->ActiveTeams();++a){
-		file << "LOS-map for team " << a << "\n";
-		for (int y = 0; y < gs->mapy>>modInfo.losMipLevel; ++y) {
+	#endif
+
+	file << "\tprojectiles: " << projectiles.size() << "\n";
+
+	#ifdef DUMP_PROJECTILE_DATA
+	for (projectilesIt = projectiles.begin(); projectilesIt != projectiles.end(); ++projectilesIt) {
+		const CProjectile* p = *projectilesIt;
+
+		file << "\t\tprojectileID: " << p->id << "\n";
+		file << "\t\t\tpos: <" << p->pos.x << ", " << p->pos.y << ", " << p->pos.z << ">\n";
+		file << "\t\t\tdir: <" << p->dir.x << ", " << p->dir.y << ", " << p->dir.z << ">\n";
+		file << "\t\t\tspeed: <" << p->speed.x << ", " << p->speed.y << ", " << p->speed.z << ">\n";
+		file << "\t\t\tweapon: " << p->weapon << ", piece: " << p->piece << "\n";
+		file << "\t\t\tcheckCol: " << p->checkCol << ", deleteMe: " << p->deleteMe << "\n";
+	}
+	#endif
+
+	file << "\tteams: " << teamHandler->ActiveTeams() << "\n";
+
+	#ifdef DUMP_TEAM_DATA
+	for (int a = 0; a < teamHandler->ActiveTeams(); ++a) {
+		const CTeam* t = teamHandler->Team(a);
+
+		file << "\t\tteamID: " << t->teamNum << " (controller: " << t->GetControllerName() << ")\n";
+		file << "\t\t\tmetal: " << float(t->metal) << ", energy: " << float(t->energy) << "\n";
+		file << "\t\t\tmetalPull: " << t->metalPull << ", energyPull: " << t->energyPull << "\n";
+		file << "\t\t\tmetalIncome: " << t->metalIncome << ", energyIncome: " << t->energyIncome << "\n";
+		file << "\t\t\tmetalExpense: " << t->metalExpense << ", energyExpense: " << t->energyExpense << "\n";
+	}
+	#endif
+
+	file << "\tallyteams: " << teamHandler->ActiveAllyTeams() << "\n";
+
+	#ifdef DUMP_ALLYTEAM_DATA
+	for (int a = 0; a < teamHandler->ActiveAllyTeams(); ++a) {
+		file << "\t\tallyteamID: " << a << ", LOS-map:" << "\n";
+
+		for (int y = 0; y < loshandler->losSizeY; ++y) {
 			file << " ";
-			for (int x = 0; x < gs->mapx>>modInfo.losMipLevel; ++x) {
-				file << loshandler->losMap[a][y * (gs->mapx>>modInfo.losMipLevel) + x] << " ";
+
+			for (int x = 0; x < loshandler->losSizeX; ++x) {
+				file << "\t\t\t" << loshandler->losMaps[a][y * loshandler->losSizeX + x] << " ";
 			}
+
 			file << "\n";
 		}
 	}
-	file.close();
-	logOutput.Print("Memdump finished");
+	#endif
+
+	file.flush();
 }
 
 
 
-void CGame::GameEnd(const std::vector<unsigned char>& winningAllyTeams )
+void CGame::GameEnd(const std::vector<unsigned char>& winningAllyTeams)
 {
 	if (!gameOver) {
 		gameOver = true;
@@ -1966,12 +2000,14 @@ void CGame::HandleChatMsg(const ChatMessage& msg)
 		}
 	}
 
-	eoh->GotChatMsg(msg.msg.c_str(), msg.fromPlayer);
+	eoh->SendChatMessage(msg.msg.c_str(), msg.fromPlayer);
 }
 
 
 
 void CGame::StartSkip(int toFrame) {
+	return; // FIXME: desyncs
+
 	if (skipping) {
 		logOutput.Print("ERROR: skipping appears to be busted (%i)\n", skipping);
 	}
@@ -1985,7 +2021,7 @@ void CGame::StartSkip(int toFrame) {
 	}
 
 	skipTotalFrames = skipEndFrame - skipStartFrame;
-	skipSeconds = (float)(skipTotalFrames) / (float)GAME_SPEED;
+	skipSeconds = skipTotalFrames / float(GAME_SPEED);
 
 	skipSoundmute = sound->IsMuted();
 	if (!skipSoundmute)
@@ -2003,6 +2039,7 @@ void CGame::StartSkip(int toFrame) {
 }
 
 void CGame::EndSkip() {
+	return; // FIXME
 	skipping = false;
 
 	gu->gameTime    += skipSeconds;
@@ -2021,7 +2058,7 @@ void CGame::EndSkip() {
 
 void CGame::DrawSkip(bool blackscreen) {
 	const int framesLeft = (skipEndFrame - gs->frameNum);
-	if(blackscreen) {
+	if (blackscreen) {
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 	}
@@ -2227,7 +2264,7 @@ void CGame::SaveGame(const std::string& filename, bool overwrite)
 			logOutput.Print("Saving game to %s\n", filename.c_str());
 			ILoadSaveHandler* ls = ILoadSaveHandler::Create();
 			ls->mapName = gameSetup->mapName;
-			ls->modName = modInfo.filename;
+			ls->modName = gameSetup->modName;
 			ls->SaveGame(filename);
 			delete ls;
 		}
@@ -2248,4 +2285,48 @@ void CGame::ReloadGame()
 	else {
 		logOutput.Print("Can only reload game when game has been started from a savegame");
 	}
+}
+
+
+
+void CGame::ActionReceived(const Action& action, int playerID)
+{
+	const ISyncedActionExecutor* executor = syncedGameCommands->GetActionExecutor(action.command);
+
+	if (executor != NULL) {
+		// an executor for that action was found
+		SyncedAction syncedAction(action, playerID);
+		executor->ExecuteAction(syncedAction);
+	} else if (gs->frameNum > 1) {
+		if (luaRules) luaRules->SyncedActionFallback(action.rawline, playerID);
+		if (luaGaia) luaGaia->SyncedActionFallback(action.rawline, playerID);
+	}
+}
+
+
+bool CGame::ActionPressed(unsigned int key, const Action& action, bool isRepeat)
+{
+	const IUnsyncedActionExecutor* executor = unsyncedGameCommands->GetActionExecutor(action.command);
+
+	if (executor != NULL) {
+		// an executor for that action was found
+		UnsyncedAction unsyncedAction(action, key, isRepeat);
+		executor->ExecuteAction(unsyncedAction);
+	} else {
+		static std::set<std::string> serverCommands = std::set<std::string>(commands, commands+numCommands);
+		if (serverCommands.find(action.command) != serverCommands.end())
+		{
+			CommandMessage pckt(action, gu->myPlayerNum);
+			net->Send(pckt.Pack());
+		}
+
+		if (!Console::Instance().ExecuteAction(action))
+		{
+			if (guihandler != NULL) // maybe a widget is interested?
+				guihandler->PushLayoutCommand(action.rawline, false);
+			return false;
+		}
+	}
+
+	return false;
 }

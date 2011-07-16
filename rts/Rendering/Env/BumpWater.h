@@ -45,7 +45,7 @@ private:
 	bool  shoreWaves;
 	bool  endlessOcean; //! render the water around the whole map
 	bool  dynWaves;     //! only usable if bumpmap/normal texture is a TileSet
-	bool  useUniforms;  //! use Uniforms instead of #define'd const. Warning: this is much slower, but has the advantage that you can change the params on runtime.
+	bool  useUniforms;  //! use Uniforms instead of \#define'd const. Warning: this is much slower, but has the advantage that you can change the params on runtime.
 
 	unsigned char* tileOffsets; //! used to randomize the wave/bumpmap/normal texture
 	int  normalTextureX; //! needed for dynamic waves
@@ -64,22 +64,24 @@ private:
 
 	//! coastmap
 	struct CoastUpdateRect {
-		CoastUpdateRect(int x1_,int z1_,int x2_,int z2_) : x1(x1_),z1(z1_),x2(x2_),z2(z2_) {};
-		int x1,z1;
-		int x2,z2;
+		CoastUpdateRect(int x1_, int z1_, int x2_, int z2_) : x1(x1_), z1(z1_), x2(x2_), z2(z2_) {}
+		int x1, z1;
+		int x2, z2;
 	};
-	std::vector<CoastUpdateRect> coastmapUpdates;
+
 	struct CoastAtlasRect {
-		CoastAtlasRect(CoastUpdateRect& rect);
+		CoastAtlasRect(const CoastUpdateRect& rect);
 		bool isCoastline; //! if false, then the whole rect is either above water or below water (no coastline -> no need to calc/render distfield)
-		int ix1,iy1;
-		int ix2,iy2;
-		int xsize,ysize;
-		float x1,y1;
-		float x2,y2;
-		float tx1,ty1;
-		float tx2,ty2;
+		int ix1, iy1;
+		int ix2, iy2;
+		int xsize, ysize;
+		float x1, y1;
+		float x2, y2;
+		float tx1, ty1;
+		float tx2, ty2;
 	};
+
+	std::vector<CoastUpdateRect> coastmapUpdates;
 	std::vector<CoastAtlasRect> coastmapAtlasRects;
 
 	std::bitset<4> GetEdgesInRect(CoastUpdateRect& rect1, CoastUpdateRect& rect2);

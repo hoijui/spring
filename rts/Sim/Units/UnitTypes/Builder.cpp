@@ -1,17 +1,17 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 #include <assert.h>
 #include <algorithm>
 #include "Builder.h"
 #include "Building.h"
 #include "Game/GameHelper.h"
-#include "LogOutput.h"
+#include "Game/GlobalUnsynced.h"
 #include "Lua/LuaRules.h"
 #include "Map/Ground.h"
 #include "Map/MapDamage.h"
 #include "Map/ReadMap.h"
-#include "myMath.h"
+#include "System/myMath.h"
 #include "Rendering/GlobalRendering.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureHandler.h"
@@ -27,8 +27,8 @@
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitLoader.h"
-#include "System/GlobalUnsynced.h"
 #include "System/EventHandler.h"
+#include "System/LogOutput.h"
 #include "System/Sound/SoundChannels.h"
 #include "System/mmgr.h"
 
@@ -136,7 +136,7 @@ void CBuilder::Update()
 {
 	if (!beingBuilt && !stunned) {
 		if (terraforming && inBuildStance) {
-			const float* heightmap = readmap->GetHeightmap();
+			const float* heightmap = readmap->GetCornerHeightMapSynced();
 			assert(!mapDamage->disabled); // The map should not be deformed in the first place.
 			float terraformScale = 0.1;
 
@@ -158,7 +158,7 @@ void CBuilder::Update()
 						curBuild->AddBuildPower(0.0f, this);
 						for (int z = tz1; z <= tz2; z++) {
 							for (int x = tx1; x <= tx2; x++) {
-								int idx = z * (gs->mapx + 1) + x;
+								int idx = z * gs->mapxp1 + x;
 								float ch = heightmap[idx];
 
 								readmap->AddHeight(idx, (curBuild->pos.y - ch) * terraformScale);
@@ -189,9 +189,9 @@ void CBuilder::Update()
 
 					for (int z = tz1; z <= tz2; z++) {
 						for (int x = tx1; x <= tx2; x++) {
-							int idx = z * (gs->mapx + 1) + x;
+							int idx = z * gs->mapxp1 + x;
 							float ch = heightmap[idx];
-							float oh = readmap->orgheightmap[idx];
+							float oh = readmap->GetOriginalHeightMapSynced()[idx];
 
 							readmap->AddHeight(idx, (oh - ch) * terraformScale);
 						}
@@ -213,20 +213,20 @@ void CBuilder::Update()
 				// smooth the borders x
 				for (int x = 1; x <= 3; x++) {
 					if (tx1 - 3 >= 0) {
-						const float ch3 = heightmap[z * (gs->mapx + 1) + tx1    ];
-						const float ch  = heightmap[z * (gs->mapx + 1) + tx1 - x];
-						const float ch2 = heightmap[z * (gs->mapx + 1) + tx1 - 3];
+						const float ch3 = heightmap[z * gs->mapxp1 + tx1    ];
+						const float ch  = heightmap[z * gs->mapxp1 + tx1 - x];
+						const float ch2 = heightmap[z * gs->mapxp1 + tx1 - 3];
 						const float amount = ((ch3 * (3 - x) + ch2 * x) / 3 - ch) * terraformScale;
 
-						readmap->AddHeight(z * (gs->mapx + 1) + tx1 - x, amount);
+						readmap->AddHeight(z * gs->mapxp1 + tx1 - x, amount);
 					}
 					if (tx2 + 3 < gs->mapx) {
-						const float ch3 = heightmap[z * (gs->mapx + 1) + tx2    ];
-						const float ch  = heightmap[z * (gs->mapx + 1) + tx2 + x];
-						const float ch2 = heightmap[z * (gs->mapx + 1) + tx2 + 3];
+						const float ch3 = heightmap[z * gs->mapxp1 + tx2    ];
+						const float ch  = heightmap[z * gs->mapxp1 + tx2 + x];
+						const float ch2 = heightmap[z * gs->mapxp1 + tx2 + 3];
 						const float amount = ((ch3 * (3 - x) + ch2 * x) / 3 - ch) * terraformScale;
 
-						readmap->AddHeight(z * (gs->mapx + 1) + tx2 + x, amount);
+						readmap->AddHeight(z * gs->mapxp1 + tx2 + x, amount);
 					}
 				}
 			}
@@ -234,20 +234,20 @@ void CBuilder::Update()
 				// smooth the borders z
 				for (int x = tx1; x <= tx2; x++) {
 					if (tz1 - 3 >= 0) {
-						const float ch3 = heightmap[(tz1    ) * (gs->mapx + 1) + x];
-						const float ch  = heightmap[(tz1 - z) * (gs->mapx + 1) + x];
-						const float ch2 = heightmap[(tz1 - 3) * (gs->mapx + 1) + x];
+						const float ch3 = heightmap[(tz1    ) * gs->mapxp1 + x];
+						const float ch  = heightmap[(tz1 - z) * gs->mapxp1 + x];
+						const float ch2 = heightmap[(tz1 - 3) * gs->mapxp1 + x];
 						const float adjust = ((ch3 * (3 - z) + ch2 * z) / 3 - ch) * terraformScale;
 
-						readmap->AddHeight((tz1 - z) * (gs->mapx + 1) + x, adjust);
+						readmap->AddHeight((tz1 - z) * gs->mapxp1 + x, adjust);
 					}
 					if (tz2 + 3 < gs->mapy) {
-						const float ch3 = heightmap[(tz2    ) * (gs->mapx + 1) + x];
-						const float ch  = heightmap[(tz2 + z) * (gs->mapx + 1) + x];
-						const float ch2 = heightmap[(tz2 + 3) * (gs->mapx + 1) + x];
+						const float ch3 = heightmap[(tz2    ) * gs->mapxp1 + x];
+						const float ch  = heightmap[(tz2 + z) * gs->mapxp1 + x];
+						const float ch2 = heightmap[(tz2 + 3) * gs->mapxp1 + x];
 						const float adjust = ((ch3 * (3 - z) + ch2 * z) / 3 - ch) * terraformScale;
 
-						readmap->AddHeight((tz2 + z) * (gs->mapx + 1) + x, adjust);
+						readmap->AddHeight((tz2 + z) * gs->mapxp1 + x, adjust);
 					}
 				}
 			}
@@ -281,7 +281,7 @@ void CBuilder::Update()
 					}
 
 					if(adjBuildSpeed > 0 && !commandAI->commandQue.empty()
-							&& commandAI->commandQue.front().id == CMD_WAIT) {
+							&& commandAI->commandQue.front().GetID() == CMD_WAIT) {
 						curBuild->AddBuildPower(0, this);
 					} else if (adjBuildSpeed > 0 && curBuild->AddBuildPower(adjBuildSpeed, this)) {
 						CreateNanoParticle(curBuild->midPos, curBuild->radius * 0.5f, false);
@@ -333,7 +333,7 @@ void CBuilder::Update()
 							if (bld->commandAI->commandQue.empty())
 								continue;
 							const Command& c = bld->commandAI->commandQue.front();
-							if (c.id != CMD_RESURRECT || c.params.size() != 1)
+							if (c.GetID() != CMD_RESURRECT || c.params.size() != 1)
 								continue;
 							const int cmdFeatureId = (int)c.params[0];
 							if (cmdFeatureId - uh->MaxUnits() == curResurrect->id && teamHandler->Ally(allyteam, bld->allyteam))
@@ -493,15 +493,16 @@ void CBuilder::StartRestore(float3 centerPos, float radius)
 	tz2 = (int)min((float)gs->mapy,(centerPos.z+radius)/SQUARE_SIZE);
 
 	float tcost = 0.0f;
-	const float* heightmap = readmap->GetHeightmap();
+	const float* curHeightMap = readmap->GetCornerHeightMapSynced();
+	const float* orgHeightMap = readmap->GetOriginalHeightMapSynced();
 
 	for (int z = tz1; z <= tz2; z++) {
 		for (int x = tx1; x <= tx2; x++) {
-			float delta = readmap->orgheightmap[z * (gs->mapx + 1) + x] - heightmap[z * (gs->mapx + 1) + x];
+			float delta = orgHeightMap[z * gs->mapxp1 + x] - curHeightMap[z * gs->mapxp1 + x];
 			tcost += fabs(delta);
 		}
 	}
-	myTerraformLeft=tcost;
+	myTerraformLeft = tcost;
 
 	SetBuildStanceToward(centerPos);
 }
@@ -536,11 +537,11 @@ bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature, bool& waitst
 {
 	StopBuild(false);
 
-	buildInfo.pos = helper->Pos2BuildPos(buildInfo);
+	buildInfo.pos = helper->Pos2BuildPos(buildInfo, true);
 
 	// Pass -1 as allyteam to behave like we have maphack.
 	// This is needed to prevent building on top of cloaked stuff.
-	const int canBuild = uh->TestUnitBuildSquare(buildInfo, feature, -1);
+	const int canBuild = uh->TestUnitBuildSquare(buildInfo, feature, -1, true);
 
 	if (canBuild < 2) {
 		// the ground is blocked at the position we want
@@ -636,17 +637,18 @@ float CBuilder::CalculateBuildTerraformCost(BuildInfo& buildInfo)
 	float3& buildPos=buildInfo.pos;
 
 	float tcost = 0.0f;
-	const float* heightmap = readmap->GetHeightmap();
+	const float* curHeightMap = readmap->GetCornerHeightMapSynced();
+	const float* orgHeightMap = readmap->GetOriginalHeightMapSynced();
 
 	for (int z = tz1; z <= tz2; z++) {
 		for (int x = tx1; x <= tx2; x++) {
-			int idx = z * (gs->mapx + 1) + x;
-			float delta = buildPos.y - heightmap[idx];
+			const int idx = z * gs->mapxp1 + x;
+			float delta = buildPos.y - curHeightMap[idx];
 			float cost;
 			if (delta > 0) {
-				cost = max(3.0f, heightmap[idx]-readmap->orgheightmap[idx] + delta * 0.5f);
+				cost = max(3.0f, curHeightMap[idx] - orgHeightMap[idx] + delta * 0.5f);
 			} else {
-				cost = max(3.0f, readmap->orgheightmap[idx] - heightmap[idx] - delta * 0.5f);
+				cost = max(3.0f, orgHeightMap[idx] - curHeightMap[idx] - delta * 0.5f);
 			}
 			tcost += fabs(delta) * cost;
 		}

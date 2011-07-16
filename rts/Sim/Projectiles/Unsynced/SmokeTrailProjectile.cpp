@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include "SmokeTrailProjectile.h"
 
@@ -14,7 +14,6 @@
 #include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/Wind.h"
 #include "System/myMath.h"
-#include "System/GlobalUnsynced.h"
 
 CR_BIND_DERIVED(CSmokeTrailProjectile, CProjectile, (ZeroVector, ZeroVector, ZeroVector, ZeroVector, NULL, false, false, 0.0f, 0, 0.0f, false, NULL, NULL));
 

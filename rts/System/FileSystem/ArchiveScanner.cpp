@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
 #include <list>
 #include <algorithm>
@@ -8,23 +8,27 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "mmgr.h"
+#include "System/mmgr.h"
 
 #include "ArchiveScanner.h"
 
-#include "LuaInclude.h" // for lua_type defines
-#include "ArchiveFactory.h"
+#include "ArchiveLoader.h"
 #include "CRC.h"
+#include "IArchive.h"
 #include "FileFilter.h"
 #include "FileSystem.h"
 #include "FileSystemHandler.h"
 #include "Lua/LuaParser.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/Util.h"
 #include "System/Exceptions.h"
+#if       !defined(DEDICATED) && !defined(UNITSYNC)
+#include "System/Platform/Watchdog.h"
+#endif // !defined(DEDICATED) && !defined(UNITSYNC)
 
 
-CLogSubsystem LOG_ARCHIVESCANNER("ArchiveScanner");
+#define LOG_SECTION_ARCHIVESCANNER "ArchiveScanner"
+LOG_REGISTER_SECTION_GLOBAL(LOG_SECTION_ARCHIVESCANNER)
 
 
 /*
@@ -55,7 +59,7 @@ struct KnownInfoTag {
 };
 
 const KnownInfoTag knownTags[] = {
-	{"name",        "example: Original Total Annihilation v2.3", true},
+	{"name",        "example: Original Total Annihilation", true},
 	{"shortname",   "example: OTA", false},
 	{"version",     "example: v2.3", false},
 	{"mutator",     "example: deployment", false},
@@ -86,19 +90,20 @@ CArchiveScanner::ArchiveData::ArchiveData(const LuaTable& archiveTable)
 	for (key = keys.begin(); key != keys.end(); ++key) {
 		const std::string& keyLower = StringToLower(*key);
 		if (!ArchiveData::IsReservedKey(keyLower)) {
+			if (keyLower == "modtype") {
+				SetInfoItemValueInteger(*key, archiveTable.GetInt(*key, 0));
+				continue;
+			}
+			
 			const int luaType = archiveTable.GetType(*key);
 			switch (luaType) {
-				case LUA_TSTRING: {
+				case LuaTable::STRING: {
 					SetInfoItemValueString(*key, archiveTable.GetString(*key, ""));
 				} break;
-				case LUA_TNUMBER: {
-					if (keyLower == "modtype") {
-						SetInfoItemValueInteger(*key, archiveTable.GetInt(*key, 0));
-					} else {
-						SetInfoItemValueFloat(*key, archiveTable.GetFloat(*key, 0.0f));
-					}
+				case LuaTable::NUMBER: {
+					SetInfoItemValueFloat(*key, archiveTable.GetFloat(*key, 0.0f));
 				} break;
-				case LUA_TBOOLEAN: {
+				case LuaTable::BOOLEAN: {
 					SetInfoItemValueBool(*key, archiveTable.GetBool(*key, false));
 				} break;
 				default: {
@@ -371,7 +376,7 @@ void CArchiveScanner::ScanDirs(const std::vector<std::string>& scanDirs, bool do
 	std::vector<std::string>::const_iterator dir;
 	for (dir = scanDirs.begin(); dir != scanDirs.end(); ++dir) {
 		if (FileSystemHandler::DirExists(*dir)) {
-			logOutput.Print("Scanning: %s\n", dir->c_str());
+			LOG("Scanning: %s", dir->c_str());
 			Scan(*dir, doChecksum);
 		}
 	}
@@ -408,8 +413,11 @@ void CArchiveScanner::Scan(const std::string& curPath, bool doChecksum)
 			continue;
 		}
 
+#if       !defined(DEDICATED) && !defined(UNITSYNC)
+		Watchdog::ClearTimer(WDT_MAIN);
+#endif // !defined(DEDICATED) && !defined(UNITSYNC)
 		// Is this an archive we should look into?
-		if (CArchiveFactory::IsScanArchive(fullName)) {
+		if (archiveLoader.IsArchiveFile(fullName)) {
 			ScanArchive(fullName, doChecksum);
 		}
 	}
@@ -499,9 +507,9 @@ void CArchiveScanner::ScanArchive(const std::string& fullName, bool doChecksum)
 		if (doChecksum && (aii->second.checksum == 0))
 			aii->second.checksum = GetCRC(fullName);
 	} else {
-		CArchiveBase* ar = CArchiveFactory::OpenArchive(fullName);
+		IArchive* ar = archiveLoader.OpenArchive(fullName);
 		if (!ar || !ar->IsOpen()) {
-			logOutput.Print("Unable to open archive: %s", fullName.c_str());
+			LOG("Unable to open archive: %s", fullName.c_str());
 			return;
 		}
 
@@ -535,8 +543,8 @@ void CArchiveScanner::ScanArchive(const std::string& fullName, bool doChecksum)
 					break;
 				} else if (metaFileClass == 2) {
 					//! 2nd class
-					logOutput.Print(LOG_ARCHIVESCANNER,
-							"Warning: Archive %s: The cost for reading a 2nd class meta-file is too high: %s",
+					LOG_SL(LOG_SECTION_ARCHIVESCANNER, L_WARNING,
+							"Archive %s: The cost for reading a 2nd class meta-file is too high: %s",
 							fullName.c_str(), name.c_str());
 				}
 			}
@@ -561,12 +569,18 @@ void CArchiveScanner::ScanArchive(const std::string& fullName, bool doChecksum)
 			}
 			AddDependency(ai.archiveData.GetDependencies(), "Map Helper v1");
 			ai.archiveData.SetInfoItemValueInteger("modType", modtype::map);
+
+			LOG_S(LOG_SECTION_ARCHIVESCANNER, "Found new map: %s",
+					ai.archiveData.GetName().c_str());
 		} else if (hasModinfo) {
 			//! it is a mod
 			ScanArchiveLua(ar, "modinfo.lua", ai, error);
 			if (ai.archiveData.GetModType() == modtype::primary) {
 				AddDependency(ai.archiveData.GetDependencies(), "Spring content v1");
 			}
+
+			LOG_S(LOG_SECTION_ARCHIVESCANNER, "Found new game: %s",
+					ai.archiveData.GetName().c_str());
 		} else {
 			//! neither a map nor a mod: error
 			error = "missing modinfo.lua/mapinfo.lua";
@@ -576,7 +590,8 @@ void CArchiveScanner::ScanArchive(const std::string& fullName, bool doChecksum)
 
 		if (!error.empty()) {
 			//! for some reason, the archive is marked as broken
-			logOutput.Print("Failed to scan %s (%s)", fullName.c_str(), error.c_str());
+			LOG_L(L_WARNING, "Failed to scan %s (%s)",
+					fullName.c_str(), error.c_str());
 
 			//! record it as broken, so we don't need to look inside everytime
 			BrokenArchive ba;
@@ -607,7 +622,7 @@ void CArchiveScanner::ScanArchive(const std::string& fullName, bool doChecksum)
 	}
 }
 
-bool CArchiveScanner::ScanArchiveLua(CArchiveBase* ar, const std::string& fileName, ArchiveInfo& ai,  std::string& err)
+bool CArchiveScanner::ScanArchiveLua(IArchive* ar, const std::string& fileName, ArchiveInfo& ai,  std::string& err)
 {
 	std::vector<boost::uint8_t> buf;
 	if (!ar->GetFile(fileName, buf)) {
@@ -621,16 +636,21 @@ bool CArchiveScanner::ScanArchiveLua(CArchiveBase* ar, const std::string& fileNa
 		return false;
 	}
 	const LuaTable archiveTable = p.GetRoot();
-	ai.archiveData = CArchiveScanner::ArchiveData(archiveTable);
-	
-	if (!ai.archiveData.IsValid(err)) {
-		err = "Error in " + fileName + ": " + err;
+	try {
+		ai.archiveData = CArchiveScanner::ArchiveData(archiveTable);
+
+		if (!ai.archiveData.IsValid(err)) {
+			err = "Error in " + fileName + ": " + err;
+			return false;
+		}
+	} catch (content_error contErr) {
+		err = "ERROR in " + fileName + ": " + contErr.what();
 		return false;
 	}
 	return true;
 }
 
-IFileFilter* CArchiveScanner::CreateIgnoreFilter(CArchiveBase* ar)
+IFileFilter* CArchiveScanner::CreateIgnoreFilter(IArchive* ar)
 {
 	IFileFilter* ignore = IFileFilter::Create();
 	std::vector<boost::uint8_t> buf;
@@ -652,11 +672,11 @@ IFileFilter* CArchiveScanner::CreateIgnoreFilter(CArchiveBase* ar)
 unsigned int CArchiveScanner::GetCRC(const std::string& arcName)
 {
 	CRC crc;
-	CArchiveBase* ar;
+	IArchive* ar;
 	std::list<std::string> files;
 
 	//! Try to open an archive
-	ar = CArchiveFactory::OpenArchive(arcName);
+	ar = archiveLoader.OpenArchive(arcName);
 	if (!ar) {
 		return 0; // It wasn't an archive
 	}
@@ -707,7 +727,8 @@ void CArchiveScanner::ReadCacheData(const std::string& filename)
 	LuaParser p(filename, SPRING_VFS_RAW, SPRING_VFS_BASE);
 
 	if (!p.Execute()) {
-		logOutput.Print("Warning: Failed to read archive cache: " + p.GetErrorLog());
+		LOG_L(L_WARNING, "Failed to read archive cache: %s",
+				p.GetErrorLog().c_str());
 		return;
 	}
 	const LuaTable archiveCache = p.GetRoot();
@@ -954,7 +975,8 @@ std::vector<CArchiveScanner::ArchiveData> CArchiveScanner::GetAllMods() const
 
 std::vector<std::string> CArchiveScanner::GetArchives(const std::string& root, int depth) const
 {
-	logOutput.Print(LOG_ARCHIVESCANNER, "GetArchives: %s (depth %u)\n", root.c_str(), depth);
+	LOG_S(LOG_SECTION_ARCHIVESCANNER, "GetArchives: %s (depth %u)",
+			root.c_str(), depth);
 	//! Protect against circular dependencies
 	//! (worst case depth is if all archives form one huge dependency chain)
 	if ((unsigned)depth > archiveInfo.size()) {
@@ -967,7 +989,7 @@ std::vector<std::string> CArchiveScanner::GetArchives(const std::string& root, i
 	if (aii == archiveInfo.end()) {
 		//! unresolved dep
 		if (!ret.empty()) {
-			//! add anyway so we get propper errorhandling (only when it is not the main-archive!)
+			//! add anyway so we get propper error-handling (only when it is not the main-archive!)
 			ret.push_back(lcname);
 		}
 		return ret;
@@ -975,6 +997,7 @@ std::vector<std::string> CArchiveScanner::GetArchives(const std::string& root, i
 
 	//! Check if this archive has been replaced
 	while (aii->second.replaced.length() > 0) {
+		// FIXME instead of this, call this function recursively, to get the propper error handling
 		aii = archiveInfo.find(aii->second.replaced);
 		if (aii == archiveInfo.end()) {
 			throw content_error("Unknown error parsing archive replacements");
@@ -1023,7 +1046,8 @@ std::string CArchiveScanner::MapNameToMapFile(const std::string& s) const
 			return aii->second.archiveData.GetMapFile();
 		}
 	}
-	logOutput.Print(LOG_ARCHIVESCANNER, "mapfile of %s not found\n", s.c_str());
+	LOG_SL(LOG_SECTION_ARCHIVESCANNER, L_WARNING,
+			"map file of %s not found", s.c_str());
 	return s;
 }
 
@@ -1034,11 +1058,13 @@ unsigned int CArchiveScanner::GetSingleArchiveChecksum(const std::string& name) 
 
 	std::map<std::string, ArchiveInfo>::const_iterator aii = archiveInfo.find(lcname);
 	if (aii == archiveInfo.end()) {
-		logOutput.Print(LOG_ARCHIVESCANNER, "%s checksum: not found (0)\n", name.c_str());
+		LOG_SL(LOG_SECTION_ARCHIVESCANNER, L_WARNING,
+				"%s checksum: not found (0)", name.c_str());
 		return 0;
 	}
 
-	logOutput.Print(LOG_ARCHIVESCANNER, "%s checksum: %d/%u\n", name.c_str(), aii->second.checksum, aii->second.checksum);
+	LOG_S(LOG_SECTION_ARCHIVESCANNER,"%s checksum: %d/%u",
+			name.c_str(), aii->second.checksum, aii->second.checksum);
 	return aii->second.checksum;
 }
 
@@ -1050,7 +1076,8 @@ unsigned int CArchiveScanner::GetArchiveCompleteChecksum(const std::string& name
 	for (unsigned int a = 0; a < ars.size(); a++) {
 		checksum ^= GetSingleArchiveChecksum(ars[a]);
 	}
-	logOutput.Print(LOG_ARCHIVESCANNER, "archive checksum %s: %d/%u\n", name.c_str(), checksum, checksum);
+	LOG_S(LOG_SECTION_ARCHIVESCANNER, "archive checksum %s: %d/%u",
+			name.c_str(), checksum, checksum);
 	return checksum;
 }
 

@@ -6,7 +6,7 @@
 //#include "ExternalAI/SkirmishAIKey.h"
 #include "System/Info.h"
 
-//#include "creg/creg_cond.h"
+//#include "System/creg/creg_cond.h"
 
 #include <vector>
 #include <string>
@@ -31,9 +31,6 @@ public:
 	static CLuaAIImplHandler& GetInstance();
 
 	std::vector< std::vector<InfoItem> > LoadInfos();
-
-private:
-	static CLuaAIImplHandler* mySingleton;
 };
 
 #define luaAIImplHandler CLuaAIImplHandler::GetInstance()

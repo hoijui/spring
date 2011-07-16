@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
+#include "System/StdAfx.h"
 
-#include "LogOutput.h"
+#include "System/LogOutput.h"
 
 #include <assert.h>
 #include <iostream>
@@ -14,14 +14,16 @@
 #include <windows.h>
 #endif
 
-#include "lib/gml/gml.h"
-#include "Util.h"
-#include "float3.h"
+#include "lib/gml/gmlmut.h"
+#include "System/Util.h"
+#include "System/float3.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Game/GameVersion.h"
-#include "ConfigHandler.h"
-#include "FileSystem/FileSystemHandler.h"
-#include "mmgr.h"
+#include "System/ConfigHandler.h"
+#include "System/FileSystem/FileSystemHandler.h"
+#include "System/Log/DefaultFilter.h"
+#include "System/Log/Level.h"
+#include "System/mmgr.h"
 
 #include <string>
 #include <vector>
@@ -213,7 +215,7 @@ void CLogOutput::Initialize()
 	initialized = true;
 	Print("LogOutput initialized.\n");
 	Print("Spring %s", SpringVersion::GetFull().c_str());
-	logOutput.Print("Build date/time: %s", SpringVersion::BuildTime);
+	logOutput.Print("Build date/time: %s", SpringVersion::GetBuildTime().c_str());
 
 	InitializeSubsystems();
 
@@ -234,67 +236,107 @@ void CLogOutput::Initialize()
 
 void CLogOutput::InitializeSubsystems()
 {
+	// the new systems (ILog.h) log-sub-systems are called sections:
+	const std::set<const char*> sections = log_filter_section_getRegisteredSet();
+
 	{
 		LogObject lo;
 		lo << "Available log subsystems: ";
+		int numSec = 0;
 		for (CLogSubsystem* sys = CLogSubsystem::GetList(); sys; sys = sys->next) {
 			if (sys->name && *sys->name) {
-				lo << sys->name;
-				if (sys->next)
+				if (numSec > 0) {
 					lo << ", ";
+				}
+				lo << sys->name;
+				numSec++;
 			}
 		}
+		std::set<const char*>::const_iterator si;
+		for (si = sections.begin(); si != sections.end(); ++si) {
+			if (numSec > 0) {
+				lo << ", ";
+			}
+			lo << *si;
+			numSec++;
+		}
 	}
-	// enabled subsystems is superset of the ones specified in environment
+
+	// enabled subsystems is superset of the ones specified in the environment
 	// and the ones specified in the configuration file.
 	// configHandler cannot be accessed here in unitsync since it may not exist.
 #ifndef UNITSYNC
-	string subsystems = "," + StringToLower(configHandler->GetString("LogSubsystems", "")) + ",";
+	std::string subsystems = "," + StringToLower(configHandler->GetString("LogSubsystems", "")) + ",";
 #else
-#  ifdef DEBUG
+	#ifdef DEBUG
 	// unitsync logging in debug mode always on
-	string subsystems = ",unitsync,archivescanner";
-#  else
-	string subsystems = ",";
-#  endif
+	std::string subsystems = ",unitsync,ArchiveScanner";
+	#else
+	std::string subsystems = ",";
+	#endif
 #endif
 
 	const char* const env = getenv("SPRING_LOG_SUBSYSTEMS");
 	bool env_override = false;
-	if (env)
-	{
+	if (env) {
 		// this allows to disable all subsystems from the env var
 		std::string env_subsystems(StringToLower(env));
-		if ( env_subsystems == std::string("none" ))
-		{
+		if (env_subsystems == std::string("none")) {
 			subsystems = "";
 			env_override = true;
-		}
-		else
+		} else {
 			subsystems += env_subsystems + ",";
+		}
 	}
-
+	const std::string subsystemsLC = StringToLower(subsystems);
 
 	{
 		LogObject lo;
 		lo << "Enabled log subsystems: ";
+		int numSec = 0;
+
+		// classical log-subsystems
 		for (CLogSubsystem* sys = CLogSubsystem::GetList(); sys; sys = sys->next) {
 			if (sys->name && *sys->name) {
-				const string name = StringToLower(sys->name);
-				const string::size_type index = subsystems.find("," + name + ",");
+				const std::string name = StringToLower(sys->name);
+				const bool found = (subsystemsLC.find("," + name + ",") != string::npos);
 
-				if (env_override)
-					sys->enabled = index != string::npos;
-				// log subsystems which are enabled by default can not be disabled
-				// ("enabled by default" wouldn't make sense otherwise...)
-				else if (!sys->enabled && index != string::npos)
+				if (env_override) {
+					sys->enabled = found;
+				} else if (!sys->enabled && found) {
+					// log subsystems which are enabled by default can not be disabled
+					// ("enabled by default" wouldn't make sense otherwise...)
 					sys->enabled = true;
+				}
 
 				if (sys->enabled) {
-					lo << sys->name;
-					if (sys->next)
+					if (numSec > 0) {
 						lo << ", ";
+					}
+					lo << sys->name;
+					numSec++;
 				}
+			}
+		}
+
+		// new log sections
+		std::set<const char*>::const_iterator si;
+		for (si = sections.begin(); si != sections.end(); ++si) {
+			const std::string name = StringToLower(*si);
+			const bool found = (subsystemsLC.find("," + name + ",") != string::npos);
+
+			if (found) {
+				if (numSec > 0) {
+					lo << ", ";
+				}
+#if       defined(DEBUG)
+				log_filter_section_setMinLevel(*si, LOG_LEVEL_DEBUG);
+				lo << *si << "(LOG_LEVEL_DEBUG)";
+#else  // defined(DEBUG)
+				log_filter_section_setMinLevel(*si, LOG_LEVEL_INFO);
+				lo << *si << "(LOG_LEVEL_INFO)";
+#endif // defined(DEBUG)
+				numSec++;
 			}
 		}
 	}
@@ -395,7 +437,7 @@ bool CLogOutput::IsSubscribersEnabled() const {
 // Printing functions
 // ----------------------------------------------------------------------
 
-void CLogOutput::Print(CLogSubsystem& subsystem, const char* fmt, ...)
+void CLogOutput::Print(const CLogSubsystem& subsystem, const char* fmt, ...)
 {
 	// if logOutput isn't initialized then subsystem.enabled still has it's default value
 	if (initialized && !subsystem.enabled) return;
@@ -408,7 +450,7 @@ void CLogOutput::Print(CLogSubsystem& subsystem, const char* fmt, ...)
 }
 
 
-void CLogOutput::Printv(CLogSubsystem& subsystem, const char* fmt, va_list argp)
+void CLogOutput::Printv(const CLogSubsystem& subsystem, const char* fmt, va_list argp)
 {
 	// if logOutput isn't initialized then subsystem.enabled still has it's default value
 	if (initialized && !subsystem.enabled) return;

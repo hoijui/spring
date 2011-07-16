@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
-#include "mmgr.h"
+#include "System/StdAfx.h"
+#include "System/mmgr.h"
 
 #include <string>
 #include <vector>
@@ -20,8 +20,8 @@ using std::vector;
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/Env/CubeMapHandler.h"
 #include "Sim/Units/Unit.h"
-#include "LogOutput.h"
-#include "Util.h"
+#include "System/LogOutput.h"
+#include "System/Util.h"
 
 
 LuaMatHandler LuaMatHandler::handler;
@@ -80,20 +80,23 @@ void LuaUnitUniforms::SetCustomCount(int count)
 
 LuaUnitUniforms& LuaUnitUniforms::operator=(const LuaUnitUniforms& u)
 {
-	delete[] customData;
-	customData = NULL;
+	// do not assign to self
+	if (this != &u) {
+		delete[] customData;
+		customData = NULL;
 
-	haveUniforms = u.haveUniforms;
-	speedLoc     = u.speedLoc;
-	healthLoc    = u.healthLoc;
-	unitIDLoc    = u.unitIDLoc;
-	teamIDLoc    = u.teamIDLoc;
-	customLoc    = u.customLoc;
-	customCount  = u.customCount;
+		haveUniforms = u.haveUniforms;
+		speedLoc     = u.speedLoc;
+		healthLoc    = u.healthLoc;
+		unitIDLoc    = u.unitIDLoc;
+		teamIDLoc    = u.teamIDLoc;
+		customLoc    = u.customLoc;
+		customCount  = u.customCount;
 
-	if (customCount > 0) {
-		customData = new GLfloat[customCount];
-		memcpy(customData, u.customData, customCount * sizeof(GLfloat));
+		if (customCount > 0) {
+			customData = new GLfloat[customCount];
+			memcpy(customData, u.customData, customCount * sizeof(GLfloat));
+		}
 	}
 
 	return *this;
@@ -346,28 +349,14 @@ void LuaMaterial::Execute(const LuaMaterial& prev) const
 
 	shader.Execute(prev.shader);
 
+	//FIXME add projection matrices!!!
 	if (cameraLoc >= 0) {
-		// FIXME: this is happening too much, just use floats?
-		GLfloat array[16];
-		const GLdouble* viewMat = camera->GetViewMat(); // GetMatrixData("camera")
-		for (int i = 0; i < 16; i += 4) {
-			array[i    ] = (GLfloat) viewMat[i    ];
-			array[i + 1] = (GLfloat) viewMat[i + 1];
-			array[i + 2] = (GLfloat) viewMat[i + 2];
-			array[i + 3] = (GLfloat) viewMat[i + 3];
-		}
-		glUniformMatrix4fv(cameraLoc, 1, GL_FALSE, array);
+		const CMatrix44f& viewMat = camera->GetViewMatrix(); // GetMatrixData("camera")
+		glUniformMatrix4fv(cameraLoc, 1, GL_FALSE, viewMat);
 	}
 	if (cameraInvLoc >= 0) {
-		GLfloat array[16];
-		const GLdouble* viewMatInv = camera->GetViewMatInv(); // GetMatrixData("caminv")
-		for (int i = 0; i < 16; i += 4) {
-			array[i    ] = (GLfloat) viewMatInv[i    ];
-			array[i + 1] = (GLfloat) viewMatInv[i + 1];
-			array[i + 2] = (GLfloat) viewMatInv[i + 2];
-			array[i + 3] = (GLfloat) viewMatInv[i + 3];
-		}
-		glUniformMatrix4fv(cameraInvLoc, 1, GL_FALSE, array);
+		const CMatrix44f& viewMatInv = camera->GetViewMatrixInverse(); // GetMatrixData("caminv")
+		glUniformMatrix4fv(cameraInvLoc, 1, GL_FALSE, viewMatInv);
 	}
 
 	if (cameraPosLoc >= 0) {
