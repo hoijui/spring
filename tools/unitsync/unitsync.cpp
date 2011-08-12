@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "StdAfx.h"
 #include "unitsync.h"
 #include "unitsync_api.h"
 
@@ -24,11 +23,13 @@
 #include "System/FileSystem/IArchive.h"
 #include "System/FileSystem/ArchiveLoader.h"
 #include "System/FileSystem/ArchiveScanner.h"
+#include "System/FileSystem/DataDirsAccess.h"
+#include "System/FileSystem/DataDirLocater.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/VFSHandler.h"
 #include "System/FileSystem/FileSystem.h"
-#include "System/FileSystem/FileSystemHandler.h"
-#include "System/ConfigHandler.h"
+#include "System/FileSystem/FileSystemInitializer.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/Log/ILog.h"
 #include "System/Log/Level.h"
@@ -293,7 +294,7 @@ static void _UnInit()
 
 	lpClose();
 
-	FileSystemHandler::Cleanup();
+	FileSystemInitializer::Cleanup();
 
 	if (syncer) {
 		SafeDelete(syncer);
@@ -313,7 +314,7 @@ EXPORT(int) Init(bool isServer, int id)
 		if (!configHandler) {
 			ConfigHandler::Instantiate(); // use the default config file
 		}
-		FileSystemHandler::Initialize(false);
+		FileSystemInitializer::Initialize();
 
 		if (!logOutputInitialised) {
 			logOutput.Initialize();
@@ -359,7 +360,7 @@ EXPORT(const char*) GetWritableDataDirectory()
 {
 	try {
 		CheckInit();
-		return GetStr(FileSystemHandler::GetInstance().GetWriteDir());
+		return GetStr(dataDirLocater.GetWriteDirPath());
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return NULL;
@@ -371,7 +372,7 @@ EXPORT(int) GetDataDirectoryCount()
 
 	try {
 		CheckInit();
-		count = (int) FileSystemHandler::GetInstance().GetDataDirectories().size();
+		count = (int) dataDirLocater.GetDataDirs().size();
 	}
 	UNITSYNC_CATCH_BLOCKS;
 
@@ -382,9 +383,10 @@ EXPORT(const char*) GetDataDirectory(int index)
 {
 	try {
 		CheckInit();
-		const std::vector<std::string> datadirs = FileSystemHandler::GetInstance().GetDataDirectories();
-		if (index > datadirs.size())
+		const std::vector<std::string> datadirs = dataDirLocater.GetDataDirPaths();
+		if (index > datadirs.size()) {
 			return NULL;
+		}
 		return GetStr(datadirs[index]);
 	}
 	UNITSYNC_CATCH_BLOCKS;
@@ -565,10 +567,10 @@ static bool internal_GetMapInfo(const char* mapName, InternalMapInfo* outInfo)
 
 	// Retrieve the map header as well
 	if (err.empty()) {
-		const std::string extension = filesystem.GetExtension(mapFile);
+		const std::string extension = FileSystem::GetExtension(mapFile);
 		if (extension == "smf") {
 			try {
-				const CSmfMapFile file(mapFile);
+				const CSMFMapFile file(mapFile);
 				const SMFHeader& mh = file.GetHeader();
 
 				outInfo->width  = mh.mapx * SQUARE_SIZE;
@@ -955,7 +957,7 @@ EXPORT(float) GetMapMinHeight(const char* mapName) {
 	try {
 		const std::string mapFile = GetMapFile(mapName);
 		ScopedMapLoader loader(mapName, mapFile);
-		CSmfMapFile file(mapFile);
+		CSMFMapFile file(mapFile);
 		MapParser parser(mapFile);
 
 		const SMFHeader& header = file.GetHeader();
@@ -977,7 +979,7 @@ EXPORT(float) GetMapMaxHeight(const char* mapName) {
 	try {
 		const std::string mapFile = GetMapFile(mapName);
 		ScopedMapLoader loader(mapName, mapFile);
-		CSmfMapFile file(mapFile);
+		CSMFMapFile file(mapFile);
 		MapParser parser(mapFile);
 
 		const SMFHeader& header = file.GetHeader();
@@ -1104,7 +1106,7 @@ static unsigned short* GetMinimapSM3(std::string mapFileName, int mipLevel)
 
 static unsigned short* GetMinimapSMF(std::string mapFileName, int mipLevel)
 {
-	CSmfMapFile in(mapFileName);
+	CSMFMapFile in(mapFileName);
 	std::vector<uint8_t> buffer;
 	const int mipsize = in.ReadMinimap(buffer, mipLevel);
 
@@ -1175,7 +1177,7 @@ EXPORT(unsigned short*) GetMinimap(const char* mapName, int mipLevel)
 		ScopedMapLoader mapLoader(mapName, mapFile);
 
 		unsigned short* ret = NULL;
-		const std::string extension = filesystem.GetExtension(mapFile);
+		const std::string extension = FileSystem::GetExtension(mapFile);
 		if (extension == "smf") {
 			ret = GetMinimapSMF(mapFile, mipLevel);
 		} else if (extension == "sm3") {
@@ -1200,7 +1202,7 @@ EXPORT(int) GetInfoMapSize(const char* mapName, const char* name, int* width, in
 
 		const std::string mapFile = GetMapFile(mapName);
 		ScopedMapLoader mapLoader(mapName, mapFile);
-		CSmfMapFile file(mapFile);
+		CSMFMapFile file(mapFile);
 		MapBitmapInfo bmInfo;
 
 		file.GetInfoMapSize(name, &bmInfo);
@@ -1231,7 +1233,7 @@ EXPORT(int) GetInfoMap(const char* mapName, const char* name, unsigned char* dat
 
 		const std::string mapFile = GetMapFile(mapName);
 		ScopedMapLoader mapLoader(mapName, mapFile);
-		CSmfMapFile file(mapFile);
+		CSMFMapFile file(mapFile);
 
 		const std::string n = name;
 		int actualType = (n == "height" ? bm_grayscale_16 : bm_grayscale_8);
@@ -1706,7 +1708,7 @@ EXPORT(int) GetSkirmishAICount() {
 		skirmishAIDataDirs.clear();
 
 		std::vector<std::string> dataDirs_tmp =
-				filesystem.FindDirsInDirectSubDirs(SKIRMISH_AI_DATA_DIR);
+				dataDirsAccess.FindDirsInDirectSubDirs(SKIRMISH_AI_DATA_DIR);
 
 		// filter out dirs not containing an AIInfo.lua file
 		std::vector<std::string>::const_iterator i;
@@ -2370,8 +2372,8 @@ EXPORT(int) InitFindVFS(const char* pattern)
 		CheckInit();
 		CheckNullOrEmpty(pattern);
 
-		std::string path = filesystem.GetDirectory(pattern);
-		std::string patt = filesystem.GetFilename(pattern);
+		std::string path = FileSystem::GetDirectory(pattern);
+		std::string patt = FileSystem::GetFilename(pattern);
 		LOG_L(L_DEBUG, "InitFindVFS: %s", pattern);
 		curFindFiles = CFileHandler::FindFiles(path, patt);
 		return 0;
@@ -2640,7 +2642,7 @@ EXPORT(const char*) GetSpringConfigString(const char* name, const char* defValue
 {
 	try {
 		CheckConfigHandler();
-		std::string res = configHandler->GetString(name, defValue);
+		std::string res = configHandler->IsSet(name) ? configHandler->GetString(name) : defValue;
 		return GetStr(res);
 	}
 	UNITSYNC_CATCH_BLOCKS;
@@ -2651,7 +2653,7 @@ EXPORT(int) GetSpringConfigInt(const char* name, const int defValue)
 {
 	try {
 		CheckConfigHandler();
-		return configHandler->Get(name, defValue);
+		return configHandler->IsSet(name) ? configHandler->GetInt(name) : defValue;
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return defValue;
@@ -2661,7 +2663,7 @@ EXPORT(float) GetSpringConfigFloat(const char* name, const float defValue)
 {
 	try {
 		CheckConfigHandler();
-		return configHandler->Get(name, defValue);
+		return configHandler->IsSet(name) ? configHandler->GetFloat(name) : defValue;
 	}
 	UNITSYNC_CATCH_BLOCKS;
 	return defValue;

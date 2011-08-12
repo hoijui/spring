@@ -24,6 +24,12 @@ INCLUDE(Util)
 
 CheckMinCMakeVersion(CUSTOM_TARGET_SOURCES_SUPPORT 2 6 3)
 
+If    ("${CMAKE_BUILD_TYPE}" MATCHES "^DEBUG")
+	Set(DEBUG_BUILD TRUE)
+Else  ("${CMAKE_BUILD_TYPE}" MATCHES "^DEBUG")
+	Set(DEBUG_BUILD FALSE)
+EndIf ("${CMAKE_BUILD_TYPE}" MATCHES "^DEBUG")
+
 # Tell windows to pass arguments around in @response files
 # (32k arg limit workaround)
 if    (WIN32)
@@ -214,7 +220,7 @@ Set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS}           ${LTO_FLAGS}")
 Set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS}    ${LTO_FLAGS}")
 Set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${LTO_FLAGS}")
 
-set(SIGNAL_NANS FALSE CACHE BOOL "Enable NaN-Signalling")
+set(SIGNAL_NANS ${DEBUG_BUILD} CACHE BOOL "Enable NaN-Signalling")
 if (SIGNAL_NANS)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsignaling-nans")
 endif(SIGNAL_NANS)
@@ -270,6 +276,8 @@ IF (MINGW)
 	FIND_PACKAGE(Win32Libs REQUIRED)
 ENDIF (MINGW)
 
+# Sub-parts of the build system may add dependencies to this target
+add_custom_target(generateSources)
 
 ### Where the other CMakeLists.txt are
 
@@ -298,4 +306,9 @@ Add_Subdirectory(cont)
 
 # As rts/builds/* depends on most other stuff, we add this one as last
 Add_Subdirectory(rts)
+
+# Unit tests
+# this has to be in root CMakeLists.txt; it requires CMake 2.6.3 or later
+ENABLE_TESTING()
+Add_Subdirectory(test)
 

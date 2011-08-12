@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include <ostream>
 #include <fstream>
@@ -19,10 +18,11 @@
 #include "Bitmap.h"
 #include "Rendering/GlobalRendering.h"
 #include "System/bitops.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/OpenMP_cond.h"
+#include "System/FileSystem/DataDirsAccess.h"
+#include "System/FileSystem/FileQueryFlags.h"
 #include "System/FileSystem/FileHandler.h"
-#include "System/FileSystem/FileSystem.h"
 
 
 boost::mutex devilMutex; // devil functions, whilst expensive, aren't thread-save
@@ -120,6 +120,17 @@ CBitmap& CBitmap::operator=(const CBitmap& bm)
 		delete[] mem;
 		mem = new unsigned char[size];
 		memcpy(mem, bm.mem, size);
+
+#ifndef BITMAP_NO_OPENGL
+		textype = bm.textype;
+		delete ddsimage;
+		if (bm.ddsimage == NULL) {
+			ddsimage = NULL;
+		} else {
+			ddsimage = new nv_dds::CDDSImage();
+			*ddsimage = *(bm.ddsimage);
+		}
+#endif // !BITMAP_NO_OPENGL
 	}
 
 	return *this;
@@ -131,7 +142,9 @@ void CBitmap::Alloc(int w, int h)
 	delete[] mem;
 	xsize = w;
 	ysize = h;
-	const int size = w*h*channels;
+
+	const int size = w * h * channels;
+
 	mem = new unsigned char[size];
 	memset(mem, 0, size);
 }
@@ -328,7 +341,7 @@ bool CBitmap::Save(std::string const& filename, bool opaque) const
 
 	ilTexImage(xsize, ysize, 1, 4, IL_RGBA, IL_UNSIGNED_BYTE, buf);
 
-	const std::string fullpath = filesystem.LocateFile(filename, FileSystem::WRITE);
+	const std::string fullpath = dataDirsAccess.LocateFile(filename, FileQueryFlags::WRITE);
 	const bool success = ilSaveImage((char*)fullpath.c_str());
 
 	ilDeleteImages(1, &ImageName);
@@ -625,7 +638,7 @@ CBitmap CBitmap::GetRegion(int startx, int starty, int width, int height) const
 void CBitmap::CopySubImage(const CBitmap& src, unsigned int xpos, unsigned int ypos)
 {
 	if (xpos + src.xsize >= xsize || ypos + src.ysize >= ysize) {
-		logOutput.Print("CBitmap::CopySubImage src image doesn't fit into dst");
+		LOG_L(L_WARNING, "CBitmap::CopySubImage src image does not fit into dst");
 		return;
 	}
 
@@ -669,12 +682,11 @@ SDL_Surface* CBitmap::CreateSDLSurface(bool newPixelData) const
 
 CBitmap CBitmap::CreateRescaled(int newx, int newy) const
 {
-	CBitmap bm;
+	newx = std::max(1, newx);
+	newy = std::max(1, newy);
 
-	delete[] bm.mem;
-	bm.xsize = newx;
-	bm.ysize = newy;
-	bm.mem   = new unsigned char[bm.xsize*bm.ysize * 4];
+	CBitmap bm;
+	bm.Alloc(newx, newy);
 
 	const float dx = (float) xsize / newx;
 	const float dy = (float) ysize / newy;

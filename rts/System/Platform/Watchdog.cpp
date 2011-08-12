@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
+#include "System/Platform/Win/win32.h"
 #include "Watchdog.h"
 
 #include "lib/gml/gml.h"
@@ -15,7 +15,7 @@
 #include <boost/thread/recursive_mutex.hpp>
 
 #include "Game/GameVersion.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Log/ILog.h"
 #include "System/LogOutput.h"
 #include "System/maindefines.h"
@@ -23,6 +23,8 @@
 #include "System/Platform/CrashHandler.h"
 #include "System/Platform/Threading.h"
 
+CONFIG(int, HangTimeout).defaultValue(0)
+		.description("Number of seconds that, if spent in the same code segment, indicate a hang; -1 to disable.");
 
 namespace Watchdog
 {
@@ -33,7 +35,11 @@ namespace Watchdog
 	static unsigned int curorder = 0;
 
 	struct WatchDogThreadInfo {
-		WatchDogThreadInfo() : timer(spring_notime) {}
+		WatchDogThreadInfo()
+			: threadid(0)
+			, timer(spring_notime)
+			, numreg(0)
+		{}
 		volatile Threading::NativeThreadHandle thread;
 		volatile Threading::NativeThreadId threadid;
 		volatile spring_time timer;
@@ -41,6 +47,11 @@ namespace Watchdog
 	};
 	static WatchDogThreadInfo registeredThreadsData[WDT_SIZE];
 	struct WatchDogThreadSlot {
+		WatchDogThreadSlot()
+			: primary(false)
+			, active(false)
+			, regorder(0)
+		{}
 		volatile bool primary;
 		volatile bool active;
 		volatile unsigned int regorder;
@@ -270,7 +281,7 @@ namespace Watchdog
 			}
 		}
 	#endif
-		int hangTimeoutSecs = configHandler->Get("HangTimeout", 0);
+		int hangTimeoutSecs = configHandler->GetInt("HangTimeout");
 
 		//! HangTimeout = -1 to force disable hang detection
 		if (hangTimeoutSecs < 0) {

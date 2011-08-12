@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/EventHandler.h"
 
 #include "Game/UI/LuaUI.h"  // FIXME -- should be moved
@@ -9,7 +8,7 @@
 #include "Lua/LuaRules.h"
 #include "Lua/LuaGaia.h"
 
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Platform/Threading.h"
 #include "System/GlobalConfig.h"
 
@@ -101,6 +100,7 @@ CEventHandler::CEventHandler()
 	// unsynced call-ins
 	SETUP_EVENT(Save,           MANAGED_BIT | UNSYNCED_BIT);
 
+	SETUP_EVENT(UnsyncedHeightMapUpdate, MANAGED_BIT | UNSYNCED_BIT);
 	SETUP_EVENT(Update,         MANAGED_BIT | UNSYNCED_BIT);
 
 	SETUP_EVENT(KeyPress,       MANAGED_BIT | UNSYNCED_BIT);

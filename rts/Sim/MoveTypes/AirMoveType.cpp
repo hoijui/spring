@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "AirMoveType.h"
@@ -109,10 +108,10 @@ CAirMoveType::CAirMoveType(CUnit* owner):
 	mySide(1),
 	inefficientAttackTime(0)
 {
+	assert(owner != NULL);
+
 	// force LOS recalculation
-	if (owner) {
-		owner->mapSquare += 1;
-	}
+	owner->mapSquare += 1;
 
 	maxRudder   *= 0.99f + gs->randFloat() * 0.02f;
 	maxElevator *= 0.99f + gs->randFloat() * 0.02f;

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 #include "lib/gml/gml.h"
 
@@ -52,6 +51,7 @@
 #include "Sim/Misc/Wind.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/MoveTypes/AirMoveType.h"
+#include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/MoveTypes/MoveTypeFactory.h"
 #include "Sim/MoveTypes/ScriptMoveType.h"
@@ -60,7 +60,7 @@
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
 #include "System/EventHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/Matrix44f.h"
 #include "System/myMath.h"
 #include "System/creg/STL_List.h"
@@ -70,8 +70,6 @@
 #include "System/Sync/SyncTracer.h"
 
 #define PLAY_SOUNDS 1
-
-CLogSubsystem LOG_UNIT("unit");
 
 // See end of source for member bindings
 //////////////////////////////////////////////////////////////////////
@@ -370,7 +368,7 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	tracefile << "pos: <" << pos.x << ", " << pos.y << ", " << pos.z << ">\n";
 #endif
 
-	ASSERT_SYNCED_FLOAT3(pos);
+	ASSERT_SYNCED(pos);
 
 	heading  = GetHeadingFromFacing(facing);
 	frontdir = GetVectorFromHeading(heading);
@@ -665,7 +663,7 @@ void CUnit::DisableScriptMoveType()
 
 void CUnit::Update()
 {
-	ASSERT_SYNCED_FLOAT3(pos);
+	ASSERT_SYNCED(pos);
 
 	posErrorVector += posErrorDelta;
 
@@ -893,8 +891,8 @@ void CUnit::SlowUpdate()
 			return;
 		}
 		if ((selfDCountdown & 1) && (team == gu->myTeam)) {
-			logOutput.Print("%s: Self destruct in %i s",
-			                unitDef->humanName.c_str(), selfDCountdown / 2);
+			LOG("%s: Self destruct in %i s",
+					unitDef->humanName.c_str(), selfDCountdown / 2);
 		}
 	}
 
@@ -1075,6 +1073,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 	if (damage > 0.0f) {
 		if (attacker) {
 			SetLastAttacker(attacker);
+
 			if (flankingBonusMode) {
 				const float3 adir = (attacker->pos - pos).SafeNormalize(); // FIXME -- not the impulse direction?
 
@@ -1084,12 +1083,12 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 					flankingBonusDir.Normalize();
 					flankingBonusMobility = 0.0f;
 					damage *= flankingBonusAvgDamage - adir.dot(flankingBonusDir) * flankingBonusDifDamage;
-				}
-				else {
+				} else {
 					float3 adirRelative;
 					adirRelative.x = adir.dot(rightdir);
 					adirRelative.y = adir.dot(updir);
 					adirRelative.z = adir.dot(frontdir);
+
 					if (flankingBonusMode == 2) {	// mode 2 = unit coordinates, mobile
 						flankingBonusDir += adirRelative * flankingBonusMobility;
 						flankingBonusDir.Normalize();
@@ -1100,6 +1099,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 				}
 			}
 		}
+
 		damage *= curArmorMultiple;
 		restTime = 0; // bleeding != resting
 	}
@@ -1124,7 +1124,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 
 	if (paralyzeTime == 0) { // real damage
 		if (damage > 0.0f) {
-			// Dont log overkill damage (so nukes etc dont inflate values)
+			// Do not log overkill damage (so nukes etc do not inflate values)
 			const float statsdamage = std::max(0.0f, std::min(maxHealth - health, damage));
 			if (attacker) {
 				teamHandler->Team(attacker->team)->currentStats->damageDealt += statsdamage;
@@ -1200,21 +1200,23 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 	eventHandler.UnitDamaged(this, attacker, damage, weaponDefId, !!damages.paralyzeDamageTime);
 	eoh->UnitDamaged(*this, attacker, damage, weaponDefId, !!damages.paralyzeDamageTime);
 
-	if (health <= 0.0f) {
-		KillUnit(false, false, attacker);
-		if (isDead && (attacker != 0) &&
-		    !teamHandler->Ally(allyteam, attacker->allyteam) && !beingBuilt) {
-			attacker->AddExperience(expMultiplier * 0.1f * (power / attacker->power));
-			teamHandler->Team(attacker->team)->currentStats->unitsKilled++;
-		}
-	}
-//	if(attacker!=0 && attacker->team==team)
-//		logOutput.Print("FF by %i %s on %i %s",attacker->id,attacker->tooltip.c_str(),id,tooltip.c_str());
-
 #ifdef TRACE_SYNC
 	tracefile << "Damage: ";
 	tracefile << id << " " << damage << "\n";
 #endif
+
+	if (health <= 0.0f) {
+		KillUnit(false, false, attacker);
+
+		if (!isDead) { return; }
+		if (beingBuilt) { return; }
+		if (attacker == NULL) { return; }
+
+		if (!teamHandler->Ally(allyteam, attacker->allyteam)) {
+			attacker->AddExperience(expMultiplier * 0.1f * (power / attacker->power));
+			teamHandler->Team(attacker->team)->currentStats->unitsKilled++;
+		}
+	}
 }
 
 
@@ -1227,8 +1229,9 @@ void CUnit::Kill(const float3& impulse) {
 void CUnit::AddImpulse(const float3& addedImpulse) {
 	residualImpulse += addedImpulse;
 
-	if (addedImpulse.SqLength() >= 0.01f)
+	if (addedImpulse.SqLength() >= 0.01f) {
 		moveType->ImpulseAdded(addedImpulse);
+	}
 }
 
 
@@ -1571,16 +1574,18 @@ bool CUnit::AttackGround(const float3& pos, bool wantManualFire, bool fpsMode)
 
 void CUnit::SetLastAttacker(CUnit* attacker)
 {
+	assert(attacker != NULL);
+
 	if (teamHandler->AlliedTeams(team, attacker->team)) {
 		return;
 	}
-	if (lastAttacker)
+	if (lastAttacker) {
 		DeleteDeathDependence(lastAttacker, DEPENDENCE_ATTACKER);
+	}
 
 	lastAttack = gs->frameNum;
 	lastAttacker = attacker;
-	if (attacker)
-		AddDeathDependence(attacker);
+	AddDeathDependence(attacker);
 }
 
 void CUnit::SetUserTarget(CUnit* target)

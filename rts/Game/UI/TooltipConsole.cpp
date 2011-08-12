@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "TooltipConsole.h"
@@ -22,8 +21,11 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "System/EventHandler.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Util.h"
+
+CONFIG(std::string, TooltipGeometry).defaultValue("0.0 0.0 0.41 0.1");
+CONFIG(bool, TooltipOutlineFont).defaultValue(true);
 
 CTooltipConsole* tooltip = NULL;
 
@@ -31,8 +33,7 @@ CTooltipConsole* tooltip = NULL;
 CTooltipConsole::CTooltipConsole()
 	: enabled(true)
 {
-	const std::string geo = configHandler->GetString("TooltipGeometry",
-			"0.0 0.0 0.41 0.1");
+	const std::string geo = configHandler->GetString("TooltipGeometry");
 	const int vars = sscanf(geo.c_str(), "%f %f %f %f", &x, &y, &w, &h);
 	if (vars != 4) {
 		x = 0.00f;
@@ -41,7 +42,7 @@ CTooltipConsole::CTooltipConsole()
 		h = 0.10f;
 	}
 
-	outFont = !!configHandler->Get("TooltipOutlineFont", 1);
+	outFont = configHandler->GetBool("TooltipOutlineFont");
 }
 
 

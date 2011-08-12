@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "DirtProjectile.h"
@@ -8,7 +7,7 @@
 #include "Game/GlobalUnsynced.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
 
@@ -32,7 +31,7 @@ CR_REG_METADATA(CDirtProjectile,
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-CDirtProjectile::CDirtProjectile(const float3 pos, const float3 speed, const float ttl, const float size, const float expansion, float slowdown, CUnit* owner, const float3& color):
+CDirtProjectile::CDirtProjectile(const float3& pos, const float3& speed, const float ttl, const float size, const float expansion, float slowdown, CUnit* owner, const float3& color):
 	CProjectile(pos, speed, owner, false, false, false),
 	alpha(255),
 	size(size),

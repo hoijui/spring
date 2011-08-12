@@ -1,5 +1,4 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
-#include "System/StdAfx.h"
 
 #include "Game/GlobalUnsynced.h"
 #include "Game/SelectedUnits.h"
@@ -109,13 +108,8 @@ void DefaultPathDrawer::UpdateExtraTexture(int extraTex, int starty, int endy, i
 				const MoveData* md = NULL;
 				const bool los = (gs->cheatEnabled || gu->spectating);
 
-				#ifdef USE_UNSYNCED_HEIGHTMAP
 				const float* hm = readmap->GetCornerHeightMapUnsynced();
 				const float3* cn = readmap->GetCenterNormalsUnsynced();
-				#else
-				const float* hm = readmap->GetCornerHeightMapSynced();
-				const float3* cn = readmap->GetCenterNormalsSynced();
-				#endif
 
 				{
 					GML_RECMUTEX_LOCK(sel); // UpdateExtraTexture

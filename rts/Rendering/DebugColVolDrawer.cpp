@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 #include "DebugColVolDrawer.h"
 
@@ -15,7 +14,6 @@
 #include "Sim/Features/Feature.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Misc/QuadField.h"
-#include "System/LogOutput.h"
 
 static float3 defaultColVolColor(0.45f, 0.0f, 0.45f);
 

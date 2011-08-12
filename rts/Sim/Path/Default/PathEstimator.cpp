@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
+#include "System/Platform/Win/win32.h"
 
 #include "lib/gml/gml.h" // FIXME: linux for some reason does not compile without this
 
@@ -18,6 +18,7 @@
 #include "PathCache.h"
 #include "PathFinder.h"
 #include "PathFinderDef.h"
+#include "PathLog.h"
 #include "Map/ReadMap.h"
 #include "Game/LoadScreen.h"
 #include "Sim/MoveTypes/MoveInfo.h"
@@ -26,14 +27,15 @@
 #include "Sim/Units/UnitDef.h"
 #include "System/FileSystem/IArchive.h"
 #include "System/FileSystem/ArchiveLoader.h"
+#include "System/FileSystem/DataDirsAccess.h"
 #include "System/FileSystem/FileSystem.h"
-#include "System/LogOutput.h"
-#include "System/ConfigHandler.h"
+#include "System/FileSystem/FileQueryFlags.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/NetProtocol.h"
 
-#define PATHDEBUG false
+CONFIG(int, MaxPathCostsMemoryFootPrint).defaultValue(512 * 1024 * 1024);
 
-const std::string pathDir = "cache/paths/";
+static const std::string PATH_CACHE_DIR = "cache/paths/";
 
 #if !defined(USE_MMGR)
 void* CPathEstimator::operator new(size_t size) { return PathAllocator::Alloc(size); }
@@ -113,7 +115,7 @@ CPathEstimator::~CPathEstimator()
 
 void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::string& map)
 {
-	unsigned int numThreads = std::max(0, configHandler->Get("HardwareThreadCount", 0));
+	unsigned int numThreads = std::max(0, configHandler->GetInt("HardwareThreadCount"));
 
 	if (numThreads == 0) {
 		// auto-detect
@@ -141,7 +143,7 @@ void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::
 		// start extra threads if applicable, but always keep the total
 		// memory-footprint made by CPathFinder instances within bounds
 		const unsigned int minMemFootPrint = sizeof(CPathFinder) + pathFinder->GetMemFootPrint();
-		const unsigned int maxMemFootPrint = configHandler->Get("MaxPathCostsMemoryFootPrint", 512 * 1024 * 1024);
+		const unsigned int maxMemFootPrint = configHandler->GetInt("MaxPathCostsMemoryFootPrint");
 		const unsigned int numExtraThreads = std::min(int(numThreads - 1), std::max(0, int(maxMemFootPrint / minMemFootPrint) - 1));
 		const unsigned int reqMemFootPrint = minMemFootPrint * (numExtraThreads + 1);
 
@@ -282,7 +284,7 @@ void CPathEstimator::FindOffset(const MoveData& moveData, int blockX, int blockZ
 
 			if (moveMath.IsBlocked(moveData, lowerX + x, lowerZ + z) & CMoveMath::BLOCK_STRUCTURE)
 				continue;
-			
+
 			const float speedMod = moveMath.GetPosSpeedMod(moveData, lowerX + x, lowerZ + z);
 			const float cost = (dx * dx + dz * dz) + (blockArea / (0.001f + speedMod));
 
@@ -499,18 +501,18 @@ IPath::SearchResult CPathEstimator::GetPath(
 			pathCache->AddPath(&path, result, startBlock, goalBlock, peDef.sqGoalRadius, moveData.pathType);
 		}
 
-		if (PATHDEBUG) {
-			LogObject() << "PE: Search completed.\n";
-			LogObject() << "Tested blocks: " << testedBlocks << "\n";
-			LogObject() << "Open blocks: " << openBlockBuffer.GetSize() << "\n";
-			LogObject() << "Path length: " << path.path.size() << "\n";
-			LogObject() << "Path cost: " << path.pathCost << "\n";
+		if (LOG_IS_ENABLED(L_DEBUG)) {
+			LOG_L(L_DEBUG, "PE: Search completed.");
+			LOG_L(L_DEBUG, "Tested blocks: %u", testedBlocks);
+			LOG_L(L_DEBUG, "Open blocks: %u", openBlockBuffer.GetSize());
+			LOG_L(L_DEBUG, "Path length: "_STPF_, path.path.size());
+			LOG_L(L_DEBUG, "Path cost: %f", path.pathCost);
 		}
 	} else {
-		if (PATHDEBUG) {
-			LogObject() << "PE: Search failed!\n";
-			LogObject() << "Tested blocks: " << testedBlocks << "\n";
-			LogObject() << "Open blocks: " << openBlockBuffer.GetSize() << "\n";
+		if (LOG_IS_ENABLED(L_DEBUG)) {
+			LOG_L(L_DEBUG, "PE: Search failed!");
+			LOG_L(L_DEBUG, "Tested blocks: %u", testedBlocks);
+			LOG_L(L_DEBUG, "Open blocks: %u", openBlockBuffer.GetSize());
 		}
 	}
 
@@ -624,7 +626,7 @@ IPath::SearchResult CPathEstimator::DoSearch(const MoveData& moveData, const CPa
 		return IPath::GoalOutOfRange;
 
 	// should never happen
-	LogObject() << "ERROR: CPathEstimator::DoSearch() - Unhandled end of search!\n";
+	LOG_L(L_ERROR, "%s - Unhandled end of search!", __FUNCTION__);
 	return IPath::Error;
 }
 
@@ -785,11 +787,11 @@ bool CPathEstimator::ReadFile(const std::string& cacheFileName, const std::strin
 	char hashString[50];
 	sprintf(hashString, "%u", hash);
 
-	std::string filename = std::string(pathDir) + map + hashString + "." + cacheFileName + ".zip";
-	if (!filesystem.FileExists(filename))
+	std::string filename = std::string(PATH_CACHE_DIR) + map + hashString + "." + cacheFileName + ".zip";
+	if (!FileSystem::FileExists(filename))
 		return false;
 	// open file for reading from a suitable location (where the file exists)
-	IArchive* pfile = archiveLoader.OpenArchive(filesystem.LocateFile(filename), "sdz");
+	IArchive* pfile = archiveLoader.OpenArchive(dataDirsAccess.LocateFile(filename), "sdz");
 
 	if (!pfile || !pfile->IsOpen()) {
 		delete pfile;
@@ -849,7 +851,7 @@ bool CPathEstimator::ReadFile(const std::string& cacheFileName, const std::strin
 void CPathEstimator::WriteFile(const std::string& cacheFileName, const std::string& map)
 {
 	// We need this directory to exist
-	if (!filesystem.CreateDirectory(pathDir))
+	if (!FileSystem::CreateDirectory(PATH_CACHE_DIR))
 		return;
 
 	const unsigned int hash = Hash();
@@ -857,11 +859,11 @@ void CPathEstimator::WriteFile(const std::string& cacheFileName, const std::stri
 
 	sprintf(hashString, "%u", hash);
 
-	const std::string filename = std::string(pathDir) + map + hashString + "." + cacheFileName + ".zip";
+	const std::string filename = std::string(PATH_CACHE_DIR) + map + hashString + "." + cacheFileName + ".zip";
 	zipFile file;
 
 	// open file for writing in a suitable location
-	file = zipOpen(filesystem.LocateFile(filename, FileSystem::WRITE).c_str(), APPEND_STATUS_CREATE);
+	file = zipOpen(dataDirsAccess.LocateFile(filename, FileQueryFlags::WRITE).c_str(), APPEND_STATUS_CREATE);
 
 	if (file) {
 		zipOpenNewFileInZip(file, "pathinfo", NULL, NULL, 0, NULL, 0, NULL, Z_DEFLATED, Z_BEST_COMPRESSION);
@@ -881,7 +883,7 @@ void CPathEstimator::WriteFile(const std::string& cacheFileName, const std::stri
 
 
 		// get the CRC over the written path data
-		IArchive* pfile = archiveLoader.OpenArchive(filesystem.LocateFile(filename), "sdz");
+		IArchive* pfile = archiveLoader.OpenArchive(dataDirsAccess.LocateFile(filename), "sdz");
 
 		if (!pfile || !pfile->IsOpen()) {
 			delete pfile;
@@ -890,7 +892,7 @@ void CPathEstimator::WriteFile(const std::string& cacheFileName, const std::stri
 
 		std::auto_ptr<IArchive> auto_pfile(pfile);
 		IArchive& file(*pfile);
-		
+
 		const unsigned fid = file.FindFile("pathinfo");
 		assert(fid < file.NumFiles());
 		pathChecksum = file.GetCrc32(fid);

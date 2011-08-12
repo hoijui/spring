@@ -85,7 +85,7 @@ std::string GetProcessExecutableFile()
 
 std::string GetProcessExecutablePath()
 {
-	return filesystem.GetDirectory(GetProcessExecutableFile());
+	return FileSystem::GetDirectory(GetProcessExecutableFile());
 }
 
 std::string GetModuleFile(std::string moduleName)
@@ -106,7 +106,7 @@ std::string GetModuleFile(std::string moduleName)
 }
 std::string GetModulePath(const std::string& moduleName)
 {
-	return filesystem.GetDirectory(GetModuleFile(moduleName));
+	return FileSystem::GetDirectory(GetModuleFile(moduleName));
 }
 
 std::string GetOS()

@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 
-#include "System/StdAfx.h"
+#include "System/Platform/Win/win32.h"
 #include "LuaLoadSaveHandler.h"
 
 #include "lib/minizip/zip.h"
@@ -15,7 +15,9 @@
 #include "Map/ReadMap.h"
 #include "System/FileSystem/IArchive.h"
 #include "System/FileSystem/ArchiveLoader.h"
+#include "System/FileSystem/DataDirsAccess.h"
 #include "System/FileSystem/FileSystem.h"
+#include "System/FileSystem/FileQueryFlags.h"
 #include "System/Platform/byteorder.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
@@ -53,14 +55,14 @@ CLuaLoadSaveHandler::~CLuaLoadSaveHandler()
 
 void CLuaLoadSaveHandler::SaveGame(const std::string& file)
 {
-	const std::string realname = filesystem.LocateFile(file, FileSystem::WRITE).c_str();
+	const std::string realname = dataDirsAccess.LocateFile(file, FileQueryFlags::WRITE).c_str();
 
 	filename = file;
 	savefile = NULL;
 
 	try {
 		// Remove any existing file
-		filesystem.Remove(realname);
+		FileSystem::Remove(realname);
 
 		// Open the zip
 		if (realname.empty() ||
@@ -79,14 +81,14 @@ void CLuaLoadSaveHandler::SaveGame(const std::string& file)
 		}
 		return; // Success
 	}
-	catch (content_error& e) {
-		LOG_L(L_ERROR, "Save failed(content error): %s", e.what());
+	catch (const content_error& ex) {
+		LOG_L(L_ERROR, "Save failed(content error): %s", ex.what());
 	}
-	catch (std::exception& e) {
-		LOG_L(L_ERROR, "Save failed: %s", e.what());
+	catch (const std::exception& ex) {
+		LOG_L(L_ERROR, "Save failed: %s", ex.what());
 	}
-	catch (char*& e) {
-		LOG_L(L_ERROR, "Save failed: %s", e);
+	catch (const char*& exStr) {
+		LOG_L(L_ERROR, "Save failed: %s", exStr);
 	}
 	catch (...) {
 		LOG_L(L_ERROR, "Save failed(unknown error)");
@@ -96,7 +98,7 @@ void CLuaLoadSaveHandler::SaveGame(const std::string& file)
 	if (savefile != NULL) {
 		zipClose(savefile, NULL);
 		savefile = NULL;
-		filesystem.Remove(realname);
+		FileSystem::Remove(realname);
 	}
 }
 
@@ -138,7 +140,7 @@ void CLuaLoadSaveHandler::SaveHeightmap()
 	const int size = gs->mapxp1 * gs->mapyp1;
 	int* temp = new int[size];
 	for (int i = 0; i < size; ++i) {
-		temp[i] = swabdword(currHeightmap[i] ^ origHeightmap[i]);
+		temp[i] = swabDWord(currHeightmap[i] ^ origHeightmap[i]);
 	}
 	SaveEntireFile(FILE_HEIGHTMAP, "heightmap", temp, size * sizeof(int));
 	delete[] temp;
@@ -173,7 +175,7 @@ void CLuaLoadSaveHandler::SaveEntireFile(const char* file, const char* what, con
 
 void CLuaLoadSaveHandler::LoadGameStartInfo(const std::string& file)
 {
-	const std::string realfile = filesystem.LocateFile(FindSaveFile(file)).c_str();
+	const std::string realfile = dataDirsAccess.LocateFile(FindSaveFile(file)).c_str();
 
 	filename = file;
 	loadfile = archiveLoader.OpenArchive(realfile, "sdz");
@@ -219,7 +221,7 @@ void CLuaLoadSaveHandler::LoadHeightmap()
 		const int* origHeightmap = (const int*) (const char*) readmap->GetOriginalHeightMapSynced();
 
 		for (int i = 0; i < size; ++i) {
-			const int newHeightBits = swabdword(temp[i]) ^ origHeightmap[i];
+			const int newHeightBits = swabDWord(temp[i]) ^ origHeightmap[i];
 			const float newHeight = *(const float*) (const char*) &newHeightBits;
 			readmap->SetHeight(i, newHeight);
 		}

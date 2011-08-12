@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <boost/lexical_cast.hpp>
 #include "System/mmgr.h"
 
@@ -16,7 +15,7 @@
 #include "System/creg/STL_Deque.h"
 #include "System/creg/STL_Map.h"
 #include "System/Exceptions.h"
-#include "System/FileSystem/CRC.h"
+#include "System/CRC.h"
 #include "System/myMath.h"
 #include "System/Util.h"
 

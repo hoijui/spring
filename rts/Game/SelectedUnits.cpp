@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <map>
 #include <SDL_keysym.h>
 
@@ -22,6 +21,7 @@
 #include "Rendering/GL/VertexArray.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/GlobalSynced.h"
+#include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
@@ -31,9 +31,9 @@
 #include "Sim/Units/Groups/GroupHandler.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/UnitTypes/TransportUnit.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/Util.h"
 #include "System/NetProtocol.h"
 #include "System/Net/PackPacket.h"
@@ -41,6 +41,8 @@
 #include "System/Sound/SoundChannels.h"
 
 #define PLAY_SOUNDS 1
+
+CONFIG(bool, BuildIconsFirst).defaultValue(false);
 
 CSelectedUnits selectedUnits;
 
@@ -61,7 +63,7 @@ CSelectedUnits::~CSelectedUnits()
 
 void CSelectedUnits::Init(unsigned numPlayers)
 {
-	buildIconsFirst = !!configHandler->Get("BuildIconsFirst", 0);
+	buildIconsFirst = configHandler->GetBool("BuildIconsFirst");
 	netSelected.resize(numPlayers);
 }
 
@@ -176,7 +178,7 @@ void CSelectedUnits::GiveCommand(Command c, bool fromUser)
 {
 	GML_RECMUTEX_LOCK(grpsel); // GiveCommand
 
-//	logOutput.Print("Command given %i",c.id);
+//	LOG_L(L_DEBUG, "Command given %i", c.id);
 	if ((gu->spectating && !gs->godMode) || selectedUnits.empty()) {
 		return;
 	}
@@ -498,8 +500,8 @@ void CSelectedUnits::AiOrder(int unitid, const Command &c, int playerId)
 		// between time of giving valid orders on units which then change team
 		// due to e.g. LuaRules.
 
-		//logOutput.Print("Invalid order from player %i for (unit %i %s, team %i)",
-		//                playerId, unitid, unit->unitDefName.c_str(), unit->team);
+		//LOG_L(L_WARNING, "Invalid order from player %i for (unit %i %s, team %i)",
+		//		playerId, unitid, unit->unitDefName.c_str(), unit->team);
 		return;
 	}
 
@@ -836,8 +838,8 @@ void CSelectedUnits::SendCommandsToUnits(const std::vector<int>& unitIDs, const 
 	msgLen += commandCount * (4 + 1 + 2); // id, options, params size
 	msgLen += totalParams * 4;
 	if (msgLen > 8192) {
-		logOutput.Print("Discarded oversized NETMSG_AICOMMANDS packet: %i\n",
-		                msgLen);
+		LOG_L(L_WARNING, "Discarded oversized NETMSG_AICOMMANDS packet: %i",
+				msgLen);
 		return; // drop the oversized packet
 	}
 	netcode::PackPacket* packet = new netcode::PackPacket(msgLen);

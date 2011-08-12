@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "SM3GroundDrawer.h"
 #include "SM3Map.h"
@@ -11,33 +10,35 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/GroundDecalHandler.h"
-#include "Rendering/ProjectileDrawer.hpp"
-#include "Rendering/Env/BaseSky.h"
-#include "Rendering/Shaders/Shader.hpp"
+#include "Rendering/ProjectileDrawer.h"
+#include "Rendering/Env/ISky.h"
+#include "Rendering/Shaders/Shader.h"
 #include "Rendering/GL/myGL.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/Log/ILog.h"
 
 #include <SDL_keysym.h>
-extern unsigned char *keys;
+extern unsigned char* keys;
 
+CONFIG(int, SM3TerrainDetail).defaultValue(200);
 
-CSm3GroundDrawer::CSm3GroundDrawer(CSm3ReadMap *m)
+CSM3GroundDrawer::CSM3GroundDrawer(CSM3ReadMap* m)
 {
 	map = m;
 	tr = map->renderer;
-	rc = tr->AddRenderContext (&cam, true);
+	rc = tr->AddRenderContext(&cam, true);
 
-	tr->config.detailMod = configHandler->Get("SM3TerrainDetail", 200) / 100.0f;
+	tr->config.detailMod = configHandler->GetInt("SM3TerrainDetail") / 100.0f;
 
 	if (shadowHandler->shadowsSupported) {
-		shadowrc = tr->AddRenderContext(&shadowCam,false);
+		shadowrc = tr->AddRenderContext(&shadowCam, false);
 	} else  {
 		shadowrc = 0;
 	}
 	reflectrc = 0;
 }
 
-CSm3GroundDrawer::~CSm3GroundDrawer()
+CSM3GroundDrawer::~CSM3GroundDrawer()
 {
 	configHandler->Set("SM3TerrainDetail", int(tr->config.detailMod * 100));
 }
@@ -59,7 +60,7 @@ static void SpringCamToTerrainCam(CCamera &sc, terrain::Camera& tc)
 	tc.up.ANormalize();
 }
 
-void CSm3GroundDrawer::Update()
+void CSM3GroundDrawer::Update()
 {
 	SpringCamToTerrainCam(*camera, cam);
 
@@ -67,7 +68,7 @@ void CSm3GroundDrawer::Update()
 	tr->CacheTextures();
 }
 
-void CSm3GroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
+void CSM3GroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
 {
 	if (wireframe) {
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -125,19 +126,19 @@ void CSm3GroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
 	glEnable(GL_LIGHT0);
 	glEnable(GL_RESCALE_NORMAL);
 
-//	glLightfv (GL_LIGHT0, GL_SPOT_DIRECTION,dir.getf());
-//	glLightf (GL_LIGHT0, GL_SPOT_CUTOFF, 90.0f);
+//	glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION,dir.getf());
+//	glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 90.0f);
 /*	const float ambient[] = { 0.4f, 0.4f, 0.4f, 1.0f };
 	const float diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	glLightfv (GL_LIGHT0, GL_DIFFUSE, diffuse);
-	glLightfv (GL_LIGHT0, GL_AMBIENT, ambient);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
 
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, 1);
 
 	const float md[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	glMaterialfv (GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, md);
-	glMaterialfv (GL_FRONT_AND_BACK, GL_SPECULAR, md);
-	glMaterialf (GL_FRONT_AND_BACK, GL_SHININESS, 10.0f);*/
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, md);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, md);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10.0f);*/
 	/////////////////////
 
 	tr->Draw();
@@ -175,7 +176,7 @@ void CSm3GroundDrawer::Draw(bool drawWaterReflection, bool drawUnitReflection)
 }
 
 
-void CSm3GroundDrawer::DrawShadowPass()
+void CSM3GroundDrawer::DrawShadowPass()
 {
 	if (!shadowrc)
 		return;
@@ -208,7 +209,7 @@ void CSm3GroundDrawer::DrawShadowPass()
 	glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
-void CSm3GroundDrawer::DrawObjects(bool drawWaterReflection,bool drawUnitReflection)
+void CSM3GroundDrawer::DrawObjects(bool drawWaterReflection, bool drawUnitReflection)
 {
 /*	glEnable(GL_ALPHA_TEST);
 	glEnable(GL_TEXTURE_2D);
@@ -222,26 +223,25 @@ void CSm3GroundDrawer::DrawObjects(bool drawWaterReflection,bool drawUnitReflect
 	if (!(drawWaterReflection || drawUnitReflection)) {
 		groundDecals->Draw();
 		projectileDrawer->DrawGroundFlashes();
-		glDepthMask(1);
 	}
 }
 
 const int maxQuadDepth = 4;
 
-void CSm3GroundDrawer::IncreaseDetail()
+void CSM3GroundDrawer::IncreaseDetail()
 {
 	tr->config.detailMod *= 1.1f;
 	if (tr->config.detailMod > 12.0f)
 		tr->config.detailMod = 12.0f;
-	logOutput.Print("Terrain detail changed to: %2.2f", tr->config.detailMod);
+	LOG("Terrain detail changed to: %2.2f", tr->config.detailMod);
 }
 
-void CSm3GroundDrawer::DecreaseDetail()
+void CSM3GroundDrawer::DecreaseDetail()
 {
 	tr->config.detailMod /= 1.1f;
 	if (tr->config.detailMod < 0.25f)
 		tr->config.detailMod = 0.25f;
 
-	logOutput.Print("Terrain detail changed to: %2.2f", tr->config.detailMod);
+	LOG("Terrain detail changed to: %2.2f", tr->config.detailMod);
 }
 

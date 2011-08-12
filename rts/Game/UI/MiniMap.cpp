@@ -3,7 +3,6 @@
 #include <SDL_keysym.h>
 #include <SDL_mouse.h>
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 #include "lib/gml/ThreadSafeContainers.h"
 
@@ -33,7 +32,7 @@
 #include "Map/ReadMap.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/LineDrawer.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/glExtra.h"
@@ -46,7 +45,7 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/Util.h"
 #include "System/TimeProfiler.h"
@@ -57,6 +56,25 @@
 #include <boost/cstdint.hpp>
 
 #define PLAY_SOUNDS 1
+
+CONFIG(std::string, MiniMapGeometry).defaultValue("2 2 200 200");
+CONFIG(bool, MiniMapFullProxy).defaultValue(true);
+CONFIG(int, MiniMapButtonSize).defaultValue(16);
+
+CONFIG(float, MiniMapUnitSize)
+	.defaultValue(2.5f)
+	.minimumValue(0.0f);
+
+CONFIG(float, MiniMapUnitExp).defaultValue(0.25f);
+CONFIG(float, MiniMapCursorScale).defaultValue(-0.5f);
+CONFIG(bool, MiniMapIcons).defaultValue(true);
+
+CONFIG(int, MiniMapDrawCommands)
+	.defaultValue(1)
+	.minimumValue(0);
+
+CONFIG(bool, MiniMapDrawProjectiles).defaultValue(true);
+CONFIG(bool, SimpleMiniMapColors).defaultValue(false);
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -90,23 +108,21 @@ CMiniMap::CMiniMap()
 		ypos = 0;
 	}
 	else {
-		const std::string geodef = "2 2 200 200";
-		const std::string geo = configHandler->GetString("MiniMapGeometry", geodef);
+		const std::string geo = configHandler->GetString("MiniMapGeometry");
 		ParseGeometry(geo);
 	}
 
-	fullProxy = !!configHandler->Get("MiniMapFullProxy", 1);
-	buttonSize = configHandler->Get("MiniMapButtonSize", 16);
+	fullProxy = configHandler->GetBool("MiniMapFullProxy");
+	buttonSize = configHandler->GetInt("MiniMapButtonSize");
 
-	unitBaseSize = configHandler->Get("MiniMapUnitSize", 2.5f);
-	unitBaseSize = std::max(0.0f, unitBaseSize);
-	unitExponent = configHandler->Get("MiniMapUnitExp", 0.25f);
+	unitBaseSize = configHandler->GetFloat("MiniMapUnitSize");
+	unitExponent = configHandler->GetFloat("MiniMapUnitExp");
 
-	cursorScale = configHandler->Get("MiniMapCursorScale", -0.5f);
-	useIcons = !!configHandler->Get("MiniMapIcons", 1);
-	drawCommands = std::max(0, configHandler->Get("MiniMapDrawCommands", 1));
-	drawProjectiles = !!configHandler->Get("MiniMapDrawProjectiles", 1);
-	simpleColors = !!configHandler->Get("SimpleMiniMapColors", 0);
+	cursorScale = configHandler->GetFloat("MiniMapCursorScale");
+	useIcons = configHandler->GetBool("MiniMapIcons");
+	drawCommands = configHandler->GetInt("MiniMapDrawCommands");
+	drawProjectiles = configHandler->GetBool("MiniMapDrawProjectiles");
+	simpleColors = configHandler->GetBool("SimpleMiniMapColors");
 
 	myColor[0]    = (unsigned char)(0.2f * 255);
 	myColor[1]    = (unsigned char)(0.9f * 255);
@@ -1170,50 +1186,57 @@ void CMiniMap::DrawForReal(bool use_geo)
 
 	glPopMatrix(); // revert to the 2d xform
 
-	// Draw the Camera Frustum
-	left.clear();
-	GetFrustumSide(cam2->bottom);
-	GetFrustumSide(cam2->top);
-	GetFrustumSide(cam2->rightside);
-	GetFrustumSide(cam2->leftside);
-
 	if (!minimap->maximized) {
-		// draw the camera lines
-		std::vector<fline>::iterator fli,fli2;
-		for(fli=left.begin();fli!=left.end();++fli){
-			for(fli2=left.begin();fli2!=left.end();++fli2){
-				if(fli==fli2)
+		// draw the camera frustum lines
+		cam2->GetFrustumSides(0.0f, 0.0f, 1.0f, true);
+
+		std::vector<CCamera::FrustumLine>& left = cam2->leftFrustumSides;
+		std::vector<CCamera::FrustumLine>::iterator fli, fli2;
+
+		for (fli = left.begin(); fli != left.end(); ++fli) {
+			for (fli2 = left.begin(); fli2 != left.end(); ++fli2) {
+				if (fli == fli2)
 					continue;
-				if(fli->dir - fli2->dir == 0)
+
+				const float dbase = fli->base - fli2->base;
+				const float ddir = fli->dir - fli2->dir;
+
+				if (ddir == 0.0f)
 					continue;
-				float colz = -(fli->base - fli2->base) / (fli->dir - fli2->dir);
-				if (fli2->left * (fli->dir - fli2->dir) > 0) {
-					if (colz > fli->minz && colz < 400096)
+
+				const float colz = -(dbase / ddir);
+
+				if (fli2->left * ddir > 0.0f) {
+					if (colz > fli->minz && colz < 400096.0f)
 						fli->minz = colz;
 				} else {
-					if (colz < fli->maxz && colz > -10000)
+					if (colz < fli->maxz && colz > -10000.0f)
 						fli->maxz = colz;
 				}
 			}
 		}
+
 		CVertexArray* va = GetVertexArray();
 		va->Initialize();
-		va->EnlargeArrays(left.size()*2, 0, VA_SIZE_2D0);
-		for(fli = left.begin(); fli != left.end(); ++fli) {
-			if(fli->minz < fli->maxz) {
+		va->EnlargeArrays(left.size() * 2, 0, VA_SIZE_2D0);
+
+		for (fli = left.begin(); fli != left.end(); ++fli) {
+			if (fli->minz < fli->maxz) {
 				va->AddVertex2dQ0(fli->base + (fli->dir * fli->minz), fli->minz);
 				va->AddVertex2dQ0(fli->base + (fli->dir * fli->maxz), fli->maxz);
 			}
 		}
+
 		glLineWidth(2.5f);
-		glColor4f(0,0,0,0.5f);
+		glColor4f(0, 0, 0, 0.5f);
 		va->DrawArray2d0(GL_LINES);
 
 		glLineWidth(1.5f);
-		glColor4f(1,1,1,0.75f);
+		glColor4f(1, 1, 1, 0.75f);
 		va->DrawArray2d0(GL_LINES);
 		glLineWidth(1.0f);
 	}
+
 
 	// selection box
 	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1471,29 +1494,6 @@ void CMiniMap::DrawButtons()
 	glEnd();
 }
 
-
-void CMiniMap::GetFrustumSide(float3& side)
-{
-	fline temp;
-	static const float3 up(0,1,0);
-
-	float3 b=up.cross(side); // get vector for collision between frustum and horizontal plane
-
-	if(fabs(b.z) < 0.0001f)  // prevent div by zero
-		b.z = 0.00011f;
-
-	temp.dir = b.x / b.z;      // set direction to that
-	float3 c = b.cross(side);  // get vector from camera to collision line
-	float3 colpoint = cam2->pos - c * (cam2->pos.y/c.y); // a point on the collision line
-
-	temp.base = colpoint.x - colpoint.z * temp.dir; //get intersection between colpoint and z axis
-	temp.left = -1;
-	if(b.z>0)
-		temp.left = 1;
-	temp.maxz = gs->mapy * SQUARE_SIZE;
-	temp.minz = 0;
-	left.push_back(temp);
-}
 
 
 inline const icon::CIconData* CMiniMap::GetUnitIcon(const CUnit* unit, float& scale) const

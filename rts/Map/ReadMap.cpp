@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include <cstdlib>
 #include "System/mmgr.h"
@@ -11,25 +10,23 @@
 #include "MetalMap.h"
 #include "SM3/SM3Map.h"
 #include "SMF/SMFReadMap.h"
+#include "lib/gml/gmlmut.h"
 #include "Game/LoadScreen.h"
 #include "System/bitops.h"
-#include "System/ConfigHandler.h"
+#include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/LogOutput.h"
-#include "System/LoadSave/LoadSaveInterface.h"
+#include "System/myMath.h"
+#include "System/TimeProfiler.h"
 #include "System/FileSystem/ArchiveScanner.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/FileSystem.h"
-#include "System/myMath.h"
-#include "System/TimeProfiler.h"
-
+#include "System/LoadSave/LoadSaveInterface.h"
+#include "System/Misc/RectangleOptimizer.h"
 
 #ifdef USE_UNSYNCED_HEIGHTMAP
 #include "Game/GlobalUnsynced.h"
 #include "Sim/Misc/LosHandler.h"
 #endif
-
-using namespace std;
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -49,18 +46,18 @@ CReadMap* CReadMap::LoadMap(const std::string& mapname)
 	if (mapname.length() < 3)
 		throw content_error("CReadMap::LoadMap(): mapname '" + mapname + "' too short");
 
-	const string extension = filesystem.GetExtension(mapname);
+	const std::string extension = FileSystem::GetExtension(mapname);
 
-	CReadMap* rm = 0;
+	CReadMap* rm = NULL;
 
 	if (extension == "sm3") {
-		rm = new CSm3ReadMap(mapname);
+		rm = new CSM3ReadMap(mapname);
 	} else {
-		rm = new CSmfReadMap(mapname);
+		rm = new CSMFReadMap(mapname);
 	}
 
 	if (!rm) {
-		return 0;
+		return NULL;
 	}
 
 	/* Read metal map */
@@ -255,6 +252,9 @@ void CReadMap::UpdateDraw() {
 
 	for (ushmuIt = ushmu.begin(); ushmuIt != ushmu.end(); ++ushmuIt) {
 		UpdateHeightMapUnsynced(*ushmuIt);
+
+		const Rectangle rect(ushmuIt->x1, ushmuIt->y1, ushmuIt->x2, ushmuIt->y2);
+		eventHandler.UnsyncedHeightMapUpdate(rect);
 	}
 }
 

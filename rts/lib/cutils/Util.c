@@ -1102,7 +1102,14 @@ bool util_getModuleFile(const char* moduleName, char* path, const unsigned int p
 			Dl_info moduleInfo;
 			const int ret = dladdr(moduleAddress, &moduleInfo);
 			if ((ret != 0) && (moduleInfo.dli_fname != NULL)) {
-				STRNCPY(path, moduleInfo.dli_fname, path_sizeMax-1);
+				STRNCPY(path, moduleInfo.dli_fname, path_sizeMax - 1);
+				char pathReal[PATH_MAX];
+				realpath(path, pathReal);
+				STRNCPY(path, pathReal, path_sizeMax - 1);
+				if (strlen(path) == (path_sizeMax - 1)) {
+					error = "Path is too long for supplied buffer";
+					path  = NULL;
+				}
 			} else {
 				error = dlerror();
 				if (error == NULL) {

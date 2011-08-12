@@ -1,9 +1,9 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
+#include "thread_backtrace.h"
+
 #include "System/mmgr.h"
 
-#include "thread_backtrace.h"
 #include <vector>
 #include <stdint.h>
 #include <string.h> // memcpy
@@ -29,7 +29,6 @@ static void internal_pthread_backtrace(pthread_t thread, void** buffer, size_t m
 	*depth = 0;
 
 	//! Get information about the stack (pos & size).
-	uint8_t* stacktop;
 	uint8_t* stackbot;
 	size_t stack_size; //! in bytes
 	size_t guard_size; //! in bytes
@@ -45,7 +44,6 @@ static void internal_pthread_backtrace(pthread_t thread, void** buffer, size_t m
 	pthread_attr_destroy(&attr);
 #endif
 	stack_size -= guard_size;
-	stacktop = stackbot + stack_size;
 
 	//! The thread is is still running!!!
 	//! So make a buffer copy of the stack, else it gets changed while we reading from it!

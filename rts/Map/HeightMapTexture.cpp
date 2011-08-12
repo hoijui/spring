@@ -1,13 +1,14 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "HeightMapTexture.h"
 
 #include "ReadMap.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 
+
+CONFIG(bool, HeightMapTexture).defaultValue(true);
 
 HeightMapTexture heightMapTexture;
 
@@ -35,7 +36,7 @@ void HeightMapTexture::Init()
 	}
 	init = true;
 
-	if (!configHandler->Get("HeightMapTexture", 1)) {
+	if (!configHandler->GetBool("HeightMapTexture")) {
 		return;
 	}
 
@@ -46,7 +47,7 @@ void HeightMapTexture::Init()
 
 	xSize = gs->mapxp1;
 	ySize = gs->mapyp1;
-	
+
 	glGenTextures(1, &texID);
 	glBindTexture(GL_TEXTURE_2D, texID);
 
@@ -56,12 +57,7 @@ void HeightMapTexture::Init()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-	const float* heightMap =
-		#ifdef USE_UNSYNCED_HEIGHTMAP
-		readmap->GetCornerHeightMapUnsynced();
-		#else
-		readmap->GetCornerHeightMapSynced();
-		#endif
+	const float* heightMap = readmap->GetCornerHeightMapUnsynced();
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE32F_ARB,
 		xSize, ySize, 0,
@@ -85,12 +81,7 @@ void HeightMapTexture::UpdateArea(int x0, int z0, int x1, int z1)
 	if (texID == 0) {
 		return;
 	}
-	const float* heightMap =
-		#ifdef USE_UNSYNCED_HEIGHTMAP
-		readmap->GetCornerHeightMapUnsynced();
-		#else
-		readmap->GetCornerHeightMapSynced();
-		#endif
+	const float* heightMap = readmap->GetCornerHeightMapUnsynced();
 
 	const int sizeX = x1 - x0 + 1;
 	const int sizeZ = z1 - z0 + 1;

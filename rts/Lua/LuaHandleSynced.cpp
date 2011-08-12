@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include <set>
 #include <cctype>
@@ -33,7 +32,7 @@
 #include "LuaVFS.h"
 #include "LuaZip.h"
 
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "Game/WordCompletion.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -47,7 +46,7 @@
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "System/EventHandler.h"
 #include "System/GlobalConfig.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/FileSystem.h"
 
@@ -87,11 +86,12 @@ CLuaHandleSynced::~CLuaHandleSynced()
 
 
 void CLuaHandleSynced::UpdateThreading() {
-	useDualStates = (globalConfig->GetMultiThreadLua() >= 3);
-	singleState = (globalConfig->GetMultiThreadLua() <= 2);
-	copyExportTable = (globalConfig->GetMultiThreadLua() == 3);
+	int mtl = globalConfig->GetMultiThreadLua();
+	useDualStates = (mtl == MT_LUA_DUAL_EXPORT || mtl == MT_LUA_DUAL || mtl == MT_LUA_DUAL_ALL);
+	singleState = (mtl == MT_LUA_NONE || mtl == MT_LUA_SINGLE || mtl == MT_LUA_SINGLE_BATCH);
+	copyExportTable = (mtl == MT_LUA_DUAL_EXPORT);
 	useEventBatch = false;
-	purgeRecvFromSyncedBatch = !singleState && (globalConfig->GetMultiThreadLua() <= 4);
+	purgeRecvFromSyncedBatch = !singleState && (mtl != MT_LUA_DUAL_ALL);
 }
 
 
@@ -150,7 +150,7 @@ void CLuaHandleSynced::Init(const string& syncedFile,
 		return;
 	}
 
-	CLuaHandle* origHandle = GetActiveHandle();
+	CLuaHandle* origHandle = CLuaHandle::GetActiveHandle();
 	SetActiveHandle(L);
 
 	SetAllowChanges(true, true);
@@ -395,7 +395,7 @@ bool CLuaHandleSynced::SyncifyRandomFuncs(lua_State *L)
 	// adjust the math.random() and math.randomseed() calls
 	lua_getglobal(L, "math");
 	if (!lua_istable(L, -1)) {
-		logOutput.Print("lua.math does not exist\n");
+		LOG_L(L_WARNING, "lua.math does not exist");
 		return false;
 	}
 
@@ -456,7 +456,7 @@ bool CLuaHandleSynced::SetupUnsyncedFunction(lua_State *L, const char* funcName)
 	unsyncedStr.GetRegistry(L);
 	if (!lua_istable(L, -1)) {
 		lua_settop(L, 0);
-//FIXME		logOutput.Print("ERROR: missing UNSYNCED table for %s", name.c_str());
+// FIXME		LOG_L(L_ERROR, "missing UNSYNCED table for %s", name.c_str());
 		return false;
 	}
 	const int unsynced = lua_gettop(L);
@@ -472,7 +472,8 @@ bool CLuaHandleSynced::SetupUnsyncedFunction(lua_State *L, const char* funcName)
 	}
 	else if (!lua_isfunction(L, -1)) {
 		lua_settop(L, 0);
-		logOutput.Print("%s in %s is not a function", funcName, GetName().c_str());
+		LOG_L(L_WARNING, "%s in %s is not a function",
+				funcName, GetName().c_str());
 		return false;
 	}
 	lua_pushvalue(L, unsynced);
@@ -535,8 +536,8 @@ bool CLuaHandleSynced::LoadUnsyncedCode(lua_State *L, const string& code, const 
 	int error;
 	error = luaL_loadbuffer(L, code.c_str(), code.size(), debug.c_str());
 	if (error != 0) {
-		logOutput.Print("error = %i, %s, %s\n",
-		                error, debug.c_str(), lua_tostring(L, -1));
+		LOG_L(L_ERROR, "error = %i, %s, %s",
+				error, debug.c_str(), lua_tostring(L, -1));
 		lua_settop(L, 0);
 		return false;
 	}
@@ -554,8 +555,8 @@ bool CLuaHandleSynced::LoadUnsyncedCode(lua_State *L, const string& code, const 
 	SetActiveHandle(orig);
 
 	if (error != 0) {
-		logOutput.Print("error = %i, %s, %s\n",
-		                error, debug.c_str(), lua_tostring(L, -1));
+		LOG_L(L_ERROR, "error = %i, %s, %s",
+				error, debug.c_str(), lua_tostring(L, -1));
 		lua_settop(L, 0);
 		return false;
 	}
@@ -662,7 +663,7 @@ bool CLuaHandleSynced::Initialize(const string& syncData)
 	}
 
 	int errfunc = SetupTraceback(L) ? -2 : 0;
-	logOutput.Print("Initialize errfunc=%d\n", errfunc);
+	LOG("Initialize errfunc=%d", errfunc);
 
 	lua_pushsstring(L, syncData);
 
@@ -1071,8 +1072,8 @@ int CLuaHandleSynced::CallAsTeam(lua_State* L)
 	SetActiveReadAllyTeam(prevReadAllyTeam);
 
 	if (error != 0) {
-		logOutput.Print("error = %i, %s, %s\n",
-		                error, "CallAsTeam", lua_tostring(L, -1));
+		LOG_L(L_ERROR, "error = %i, %s, %s",
+				error, "CallAsTeam", lua_tostring(L, -1));
 		lua_error(L);
 	}
 

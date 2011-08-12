@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 #include "WorldObject.h"
 
@@ -22,9 +21,9 @@ CWorldObject::~CWorldObject()
 {
 }
 
-void CWorldObject::SetRadius(float r)
+void CWorldObject::SetRadius(float radius)
 {
-	radius = r;
-	sqRadius = r * r;
-	drawRadius = r;
+	this->radius = radius;
+	sqRadius = radius * radius;
+	drawRadius = radius;
 }

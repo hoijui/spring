@@ -2,8 +2,6 @@
 
 #include "SoundBuffer.h"
 
-#include <ogg/ogg.h>
-#include <vorbis/vorbisfile.h>
 
 #include "SoundLog.h"
 #include "ALShared.h"
@@ -11,6 +9,9 @@
 #include "System/Platform/errorhandler.h"
 #include "System/Platform/byteorder.h"
 
+#include <vorbis/vorbisfile.h>
+#include <ogg/ogg.h>
+#include <cstring>
 
 namespace
 {
@@ -77,8 +78,8 @@ bool SoundBuffer::LoadWAV(const std::string& file, std::vector<boost::uint8_t> b
 		return false;
 	}
 
-#define hswabword(c) header->c = swabword(header->c)
-#define hswabdword(c) header->c = swabdword(header->c)
+#define hswabword(c) swabWordInPlace(header->c)
+#define hswabdword(c) swabDWordInPlace(header->c)
 	hswabword(format_tag);
 	hswabword(channels);
 	hswabword(BlockAlign);
@@ -171,9 +172,8 @@ bool SoundBuffer::LoadVorbis(const std::string& file, std::vector<boost::uint8_t
 	vorbisCallbacks.tell_func  = NULL;
 
 	OggVorbis_File oggStream;
-	int result = 0;
-	if ((result = ov_open_callbacks(&buf, &oggStream, NULL, 0, vorbisCallbacks)) < 0)
-	{
+	const int result = ov_open_callbacks(&buf, &oggStream, NULL, 0, vorbisCallbacks);
+	if (result < 0) {
 		LOG_L(L_WARNING, "Could not open Ogg stream (reason: %s).",
 				ErrorString(result).c_str());
 		return false;

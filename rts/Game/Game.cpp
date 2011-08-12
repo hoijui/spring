@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 
 #include <stdlib.h>
@@ -33,6 +32,7 @@
 #include "SelectedUnits.h"
 #include "PlayerHandler.h"
 #include "PlayerRoster.h"
+#include "PlayerRosterDrawer.h"
 #include "WaitCommandsAI.h"
 #include "WordCompletion.h"
 #include "OSCStatsSender.h"
@@ -44,16 +44,13 @@
 #include "UnsyncedActionExecutor.h"
 #include "UnsyncedGameCommands.h"
 #include "Game/UI/UnitTracker.h"
-#ifdef _WIN32
-#  include "winerror.h" // TODO someone on windows (MinGW? VS?) please check if this is required
-#endif
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/IAILibraryManager.h"
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "Rendering/WorldDrawer.h"
-#include "Rendering/Env/BaseSky.h"
+#include "Rendering/Env/ISky.h"
 #include "Rendering/Env/ITreeDrawer.h"
-#include "Rendering/Env/BaseWater.h"
+#include "Rendering/Env/IWater.h"
 #include "Rendering/Env/CubeMapHandler.h"
 #include "Rendering/DebugColVolDrawer.h"
 #include "Rendering/glFont.h"
@@ -62,7 +59,7 @@
 #include "Rendering/Screenshot.h"
 #include "Rendering/GroundDecalHandler.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/DebugDrawerAI.h"
 #include "Rendering/HUDDrawer.h"
 #include "Rendering/SmoothHeightMeshDrawer.h"
@@ -72,7 +69,7 @@
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/TeamHighlight.h"
 #include "Rendering/VerticalSync.h"
-#include "Rendering/Models/ModelDrawer.hpp"
+#include "Rendering/Models/ModelDrawer.h"
 #include "Rendering/Models/IModelParser.h"
 #include "Rendering/Textures/ColorMap.h"
 #include "Rendering/Textures/NamedTextures.h"
@@ -111,6 +108,7 @@
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
+#include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/Scripts/CobEngine.h"
 #include "Sim/Units/Scripts/UnitScriptEngine.h"
 #include "Sim/Units/UnitDefHandler.h"
@@ -136,10 +134,10 @@
 #include "UI/ShareBox.h"
 #include "UI/TooltipConsole.h"
 #include "UI/ProfileDrawer.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/FPUCheck.h"
+#include "System/Sync/FPUCheck.h"
 #include "System/GlobalConfig.h"
 #include "System/NetProtocol.h"
 #include "System/SpringApp.h"
@@ -168,6 +166,19 @@
 #include "lib/gml/gmlsrv.h"
 extern gmlClientServer<void, int,CUnit*> *gmlProcessor;
 #endif
+
+
+CONFIG(bool, WindowedEdgeMove).defaultValue(true);
+CONFIG(bool, FullscreenEdgeMove).defaultValue(true);
+CONFIG(bool, ShowFPS).defaultValue(false);
+CONFIG(bool, ShowClock).defaultValue(true);
+CONFIG(bool, ShowSpeed).defaultValue(false);
+CONFIG(bool, ShowMTInfo).defaultValue(true);
+CONFIG(int, ShowPlayerInfo).defaultValue(1);
+CONFIG(float, GuiOpacity).defaultValue(0.8f);
+CONFIG(std::string, InputTextGeo).defaultValue("");
+CONFIG(bool, LuaModUICtrl).defaultValue(true);
+
 
 CGame* game = NULL;
 
@@ -280,22 +291,22 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 	configHandler->Set("Headless", isHeadless ? 1 : 0, true);
 
 	//FIXME move to MouseHandler!
-	windowedEdgeMove   = !!configHandler->Get("WindowedEdgeMove",   1);
-	fullscreenEdgeMove = !!configHandler->Get("FullscreenEdgeMove", 1);
+	windowedEdgeMove   = configHandler->GetBool("WindowedEdgeMove");
+	fullscreenEdgeMove = configHandler->GetBool("FullscreenEdgeMove");
 
-	showFPS   = !!configHandler->Get("ShowFPS",   0);
-	showClock = !!configHandler->Get("ShowClock", 1);
-	showSpeed = !!configHandler->Get("ShowSpeed", 0);
-	showMTInfo = !!configHandler->Get("ShowMTInfo", 1);
+	showFPS   = configHandler->GetBool("ShowFPS");
+	showClock = configHandler->GetBool("ShowClock");
+	showSpeed = configHandler->GetBool("ShowSpeed");
+	showMTInfo = configHandler->GetBool("ShowMTInfo");
 	mtInfoCtrl = 0;
 
-	speedControl = configHandler->Get("SpeedControl", 0);
+	speedControl = configHandler->GetInt("SpeedControl");
 
-	playerRoster.SetSortTypeByCode((PlayerRoster::SortType)configHandler->Get("ShowPlayerInfo", 1));
+	playerRoster.SetSortTypeByCode((PlayerRoster::SortType)configHandler->GetInt("ShowPlayerInfo"));
 
-	CInputReceiver::guiAlpha = configHandler->Get("GuiOpacity",  0.8f);
+	CInputReceiver::guiAlpha = configHandler->GetFloat("GuiOpacity");
 
-	const string inputTextGeo = configHandler->GetString("InputTextGeo", "");
+	const string inputTextGeo = configHandler->GetString("InputTextGeo");
 	ParseInputTextGeometry("default");
 	ParseInputTextGeometry(inputTextGeo);
 
@@ -303,7 +314,7 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 	writingPos = 0;
 	userPrompt = "";
 
-	CLuaHandle::SetModUICtrl(!!configHandler->Get("LuaModUICtrl", 1));
+	CLuaHandle::SetModUICtrl(configHandler->GetBool("LuaModUICtrl"));
 
 	modInfo.Init(modName.c_str());
 
@@ -311,7 +322,8 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 		mapInfo = new CMapInfo(gameSetup->MapFile(), gameSetup->mapName);
 	}
 
-	showMTInfo = (showMTInfo && globalConfig->GetMultiThreadLua() <= 3) ? globalConfig->GetMultiThreadLua() : 0;
+	int mtl = globalConfig->GetMultiThreadLua();
+	showMTInfo = (showMTInfo && (mtl != MT_LUA_DUAL && mtl != MT_LUA_DUAL_ALL)) ? mtl : MT_LUA_NONE;
 
 	if (!sideParser.Load()) {
 		throw content_error(sideParser.GetErrorLog());
@@ -324,11 +336,18 @@ CGame::~CGame()
 	tracefile << "[" << __FUNCTION__ << "]";
 #endif
 
+	// Kill all teams that are still alive, in
+	// case the game did not do so through Lua.
+	for (int t = 0; t < teamHandler->ActiveTeams(); ++t) {
+		teamHandler->Team(t)->Died(false);
+	} 
+
+	CLoadScreen::DeleteInstance(); // make sure to halt loading, otherwise crash :)
+
 	// TODO move these to the end of this dtor, once all action-executors are registered by their respective engine sub-parts
 	UnsyncedGameCommands::DestroyInstance();
 	SyncedGameCommands::DestroyInstance();
 
-	CLoadScreen::DeleteInstance();
 	IVideoCapturing::FreeInstance();
 	ISound::Shutdown();
 
@@ -354,6 +373,8 @@ CGame::~CGame()
 	SafeDelete(selectionKeys); // CSelectionKeyHandler*
 	SafeDelete(luaInputReceiver);
 	SafeDelete(mouse); // CMouseHandler*
+	SafeDelete(inMapDrawerModel);
+	SafeDelete(inMapDrawer);
 
 	SafeDelete(water);
 	SafeDelete(sky);
@@ -579,7 +600,7 @@ void CGame::SetupRenderingParams()
 	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0);
 	glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 0);
 
-	IBaseSky::SetFog();
+	ISky::SetupFog();
 
 	glClearColor(mapInfo->atmosphere.fogColor[0], mapInfo->atmosphere.fogColor[1], mapInfo->atmosphere.fogColor[2], 0.0f);
 }
@@ -691,17 +712,6 @@ void CGame::LoadFinalize()
 	lastCpuUsageTime = gu->gameTime;
 	updateDeltaSeconds = 0.0f;
 
-#ifdef TRACE_SYNC
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-	tracefile.NewInterval();
-#endif
-
 	finishedLoading = true;
 }
 
@@ -722,7 +732,7 @@ void CGame::ResizeEvent()
 	}
 
 	// reload water renderer (it may depend on screen resolution)
-	water = CBaseWater::GetWater(water, water->GetID());
+	water = IWater::GetWater(water, water->GetID());
 
 	eventHandler.ViewResize();
 }
@@ -746,7 +756,7 @@ int CGame::KeyPressed(unsigned short key, bool isRepeat)
 			string cmd = "bind";
 			cmd += " " + ks.GetString(false);
 			cmd += " " + hotBinding;
-			keyBindings->Command(cmd);
+			keyBindings->ExecuteCommand(cmd);
 			hotBinding.clear();
 			logOutput.Print("%s", cmd.c_str());
 		}
@@ -849,7 +859,7 @@ bool CGame::Update()
 		luaExportSize = backupSize;
 		backupSize = 0;
 		luaLockTime = (int)GML_LOCK_TIME();
-		float amount = (showMTInfo <= 2) ? (float)luaLockTime / 10.0f : (float)luaExportSize / 1000.0f;
+		float amount = (showMTInfo == MT_LUA_DUAL_EXPORT) ? (float)luaExportSize / 1000.0f : (float)luaLockTime / 10.0f;
 		if (amount >= 0.1f) {
 			if((mtInfoCtrl = std::min(mtInfoCtrl + 1, 5)) == 3) mtInfoCtrl = 5;
 		}
@@ -860,11 +870,6 @@ bool CGame::Update()
 			leastQue = 10000;
 			timeLeft = 0.0f;
 		}
-
-#ifdef TRACE_SYNC
-		tracefile.DeleteInterval();
-		tracefile.NewInterval();
-#endif
 	}
 
 	if (!skipping)
@@ -1203,96 +1208,19 @@ bool CGame::Draw() {
 		}
 
 #if defined(USE_GML) && GML_ENABLE_SIM
-		if (showMTInfo == 1 || showMTInfo == 2) {
-			float lockPercent = (float)luaLockTime / 10.0f;
-			if (mtInfoCtrl >= 3) {
-				char buf[40];
-				SNPRINTF(buf, sizeof(buf), "LUA-SYNC-CPU(MT): %2.1f%%", lockPercent);
-				float4 warncol(lockPercent >= 10.0f && (currentTime & 128) ?
-					0.5f : std::max(0.0f, std::min(lockPercent / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - lockPercent / 5.0f, 1.0f)), 0.0f, 1.0f);
-				smallFont->SetColors(&warncol, NULL);
-				smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
-			}
-		}
-		else if (showMTInfo == 3) {
-			float ek = (float)luaExportSize / 1000.0f;
-			if (mtInfoCtrl >= 3) {
-				char buf[40];
-				SNPRINTF(buf, sizeof(buf), "LUA-EXP-SIZE(MT): %2.1fK", ek);
-				float4 warncol(ek >= 10.0f && (currentTime & 128) ?
-					0.5f : std::max(0.0f, std::min(ek / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - ek / 5.0f, 1.0f)), 0.0f, 1.0f);
-				smallFont->SetColors(&warncol, NULL);
-				smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
-			}
+		if (mtInfoCtrl >= 3 && (showMTInfo == MT_LUA_SINGLE || showMTInfo == MT_LUA_SINGLE_BATCH || showMTInfo == MT_LUA_DUAL_EXPORT)) {
+			float pval = (showMTInfo == MT_LUA_DUAL_EXPORT) ? (float)luaExportSize / 1000.0f : (float)luaLockTime / 10.0f;
+			const char *pstr = (showMTInfo == MT_LUA_DUAL_EXPORT) ? "LUA-EXP-SIZE(MT): %2.1fK" : "LUA-SYNC-CPU(MT): %2.1f%%";
+			char buf[40];
+			SNPRINTF(buf, sizeof(buf), pstr, pval);
+			float4 warncol(pval >= 10.0f && (currentTime & 128) ?
+				0.5f : std::max(0.0f, std::min(pval / 5.0f, 1.0f)), std::max(0.0f, std::min(2.0f - pval / 5.0f, 1.0f)), 0.0f, 1.0f);
+			smallFont->SetColors(&warncol, NULL);
+			smallFont->glPrint(0.99f, 0.88f, 1.0f, font_options, buf);
 		}
 #endif
 
-		if (playerRoster.GetSortType() != PlayerRoster::Disabled) {
-			static std::string chart; chart = "";
-			static std::string prefix;
-			char buf[128];
-
-			int count;
-			const std::vector<int>& indices = playerRoster.GetIndices(&count, true);
-
-			SNPRINTF(buf, sizeof(buf), "\xff%c%c%c \tNu\tm   \tUser name   \tCPU  \tPing", 255, 255, 63);
-			chart += buf;
-
-			for (int a = 0; a < count; ++a) {
-				const CPlayer* p = playerHandler->Player(indices[a]);
-				unsigned char color[3] = {255, 255, 255};
-				unsigned char allycolor[3] = {255, 255, 255};
-				if (p->ping != PATHING_FLAG || gs->frameNum != 0) {
-					if (p->spectator)
-						prefix = "S";
-					else {
-						const unsigned char* bColor = teamHandler->Team(p->team)->color;
-						color[0] = std::max((unsigned char)1, bColor[0]);
-						color[1] = std::max((unsigned char)1, bColor[1]);
-						color[2] = std::max((unsigned char)1, bColor[2]);
-						if (gu->myAllyTeam == teamHandler->AllyTeam(p->team)) {
-							allycolor[0] = allycolor[2] = 1;
-							prefix = "A";	// same AllyTeam
-						}
-						else if (teamHandler->AlliedTeams(gu->myTeam, p->team)) {
-							allycolor[0] = allycolor[1] = 1;
-							prefix = "E+";	// different AllyTeams, but are allied
-						}
-						else {
-							allycolor[1] = allycolor[2] = 1;
-							prefix = "E";	//no alliance at all
-						}
-					}
-					float4 cpucolor(!p->spectator && p->cpuUsage > 0.75f && gs->speedFactor < gs->userSpeedFactor * 0.99f &&
-						(currentTime & 128) ? 0.5f : std::max(0.01f, std::min(1.0f, p->cpuUsage * 2.0f / 0.75f)),
-							std::min(1.0f, std::max(0.01f, (1.0f - p->cpuUsage / 0.75f) * 2.0f)), 0.01f, 1.0f);
-					int ping = (int)(((p->ping) * 1000) / (GAME_SPEED * gs->speedFactor));
-					float4 pingcolor(!p->spectator && globalConfig->reconnectTimeout > 0 && ping > 1000 * globalConfig->reconnectTimeout &&
-							(currentTime & 128) ? 0.5f : std::max(0.01f, std::min(1.0f, (ping - 250) / 375.0f)),
-							std::min(1.0f, std::max(0.01f, (1000 - ping) / 375.0f)), 0.01f, 1.0f);
-					SNPRINTF(buf, sizeof(buf), "\xff%c%c%c%c \t%i \t%s   \t\xff%c%c%c%s   \t\xff%c%c%c%.0f%%  \t\xff%c%c%c%dms",
-							allycolor[0], allycolor[1], allycolor[2], (gu->spectating && !p->spectator && (gu->myTeam == p->team)) ? '-' : ' ',
-							p->team, prefix.c_str(), color[0], color[1], color[2], p->name.c_str(),
-							(unsigned char)(cpucolor[0] * 255.0f), (unsigned char)(cpucolor[1] * 255.0f), (unsigned char)(cpucolor[2] * 255.0f),
-							p->cpuUsage * 100.0f,
-							(unsigned char)(pingcolor[0] * 255.0f), (unsigned char)(pingcolor[1] * 255.0f), (unsigned char)(pingcolor[2] * 255.0f),
-							ping);
-				}
-				else {
-					prefix = "";
-					SNPRINTF(buf, sizeof(buf), "\xff%c%c%c%c \t%i \t%s   \t\xff%c%c%c%s   \t%s-%d  \t%d",
-							allycolor[0], allycolor[1], allycolor[2], (gu->spectating && !p->spectator && (gu->myTeam == p->team)) ? '-' : ' ',
-							p->team, prefix.c_str(), color[0], color[1], color[2], p->name.c_str(), (((int)p->cpuUsage) & 0x1)?"PC":"BO",
-							((int)p->cpuUsage) & 0xFE, (((int)p->cpuUsage)>>8)*1000);
-				}
-				chart += "\n";
-				chart += buf;
-			}
-
-			font_options |= FONT_BOTTOM;
-			smallFont->SetColors();
-			smallFont->glPrintTable(1.0f - 5 * globalRendering->pixelX, 0.00f + 5 * globalRendering->pixelY, 1.0f, font_options, chart);
-		}
+		CPlayerRosterDrawer::Draw();
 
 		smallFont->End();
 	}
@@ -1441,28 +1369,21 @@ void CGame::StartPlaying()
 	}
 
 	eventHandler.GameStart();
+	
+	// This is a hack!!!
+	// Before 0.83 Lua had its GameFrame callin before gs->frameNum got updated,
+	// what caused it to have a `gameframe0` while the engine started with 1.
+	// This became a problem when LUS was added, and so we were forced to switch
+	// Lua to the 1-indexed system, too.
+	// To keep backward compability Lua now gets 2 GameFrames at start (0 & 1)
+	// and both share the same SimFrame!
+	eventHandler.GameFrame(0);
+
 	net->Send(CBaseNetProtocol::Get().SendSpeedControl(gu->myPlayerNum, speedControl));
+
 #if defined(USE_GML) && GML_ENABLE_SIM
-	if (showMTInfo >= 1) {
-		logOutput.Print("\n************** SPRING MULTITHREADING VERSION IMPORTANT NOTICE **************");
-		logOutput.Print("Engine or game settings have forced Spring MT to use compatibility mode %d", showMTInfo);
-		if(showMTInfo == 1) {
-			CKeyBindings::HotkeyList lslist = keyBindings->GetHotkeys("luaui selector");
-			std::string lskey = lslist.empty() ? "<none>" : lslist.front();
-			logOutput.Print("If your game uses lua based rendering, it may run very slow with Spring MT");
-			logOutput.Print("A high LUA-SYNC-CPU(MT) value in the upper right corner could indicate a problem");
-			logOutput.Print("Consider changing the engine setting 'MultiThreadLua' to 2 to improve performance,");
-			logOutput.Print("or try to disable LuaShaders and all rendering widgets (press " + lskey + ")\n");
-		}
-		else if(showMTInfo == 2) {
-			logOutput.Print("If your game uses lua gadget based rendering, it may run very slow with Spring MT");
-			logOutput.Print("A high LUA-SYNC-CPU(MT) value in the upper right corner could indicate a problem\n");
-		}
-		else if(showMTInfo == 3) {
-			logOutput.Print("If your game uses lua gadgets that export data, it may run very slow with Spring MT");
-			logOutput.Print("A high LUA-EXP-SIZE(MT) value in the upper right corner could indicate a problem\n");
-		}
-	}
+	extern void PrintMTStartupMessage(int showMTInfo);
+	PrintMTStartupMessage(showMTInfo);
 #endif
 }
 
@@ -1474,8 +1395,9 @@ void CGame::SimFrame() {
 	good_fpu_control_registers("CGame::SimFrame");
 	lastFrameTime = SDL_GetTicks();
 
+	gs->frameNum++;
+
 #ifdef TRACE_SYNC
-	//uh->CreateChecksum();
 	tracefile << "New frame:" << gs->frameNum << " " << gs->GetRandSeed() << "\n";
 #endif
 
@@ -1484,12 +1406,7 @@ void CGame::SimFrame() {
 		m_validateAllAllocUnits();
 #endif
 
-	// Important: gs->frameNum must be updated *before* GameFrame is called,
-	// or any call-outs called by Lua will see a stale gs->frameNum.
-	// (e.g. effective TTL of CEGs emitted in GameFrame will be reduced...)
-	// It must still be passed the old frameNum because Lua may depend on it.
-	// (e.g. initialization in frame 0...)
-	eventHandler.GameFrame(gs->frameNum++);
+	eventHandler.GameFrame(gs->frameNum);
 
 	if (!skipping) {
 		infoConsole->Update();
@@ -1668,7 +1585,6 @@ void CGame::DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod
 
 	const int oldMinFrameNum = gMinFrameNum;
 	const int oldMaxFrameNum = gMaxFrameNum;
-	const int oldFramePeriod = gFramePeriod;
 
 	if (!gs->cheatEnabled) { return; }
 	// check if the range is valid
@@ -1726,6 +1642,8 @@ void CGame::DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod
 	#define DUMP_UNIT_DATA
 	#define DUMP_UNIT_PIECE_DATA
 	#define DUMP_UNIT_WEAPON_DATA
+	#define DUMP_UNIT_COMMANDAI_DATA
+	#define DUMP_UNIT_MOVETYPE_DATA
 	#define DUMP_FEATURE_DATA
 	#define DUMP_PROJECTILE_DATA
 	#define DUMP_TEAM_DATA
@@ -1790,6 +1708,41 @@ void CGame::DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod
 			file << "\t\t\t\trelWeaponMuzzlePos: <" << rmp.x << ", " << rmp.y << ", " << rmp.z << ">\n";
 			file << "\n";
 		}
+		#endif
+
+		#ifdef DUMP_UNIT_COMMANDAI_DATA
+		const CCommandAI* cai = u->commandAI;
+		const CCommandQueue& cq = cai->commandQue;
+
+		file << "\t\t\tcommandAI:\n";
+		file << "\t\t\t\torderTarget->id: " << ((cai->orderTarget != NULL)? cai->orderTarget->id: -1) << "\n";
+		file << "\t\t\t\tcommandQue.size(): " << cq.size() << "\n";
+
+		for (CCommandQueue::const_iterator cit = cq.begin(); cit != cq.end(); ++cit) {
+			const Command& c = *cit;
+
+			file << "\t\t\t\t\tcommandID: " << c.GetID() << "\n";
+			file << "\t\t\t\t\ttag: " << c.tag << ", options: " << c.options << "\n";
+			file << "\t\t\t\t\tparams: " << c.GetParamsCount() << "\n";
+
+			for (unsigned int n = 0; n < c.GetParamsCount(); n++) {
+				file << "\t\t\t\t\t\t" << c.GetParam(n) << "\n";
+			}
+		}
+		#endif
+
+		#ifdef DUMP_UNIT_MOVETYPE_DATA
+		const AMoveType* amt = u->moveType;
+		const float3& goalPos = amt->goalPos;
+		const float3& oldUpdatePos = amt->oldPos;
+		const float3& oldSlowUpPos = amt->oldSlowUpdatePos;
+
+		file << "\t\t\tmoveType:\n";
+		file << "\t\t\t\tgoalPos: <" << goalPos.x << ", " << goalPos.y << ", " << goalPos.z << ">\n";
+		file << "\t\t\t\toldUpdatePos: <" << oldUpdatePos.x << ", " << oldUpdatePos.y << ", " << oldUpdatePos.z << ">\n";
+		file << "\t\t\t\toldSlowUpPos: <" << oldSlowUpPos.x << ", " << oldSlowUpPos.y << ", " << oldSlowUpPos.z << ">\n";
+		file << "\t\t\t\tmaxSpeed: " << amt->maxSpeed << ", maxWantedSpeed: " << amt->maxWantedSpeed << "\n";
+		file << "\t\t\t\tpadStatus: " << amt->padStatus << ", progressState: " << amt->progressState << "\n";
 		#endif
 	}
 	#endif
@@ -2259,8 +2212,8 @@ bool CGame::HasLag() const
 
 void CGame::SaveGame(const std::string& filename, bool overwrite)
 {
-	if (filesystem.CreateDirectory("Saves")) {
-		if (overwrite || !filesystem.FileExists(filename)) {
+	if (FileSystem::CreateDirectory("Saves")) {
+		if (overwrite || !FileSystem::FileExists(filename)) {
 			logOutput.Print("Saving game to %s\n", filename.c_str());
 			ILoadSaveHandler* ls = ILoadSaveHandler::Create();
 			ls->mapName = gameSetup->mapName;

@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
+#include "System/Platform/Win/win32.h"
 #include "System/mmgr.h"
 #include "Sound.h"
 
@@ -19,7 +19,7 @@
 #include "EFXPresets.h"
 
 #include "System/TimeProfiler.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/FileSystem/FileHandler.h"
 #include "Lua/LuaParser.h"
@@ -30,6 +30,16 @@
 #include "System/Platform/Watchdog.h"
 
 #include "System/float3.h"
+
+CONFIG(int, MaxSounds).defaultValue(128);
+CONFIG(bool, PitchAdjust).defaultValue(false);
+CONFIG(int, snd_volmaster).defaultValue(60);
+CONFIG(int, snd_volgeneral).defaultValue(100);
+CONFIG(int, snd_volunitreply).defaultValue(100);
+CONFIG(int, snd_volbattle).defaultValue(100);
+CONFIG(int, snd_volui).defaultValue(100);
+CONFIG(int, snd_volmusic).defaultValue(100);
+CONFIG(std::string, snd_device);
 
 boost::recursive_mutex soundMutex;
 
@@ -43,16 +53,16 @@ CSound::CSound()
 	boost::recursive_mutex::scoped_lock lck(soundMutex);
 	mute = false;
 	appIsIconified = false;
-	int maxSounds = configHandler->Get("MaxSounds", 128);
-	pitchAdjust = configHandler->Get("PitchAdjust", false);
+	int maxSounds = configHandler->GetInt("MaxSounds");
+	pitchAdjust = configHandler->GetBool("PitchAdjust");
 
-	masterVolume = configHandler->Get("snd_volmaster", 60) * 0.01f;
-	Channels::General.SetVolume(configHandler->Get("snd_volgeneral", 100 ) * 0.01f);
-	Channels::UnitReply.SetVolume(configHandler->Get("snd_volunitreply", 100 ) * 0.01f);
+	masterVolume = configHandler->GetInt("snd_volmaster") * 0.01f;
+	Channels::General.SetVolume(configHandler->GetInt("snd_volgeneral") * 0.01f);
+	Channels::UnitReply.SetVolume(configHandler->GetInt("snd_volunitreply") * 0.01f);
 	Channels::UnitReply.SetMaxEmmits(1);
-	Channels::Battle.SetVolume(configHandler->Get("snd_volbattle", 100 ) * 0.01f);
-	Channels::UserInterface.SetVolume(configHandler->Get("snd_volui", 100 ) * 0.01f);
-	Channels::BGMusic.SetVolume(configHandler->Get("snd_volmusic", 100 ) * 0.01f);
+	Channels::Battle.SetVolume(configHandler->GetInt("snd_volbattle") * 0.01f);
+	Channels::UserInterface.SetVolume(configHandler->GetInt("snd_volui") * 0.01f);
+	Channels::BGMusic.SetVolume(configHandler->GetInt("snd_volmusic") * 0.01f);
 
 	SoundBuffer::Initialise();
 	soundItemDef temp;
@@ -286,7 +296,7 @@ void CSound::StartThread(int maxSounds)
 		// so we do it like this ...
 		if (configHandler->IsSet("snd_device"))
 		{
-			configDeviceName = configHandler->GetString("snd_device", "YOU_SHOULD_NOT_EVER_SEE_THIS");
+			configDeviceName = configHandler->GetString("snd_device");
 			deviceName = configDeviceName.c_str();
 		}
 
@@ -421,31 +431,35 @@ void CSound::UpdateListener(const float3& campos, const float3& camdir, const fl
 	if (sources.empty())
 		return;
 
-	const float3 prevPos = myPos;
+//	const float3 prevPos = myPos;
 	myPos = campos;
 	float3 myPosInMeters = myPos * GetElmoInMeters();
 	alListener3f(AL_POSITION, myPosInMeters.x, myPosInMeters.y, myPosInMeters.z);
 
-	//! reduce the rolloff when the camera is height above the ground (so we still hear something in tab mode or far zoom)
-	const float camHeight = std::max(0.f, campos.y - ground->GetHeightAboveWater(campos.x, campos.z));
-	const float newmod = std::min(600.f / camHeight, 1.f);
-	CSoundSource::SetHeightRolloffModifer(newmod);
-	efx->SetHeightRolloffModifer(newmod);
+	//! reduce the rolloff when the camera is high above the ground (so we still hear something in tab mode or far zoom)
+	//! for altitudes up to and including 600 elmos, the rolloff is always clamped to 1
+	const float camHeight = std::max(1.0f, campos.y - ground->GetHeightAboveWater(campos.x, campos.z));
+	const float newMod = std::min(600.0f / camHeight, 1.0f);
+
+	CSoundSource::SetHeightRolloffModifer(newMod);
+	efx->SetHeightRolloffModifer(newMod);
 
 	//! Result were bad with listener related doppler effects.
-	//! The user experience the camera/listener not as world interacting object.
+	//! The user experiences the camera/listener not as a world-interacting object.
 	//! So changing sounds on camera movements were irritating, esp. because zooming with the mouse wheel
 	//! often is faster than the speed of sound, causing very high frequencies.
 	//! Note: soundsource related doppler effects are not deactivated by this! Flying cannon shoots still change their frequencies.
 	//! Note2: by not updating the listener velocity soundsource related velocities are calculated wrong,
 	//! so even if the camera is moving with a cannon shoot the frequency gets changed.
-	/*const float3 velocity = (myPos - prevPos) / (lastFrameTime);
+	/*
+	const float3 velocity = (myPos - prevPos) / (lastFrameTime);
 	float3 velocityAvg = velocity * 0.6f + prevVelocity * 0.4f;
 	prevVelocity = velocityAvg;
 	velocityAvg *= GetElmoInMeters();
 	velocityAvg.y *= 0.001f; //! scale vertical axis separatly (zoom with mousewheel is faster than speed of sound!)
 	velocityAvg *= 0.15f;
-	alListener3f(AL_VELOCITY, velocityAvg.x, velocityAvg.y, velocityAvg.z);*/
+	alListener3f(AL_VELOCITY, velocityAvg.x, velocityAvg.y, velocityAvg.z);
+	*/
 
 	ALfloat ListenerOri[] = {camdir.x, camdir.y, camdir.z, camup.x, camup.y, camup.z};
 	alListenerfv(AL_ORIENTATION, ListenerOri);
@@ -526,7 +540,7 @@ bool CSound::LoadSoundDefs(const std::string& fileName)
 size_t CSound::LoadSoundBuffer(const std::string& path, bool hardFail)
 {
 	const size_t id = SoundBuffer::GetId(path);
-	
+
 	if (id > 0) {
 		return id; // file is loaded already
 	} else {

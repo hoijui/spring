@@ -1,8 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <set>
 #include <list>
+#include <map>
 #include <cctype>
 
 #include "System/mmgr.h"
@@ -67,13 +67,15 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "System/myMath.h"
-#include "System/LogOutput.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/VFSHandler.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/Util.h"
 
-using namespace std;
+using std::min;
+using std::max;
+using std::map;
+using std::set;
 
 static const LuaHashString hs_n("n");
 
@@ -253,6 +255,7 @@ bool LuaSyncedRead::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(GetFeatureResources);
 	REGISTER_LUA_CFUNC(GetFeatureNoSelect);
 	REGISTER_LUA_CFUNC(GetFeatureResurrect);
+	REGISTER_LUA_CFUNC(GetFeatureCollisionVolumeData);
 
 	REGISTER_LUA_CFUNC(GetProjectilePosition);
 	REGISTER_LUA_CFUNC(GetProjectileVelocity);
@@ -418,6 +421,25 @@ static inline bool IsProjectileVisible(const ProjectileMapPair& pp)
 
 /******************************************************************************/
 /******************************************************************************/
+
+
+static int PushCollisionVolumeData(lua_State* L, const CollisionVolume* vol) {
+	lua_pushnumber(L, vol->GetScales().x);
+	lua_pushnumber(L, vol->GetScales().y);
+	lua_pushnumber(L, vol->GetScales().z);
+	lua_pushnumber(L, vol->GetOffsets().x);
+	lua_pushnumber(L, vol->GetOffsets().y);
+	lua_pushnumber(L, vol->GetOffsets().z);
+	lua_pushnumber(L, vol->GetVolumeType());
+	lua_pushnumber(L, vol->GetTestType());
+	lua_pushnumber(L, vol->GetPrimaryAxis());
+	lua_pushboolean(L, vol->IsDisabled());
+	return 10;
+}
+
+
+/******************************************************************************/
+/******************************************************************************/
 //
 //  Parsing helpers
 //
@@ -489,15 +511,7 @@ static inline CUnit* ParseTypedUnit(lua_State* L, const char* caller, int index)
 
 static CProjectile* ParseProjectile(lua_State* L, const char* caller, int index)
 {
-	const int args = lua_gettop(L); // number of arguments
-	if ((args < 1) || !lua_isnumber(L, index)) {
-		if (caller != NULL) {
-			luaL_error(L, "Incorrect arguments to %s(projectileID)", caller);
-		} else {
-			return NULL;
-		}
-	}
-	const int proID = (int) lua_tonumber(L, index);
+	const int proID = luaL_checkint(L, index);
 	ProjectileMap::iterator it = ph->syncedProjectileIDs.find(proID);
 
 	if (it == ph->syncedProjectileIDs.end()) {
@@ -1247,7 +1261,7 @@ int LuaSyncedRead::GetTeamStatsHistory(lua_State* L)
 		return 1;
 	}
 
-	const list<CTeam::Statistics>& teamStats = team->statHistory;
+	const std::list<CTeam::Statistics>& teamStats = team->statHistory;
 	std::list<CTeam::Statistics>::const_iterator it = teamStats.begin();
 	const int statCount = teamStats.size();
 
@@ -2937,7 +2951,7 @@ int LuaSyncedRead::GetUnitIsTransporting(lua_State* L)
 		return 0;
 	}
 	lua_newtable(L);
-	list<CTransportUnit::TransportedUnit>::const_iterator it;
+	std::list<CTransportUnit::TransportedUnit>::const_iterator it;
 	int count = 0;
 	for (it = tu->GetTransportedUnits().begin(); it != tu->GetTransportedUnits().end(); ++it) {
 		const CUnit* carried = it->unit;
@@ -3087,11 +3101,7 @@ int LuaSyncedRead::GetUnitWeaponVectors(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	const int args = lua_gettop(L); // number of arguments
-	if ((args < 2) || !lua_isnumber(L, 2)) {
-		luaL_error(L, "Incorrect arguments to GetUnitWeaponVectors(unitID,weaponNum)");
-	}
-	const int weaponNum = (int)lua_tonumber(L, 2);
+	const int weaponNum = luaL_checkint(L, 2);
 	if ((weaponNum < 0) || ((size_t)weaponNum >= unit->weapons.size())) {
 		return 0;
 	}
@@ -3230,20 +3240,7 @@ int LuaSyncedRead::GetUnitCollisionVolumeData(lua_State* L)
 		return 0;
 	}
 
-	const CollisionVolume* vol = unit->collisionVolume;
-
-	lua_pushnumber(L, vol->GetScales().x);
-	lua_pushnumber(L, vol->GetScales().y);
-	lua_pushnumber(L, vol->GetScales().z);
-	lua_pushnumber(L, vol->GetOffsets().x);
-	lua_pushnumber(L, vol->GetOffsets().y);
-	lua_pushnumber(L, vol->GetOffsets().z);
-	lua_pushnumber(L, vol->GetVolumeType());
-	lua_pushnumber(L, vol->GetTestType());
-	lua_pushnumber(L, vol->GetPrimaryAxis());
-	lua_pushboolean(L, vol->IsDisabled());
-
-	return 10;
+	return (PushCollisionVolumeData(L, unit->collisionVolume));
 }
 
 int LuaSyncedRead::GetUnitPieceCollisionVolumeData(lua_State* L)
@@ -3263,18 +3260,7 @@ int LuaSyncedRead::GetUnitPieceCollisionVolumeData(lua_State* L)
 	const LocalModelPiece* lmp = lm->pieces[pieceIndex];
 	const CollisionVolume* vol = lmp->GetCollisionVolume();
 
-	lua_pushnumber(L, vol->GetScales().x);
-	lua_pushnumber(L, vol->GetScales().y);
-	lua_pushnumber(L, vol->GetScales().z);
-	lua_pushnumber(L, vol->GetOffsets().x);
-	lua_pushnumber(L, vol->GetOffsets().y);
-	lua_pushnumber(L, vol->GetOffsets().z);
-	lua_pushnumber(L, vol->GetVolumeType());
-	lua_pushnumber(L, vol->GetTestType());
-	lua_pushnumber(L, vol->GetPrimaryAxis());
-	lua_pushboolean(L, vol->IsDisabled());
-
-	return 10;
+	return (PushCollisionVolumeData(L, vol));
 }
 
 
@@ -4252,6 +4238,17 @@ int LuaSyncedRead::GetFeatureResurrect(lua_State* L)
 
 	lua_pushnumber(L, feature->buildFacing);
 	return 2;
+}
+
+
+int LuaSyncedRead::GetFeatureCollisionVolumeData(lua_State* L)
+{
+	CFeature* feature = ParseFeature(L, __FUNCTION__, 1);
+	if (feature == NULL) {
+		return 0;
+	}
+
+	return (PushCollisionVolumeData(L, feature->collisionVolume));
 }
 
 

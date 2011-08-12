@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "LuaParser.h"
 
@@ -17,7 +16,7 @@
 #include "LuaIO.h"
 #include "LuaUtils.h"
 
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/VFSHandler.h"
 #include "System/FileSystem/FileSystem.h"
@@ -176,7 +175,7 @@ bool LuaParser::Execute()
 	error = luaL_loadbuffer(L, code.c_str(), code.size(), codeLabel.c_str());
 	if (error != 0) {
 		errorLog = lua_tostring(L, -1);
-		logOutput.Print("error = %i, %s, %s\n",
+		LOG_L(L_ERROR, "%i, %s, %s",
 		                error, codeLabel.c_str(), errorLog.c_str());
 		LUA_CLOSE(L);
 		L = NULL;
@@ -191,7 +190,7 @@ bool LuaParser::Execute()
 
 	if (error != 0) {
 		errorLog = lua_tostring(L, -1);
-		logOutput.Print("error = %i, %s, %s\n",
+		LOG_L(L_ERROR, "%i, %s, %s",
 		                error, fileName.c_str(), errorLog.c_str());
 		LUA_CLOSE(L);
 		L = NULL;
@@ -199,8 +198,8 @@ bool LuaParser::Execute()
 	}
 
 	if (!lua_istable(L, 1)) {
-		errorLog = "missing return table from " + fileName + "\n";
-		logOutput.Print("missing return table from %s\n", fileName.c_str());
+		errorLog = "missing return table from " + fileName;
+		LOG_L(L_ERROR, "missing return table from %s", fileName.c_str());
 		LUA_CLOSE(L);
 		L = NULL;
 		return false;
@@ -428,7 +427,7 @@ int LuaParser::TimeCheck(lua_State* L)
 	}
 	const spring_time endTime = spring_gettime();
 	const float elapsed = 1.0e-3f * (float)(spring_tomsecs(endTime - startTime));
-	logOutput.Print("%s %f", name.c_str(), elapsed);
+	LOG("%s %f", name.c_str(), elapsed);
 	return lua_gettop(L);
 }
 
@@ -589,8 +588,9 @@ int LuaParser::FileExists(lua_State* L)
 	if (!LuaIO::IsSimplePath(filename)) {
 		return 0;
 	}
-	CFileHandler fh(filename, currentParser->accessModes);
-	lua_pushboolean(L, fh.FileExists());
+	//CFileHandler fh(filename, currentParser->accessModes);
+	//lua_pushboolean(L, fh.FileExists());
+	lua_pushboolean(L, CFileHandler::FileExists(filename, currentParser->accessModes));
 	return 1;
 }
 
@@ -824,8 +824,8 @@ bool LuaTable::PushTable() const
 
 	if ((refnum != LUA_NOREF) && (parser->currentRef == refnum)) {
 		if (!lua_istable(L, -1)) {
-			logOutput.Print("Internal Error: LuaTable::PushTable() = %s\n",
-			                path.c_str());
+			LOG_L(L_ERROR, "Internal Error: LuaTable::PushTable() = %s",
+					path.c_str());
 			parser->currentRef = LUA_NOREF;
 			lua_settop(L, 0);
 			return false;

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <algorithm>
 #include "System/mmgr.h"
 
@@ -15,19 +14,22 @@
 #include "Sim/Misc/CollisionHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Misc/QuadField.h"
-#include "Sim/Projectiles/Unsynced/FlyingPiece.hpp"
+#include "Sim/Projectiles/Unsynced/FlyingPiece.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/TimeProfiler.h"
 #include "System/creg/STL_Map.h"
 #include "System/creg/STL_List.h"
 
-CProjectileHandler* ph;
-
 using namespace std;
+
+CONFIG(int, MaxParticles).defaultValue(1000);
+CONFIG(int, MaxNanoParticles).defaultValue(2500);
+
+CProjectileHandler* ph;
 
 
 CR_BIND_TEMPLATE(ProjectileContainer, )
@@ -74,8 +76,8 @@ void projdetach::Detach(CProjectile *p) { p->Detach(); }
 
 CProjectileHandler::CProjectileHandler()
 {
-	maxParticles     = configHandler->Get("MaxParticles",      1000);
-	maxNanoParticles = configHandler->Get("MaxNanoParticles", 2500);
+	maxParticles     = configHandler->GetInt("MaxParticles");
+	maxNanoParticles = configHandler->GetInt("MaxNanoParticles");
 
 	currentParticles       = 0;
 	currentNanoParticles   = 0;
@@ -158,6 +160,21 @@ void CProjectileHandler::PostLoad()
 void CProjectileHandler::UpdateProjectileContainer(ProjectileContainer& pc, bool synced) {
 	ProjectileContainer::iterator pci = pc.begin();
 
+	#define VECTOR_SANITY_CHECK(v)                              \
+		assert(!math::isnan(v.x) && !math::isinf(v.x)); \
+		assert(!math::isnan(v.y) && !math::isinf(v.y)); \
+		assert(!math::isnan(v.z) && !math::isinf(v.z));
+	#define MAPPOS_SANITY_CHECK(v)                 \
+		assert(v.x >= -(float3::maxxpos * 16.0f)); \
+		assert(v.x <=  (float3::maxxpos * 16.0f)); \
+		assert(v.z >= -(float3::maxzpos * 16.0f)); \
+		assert(v.z <=  (float3::maxzpos * 16.0f)); \
+		assert(v.y >= -MAX_PROJECTILE_HEIGHT);     \
+		assert(v.y <=  MAX_PROJECTILE_HEIGHT);
+	#define PROJECTILE_SANITY_CHECK(p) \
+		VECTOR_SANITY_CHECK(p->pos);   \
+		MAPPOS_SANITY_CHECK(p->pos);
+
 	while (pci != pc.end()) {
 		CProjectile* p = *pci;
 
@@ -193,10 +210,14 @@ void CProjectileHandler::UpdateProjectileContainer(ProjectileContainer& pc, bool
 #endif
 			}
 		} else {
+			PROJECTILE_SANITY_CHECK(p);
+
 			p->Update();
 			qf->MovedProjectile(p);
 
+			PROJECTILE_SANITY_CHECK(p);
 			GML_GET_TICKS(p->lastProjUpdate);
+
 			++pci;
 		}
 	}
@@ -322,7 +343,7 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 	}
 
 	if ((*maxUsedID) > (1 << 24)) {
-		logOutput.Print("Lua %s projectile IDs are now out of range", (p->synced? "synced": "unsynced"));
+		LOG_L(L_WARNING, "Lua %s projectile IDs are now out of range", (p->synced? "synced": "unsynced"));
 	}
 
 	ProjectileMapPair pp(p, p->owner() ? p->owner()->allyteam : -1);

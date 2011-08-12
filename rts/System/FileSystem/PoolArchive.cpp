@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "PoolArchive.h"
 
@@ -11,6 +10,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "DataDirsAccess.h"
 #include "FileSystem.h"
 #include "System/Util.h"
 #include "System/mmgr.h"
@@ -52,7 +52,7 @@ CPoolArchive::CPoolArchive(const std::string& name)
 	unsigned char c_crc32[4];
 	unsigned char c_size[4];
 
-	gzFile in = gzopen (name.c_str(), "rb");
+	gzFile in = gzopen(name.c_str(), "rb");
 	if (in == NULL) {
 		LOG_L(L_ERROR, "Error opening %s", name.c_str());
 		return;
@@ -135,9 +135,9 @@ bool CPoolArchive::GetFileImpl(unsigned int fid, std::vector<boost::uint8_t>& bu
 	accu << "pool/" << prefix << "/" << postfix << ".gz";
 	std::string rpath = accu.str();
 
-	filesystem.FixSlashes(rpath);
-	std::string path = filesystem.LocateFile(rpath);
-	gzFile in = gzopen (path.c_str(), "rb");
+	FileSystem::FixSlashes(rpath);
+	std::string path = dataDirsAccess.LocateFile(rpath);
+	gzFile in = gzopen(path.c_str(), "rb");
 	if (in == NULL)
 		return false;
 

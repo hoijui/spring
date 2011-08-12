@@ -14,7 +14,7 @@ namespace netcode
 }
 struct PlayerStatistics;
 
-const unsigned short NETWORK_VERSION = 2;
+const unsigned short NETWORK_VERSION = 4;
 
 /*
  * Comment behind NETMSG enumeration constant gives the extra data belonging to
@@ -52,7 +52,6 @@ enum NETMSG {
 	                              // short commandCount; commandCount * { int id; uchar options; std::vector<float> params }
 	NETMSG_AISHARE          = 16, // uchar myPlayerNum, uchar sourceTeam, uchar destTeam, float metal, float energy, std::vector<short> unitIDs
 
-	NETMSG_MEMDUMP          = 17, // (NEVER SENT)
 	NETMSG_USER_SPEED       = 19, // uchar myPlayerNum, float userSpeed;
 	NETMSG_INTERNAL_SPEED   = 20, // float internalSpeed;
 	NETMSG_CPU_USAGE        = 21, // float cpuUsage;
@@ -100,7 +99,10 @@ enum NETMSG {
 
 	NETMSG_AICOMMAND_TRACKED= 76,  // uchar myPlayerNum; short unitID; int id; uchar options; int aiCommandId, std::vector<float> params;
 
-	NETMSG_GAME_FRAME_PROGRESS= 77 // int frameNum # this special packet skips queue & cache entirely, indicates current game progress for clients fast-forwarding to current point the game #
+	NETMSG_GAME_FRAME_PROGRESS= 77, // int frameNum # this special packet skips queue & cache entirely, indicates current game progress for clients fast-forwarding to current point the game #
+
+
+	NETMSG_LAST //max types of netmessages, internal only
 };
 
 /// Data types for NETMSG_CUSTOM_DATA
@@ -166,7 +168,7 @@ public:
 	PacketType SendLuaDrawTime(uchar myPlayerNum, int mSec);
 	PacketType SendDirectControl(uchar myPlayerNum);
 	PacketType SendDirectControlUpdate(uchar myPlayerNum, uchar status, short heading, short pitch);
-	PacketType SendAttemptConnect(const std::string& name, const std::string& passwd, const std::string& version, bool reconnect = false);
+	PacketType SendAttemptConnect(const std::string& name, const std::string& passwd, const std::string& version, int netloss, bool reconnect = false);
 	PacketType SendShare(uchar myPlayerNum, uchar shareTeam, uchar bShareUnits, float shareMetal, float shareEnergy);
 	PacketType SendSetShare(uchar myPlayerNum, uchar myTeam, float metalShareFraction, float energyShareFraction);
 	PacketType SendSendPlayerStat();

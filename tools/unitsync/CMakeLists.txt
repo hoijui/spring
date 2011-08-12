@@ -42,10 +42,14 @@ INCLUDE_DIRECTORIES(${ENGINE_SRC_ROOT}/System)
 
 
 set(main_files
-	"${ENGINE_SRC_ROOT}/System/Platform/ConfigLocater.cpp"
+	"${ENGINE_SRC_ROOT}/System/Config/ConfigHandler.cpp"
+	"${ENGINE_SRC_ROOT}/System/Config/ConfigLocater.cpp"
+	"${ENGINE_SRC_ROOT}/System/Config/ConfigSource.cpp"
+	"${ENGINE_SRC_ROOT}/System/Config/ConfigVariable.cpp"
+	"${ENGINE_SRC_ROOT}/System/Config/ConfigLocater.cpp"
+	"${ENGINE_SRC_ROOT}/System/CRC.cpp"
 	"${ENGINE_SRC_ROOT}/System/Platform/Misc.cpp"
 	"${ENGINE_SRC_ROOT}/System/Platform/ScopedFileLock.cpp"
-	"${ENGINE_SRC_ROOT}/System/ConfigHandler.cpp"
 	"${ENGINE_SRC_ROOT}/System/LogOutput.cpp"
 	"${ENGINE_SRC_ROOT}/System/TdfParser.cpp"
 	"${ENGINE_SRC_ROOT}/System/Info.cpp"
@@ -69,11 +73,11 @@ endif (WIN32)
 set(unitsync_files
 	${sources_engine_System_FileSystem}
 	${sources_engine_System_Log}
+	${ENGINE_SRC_ROOT}/System/Log/LogOutputSink.cpp
 	${main_files}
 	${CMAKE_CURRENT_SOURCE_DIR}/unitsync.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/LuaParserAPI.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/Syncer.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/stdafx.cpp
 	)
 
 ADD_LIBRARY(unitsync MODULE ${unitsync_files})

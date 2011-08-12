@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "BeamLaser.h"
 #include "Game/GameHelper.h"
 #include "Game/TraceRay.h"
@@ -58,7 +57,7 @@ void CBeamLaser::Update(void)
 
 		if (!onlyForward) {
 			wantedDir = targetPos - weaponPos;
-			wantedDir.Normalize();
+			wantedDir.SafeNormalize();
 		}
 
 		if (!weaponDef->beamburst) {
@@ -121,7 +120,7 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	dir /= length;
 
 	if (!onlyForward) {
-		if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
+		if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length, unit)) {
 			return false;
 		}
 	}
@@ -171,18 +170,18 @@ void CBeamLaser::FireImpl(void)
 	} else {
 		if (salvoLeft == salvoSize - 1) {
 			dir = targetPos - weaponMuzzlePos;
-			dir.Normalize();
+			dir.SafeNormalize();
 			oldDir = dir;
 		} else if (weaponDef->beamburst) {
 			dir = targetPos - weaponMuzzlePos;
-			dir.Normalize();
+			dir.SafeNormalize();
 		} else {
 			dir = oldDir;
 		}
 	}
 
 	dir += ((salvoError) * (1.0f - owner->limExperience * weaponDef->ownerExpAccWeight));
-	dir.Normalize();
+	dir.SafeNormalize();
 
 	FireInternal(dir, false);
 }
@@ -211,7 +210,7 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 	dir +=
 		((gs->randVector() * sprayAngle *
 		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight)));
-	dir.Normalize();
+	dir.SafeNormalize();
 
 	bool tryAgain = true;
 

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "EmgCannon.h"
 #include "Game/TraceRay.h"
 #include "Sim/Misc/Team.h"
@@ -72,7 +71,7 @@ bool CEmgCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 
 	dir /= length;
 
-	if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
+	if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length, unit)) {
 		return false;
 	}
 

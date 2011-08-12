@@ -1,17 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
-
-#include <set>
-#include <list>
-#include <cctype>
-#include <cfloat>
-
-#include <fstream>
-
-#include <SDL_keysym.h>
-#include <SDL_mouse.h>
-#include <SDL_timer.h>
 
 #include "System/mmgr.h"
 
@@ -45,13 +33,15 @@
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Map/BaseGroundDrawer.h"
-#include "Rendering/Env/BaseSky.h"
+#include "Map/BaseGroundTextures.h"
+#include "Rendering/Env/ISky.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/CommandDrawer.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/LineDrawer.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/Textures/Bitmap.h"
+#include "Rendering/Textures/NamedTextures.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Projectiles/Projectile.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
@@ -61,14 +51,15 @@
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Groups/GroupHandler.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/NetProtocol.h"
 #include "System/Util.h"
 #include "System/Sound/ISound.h"
 #include "System/Sound/SoundChannels.h"
 #include "System/FileSystem/FileHandler.h"
-#include "System/FileSystem/FileSystemHandler.h"
+#include "System/FileSystem/DataDirLocater.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/Platform/Watchdog.h"
 #include "System/Platform/WindowManagerHelper.h"
@@ -82,7 +73,19 @@
 	#include "System/Sound/EFXPresets.h"
 #endif
 
-using namespace std;
+#include <map>
+#include <set>
+#include <cctype>
+#include <cfloat>
+
+#include <fstream>
+
+#include <SDL_keysym.h>
+#include <SDL_mouse.h>
+#include <SDL_timer.h>
+
+using std::min;
+using std::max;
 
 // MinGW defines this for a WINAPI function
 #undef SendMessage
@@ -153,6 +156,9 @@ bool LuaUnsyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(UpdateModelLight);
 	REGISTER_LUA_CFUNC(SetMapLightTrackingState);
 	REGISTER_LUA_CFUNC(SetModelLightTrackingState);
+
+	REGISTER_LUA_CFUNC(SetMapSquareTexture);
+	REGISTER_LUA_CFUNC(GetMapSquareTexture);
 
 	REGISTER_LUA_CFUNC(SetUnitNoDraw);
 	REGISTER_LUA_CFUNC(SetUnitNoMinimap);
@@ -461,7 +467,7 @@ static string ParseMessage(lua_State* L, const string& msg)
 
 static void PrintMessage(lua_State* L, const string& msg)
 {
-	logOutput.Print(ParseMessage(L, msg));
+	LOG("%s", ParseMessage(L, msg).c_str());
 }
 
 
@@ -667,12 +673,7 @@ int LuaUnsyncedCtrl::PauseSoundStream(lua_State*)
 }
 int LuaUnsyncedCtrl::SetSoundStreamVolume(lua_State* L)
 {
-	const int args = lua_gettop(L);
-	if (args == 1) {
-		Channels::BGMusic.SetVolume(lua_tonumber(L, 1));
-	} else {
-		luaL_error(L, "Incorrect arguments to SetSoundStreamVolume(v)");
-	}
+	Channels::BGMusic.SetVolume(luaL_checkfloat(L, 1));
 	return 0;
 }
 
@@ -722,7 +723,7 @@ int LuaUnsyncedCtrl::SetSoundEffectParams(lua_State* L)
 					ALuint& param = it->second;
 					if (lua_isnumber(L, -1)) {
 						if (alParamType[param] == EFXParamTypes::FLOAT) {
-							const float value = lua_tonumber(L, -1);
+							const float value = lua_tofloat(L, -1);
 							efxprops->filter_properties_f[param] = value;
 						}
 					}
@@ -753,7 +754,7 @@ int LuaUnsyncedCtrl::SetSoundEffectParams(lua_State* L)
 					}
 					else if (lua_isnumber(L, -1)) {
 						if (alParamType[param] == EFXParamTypes::FLOAT) {
-							const float value = lua_tonumber(L, -1);
+							const float value = lua_tofloat(L, -1);
 							efxprops->properties_f[param] = value;
 						}
 					}
@@ -1173,7 +1174,7 @@ int LuaUnsyncedCtrl::SetWaterParams(lua_State* L)
 		return 0;
 	}
 	if (!gs->cheatEnabled) {
-		logOutput.Print("SetWaterParams() needs cheating enabled");
+		LOG("SetWaterParams() needs cheating enabled");
 		return 0;
 	}
 	if (!lua_istable(L, 1)) {
@@ -1218,7 +1219,7 @@ int LuaUnsyncedCtrl::SetWaterParams(lua_State* L)
 				}
 			}
 			else if (lua_isnumber(L, -1)) {
-				const float value = lua_tonumber(L, -1);
+				const float value = lua_tofloat(L, -1);
 				if (key == "damage") {
 					w.damage = value;
 				} else if (key == "repeatX") {
@@ -1533,6 +1534,108 @@ int LuaUnsyncedCtrl::SetModelLightTrackingState(lua_State* L)
 
 /******************************************************************************/
 
+int LuaUnsyncedCtrl::SetMapSquareTexture(lua_State* L)
+{
+	if (CLuaHandle::GetSynced(L)) {
+		return 0;
+	}
+
+	const int texSquareX = luaL_checkint(L, 1);
+	const int texSquareY = luaL_checkint(L, 2);
+	const std::string& texName = luaL_checkstring(L, 3);
+
+	CBaseGroundDrawer* groundDrawer = readmap->GetGroundDrawer();
+	CBaseGroundTextures* groundTextures = groundDrawer->GetGroundTextures();
+
+	if (groundTextures == NULL) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+	if (texName.empty()) {
+		// restore default texture for this square
+		lua_pushboolean(L, groundTextures->SetSquareLuaTexture(texSquareX, texSquareY, 0));
+		return 1;
+	}
+
+	// TODO: leaking ID's like this means we need to guard against texture deletion
+	const LuaTextures& luaTextures = CLuaHandle::GetActiveTextures(L);
+	const LuaTextures::Texture* luaTexture = luaTextures.GetInfo(texName);
+	const CNamedTextures::TexInfo* namedTexture = CNamedTextures::GetInfo(texName);
+
+	if (luaTexture != NULL) {
+		if (luaTexture->xsize != luaTexture->ysize) {
+			// square textures only
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		lua_pushboolean(L, groundTextures->SetSquareLuaTexture(texSquareX, texSquareY, luaTexture->id));
+		return 1;
+	}
+
+	if (namedTexture != NULL) {
+		if (namedTexture->xsize != namedTexture->ysize) {
+			// square textures only
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		lua_pushboolean(L, groundTextures->SetSquareLuaTexture(texSquareX, texSquareY, namedTexture->id));
+		return 1;
+	}
+
+	lua_pushboolean(L, false);
+	return 1;
+}
+
+int LuaUnsyncedCtrl::GetMapSquareTexture(lua_State* L)
+{
+	if (CLuaHandle::GetSynced(L)) {
+		return 0;
+	}
+
+	const int texSquareX = luaL_checkint(L, 1);
+	const int texSquareY = luaL_checkint(L, 2);
+	const int texMipLevel = luaL_checkint(L, 3);
+	const std::string& texName = luaL_checkstring(L, 4);
+
+	CBaseGroundDrawer* groundDrawer = readmap->GetGroundDrawer();
+	CBaseGroundTextures* groundTextures = groundDrawer->GetGroundTextures();
+
+	if (groundTextures == NULL) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+	if (texName.empty()) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	const LuaTextures& luaTextures = CLuaHandle::GetActiveTextures(L);
+	const LuaTextures::Texture* luaTexture = luaTextures.GetInfo(texName);
+
+	if (luaTexture == NULL) {
+		// not a valid texture (name)
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	const int tid = luaTexture->id;
+	const int txs = luaTexture->xsize;
+	const int tys = luaTexture->ysize;
+
+	if (txs != tys) {
+		// square textures only
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	lua_pushboolean(L, groundTextures->GetSquareLuaTexture(texSquareX, texSquareY, tid, txs, tys, texMipLevel));
+	return 1;
+}
+
+/******************************************************************************/
+
 int LuaUnsyncedCtrl::SetUnitNoDraw(lua_State* L)
 {
 	if (CLuaHandle::GetUserMode(L)) {
@@ -1666,8 +1769,8 @@ int LuaUnsyncedCtrl::ExtractModArchiveFile(lua_State* L)
 	}
 
 
-	string dname = filesystem.GetDirectory(path);
-	string fname = filesystem.GetFilename(path);
+	string dname = FileSystem::GetDirectory(path);
+	string fname = FileSystem::GetFilename(path);
 
 #ifdef WIN32
 	const size_t s = dname.size();
@@ -1679,7 +1782,7 @@ int LuaUnsyncedCtrl::ExtractModArchiveFile(lua_State* L)
 	}
 #endif
 
-	if (!dname.empty() && !filesystem.CreateDirectory(dname)) {
+	if (!dname.empty() && !FileSystem::CreateDirectory(dname)) {
 		luaL_error(L, "Could not create directory \"%s\" for file \"%s\"",
 		           dname.c_str(), fname.c_str());
 	}
@@ -1689,15 +1792,15 @@ int LuaUnsyncedCtrl::ExtractModArchiveFile(lua_State* L)
 
 	fhVFS.Read(buffer, numBytes);
 
-	fstream fstr(path.c_str(), ios::out | ios::binary);
+	std::fstream fstr(path.c_str(), std::ios::out | std::ios::binary);
 	fstr.write((const char*) buffer, numBytes);
 	fstr.close();
 
 	if (!dname.empty()) {
-		logOutput.Print("Extracted file \"%s\" to directory \"%s\"",
-		                fname.c_str(), dname.c_str());
+		LOG("Extracted file \"%s\" to directory \"%s\"",
+				fname.c_str(), dname.c_str());
 	} else {
-		logOutput.Print("Extracted file \"%s\"", fname.c_str());
+		LOG("Extracted file \"%s\"", fname.c_str());
 	}
 
 	delete[] buffer;
@@ -1948,6 +2051,15 @@ int LuaUnsyncedCtrl::SetLosViewColors(lua_State* L)
 /******************************************************************************/
 /******************************************************************************/
 
+#define SET_IN_OVERLAY_WARNING \
+	if (lua_isboolean(L, 3)) { \
+		static bool shown = false; \
+		if (!shown) { \
+			LOG_L(L_WARNING, "%s: third parameter \"setInOverlay\" is deprecated", __FUNCTION__); \
+			shown = true; \
+		} \
+	}
+
 int LuaUnsyncedCtrl::GetConfigInt(lua_State* L)
 {
 	if (!CheckModUICtrl()) {
@@ -1955,8 +2067,8 @@ int LuaUnsyncedCtrl::GetConfigInt(lua_State* L)
 	}
 	const string name = luaL_checkstring(L, 1);
 	const int def     = luaL_optint(L, 2, 0);
-	const bool setInOverlay = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : false;
-	const int value = configHandler->Get(name, def, setInOverlay);
+	SET_IN_OVERLAY_WARNING;
+	const int value = configHandler->IsSet(name) ? configHandler->GetInt(name) : def;
 	lua_pushnumber(L, value);
 	return 1;
 }
@@ -1982,8 +2094,8 @@ int LuaUnsyncedCtrl::GetConfigString(lua_State* L)
 	}
 	const string name = luaL_checkstring(L, 1);
 	const string def  = luaL_optstring(L, 2, "");
-	const bool setInOverlay = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : false;
-	const string value = configHandler->GetString(name, def, setInOverlay);
+	SET_IN_OVERLAY_WARNING;
+	const string value = configHandler->IsSet(name) ? configHandler->GetString(name) : def;
 	lua_pushsstring(L, value);
 	return 1;
 }
@@ -2017,7 +2129,7 @@ int LuaUnsyncedCtrl::CreateDir(lua_State* L)
 	    ((dir.size() > 0) && (dir[1] == ':'))) {
 		luaL_error(L, "Invalid CreateDir() access: %s", dir.c_str());
 	}
-	const bool success = filesystem.CreateDirectory(dir);
+	const bool success = FileSystem::CreateDirectory(dir);
 	lua_pushboolean(L, success);
 	return 1;
 }
@@ -2033,7 +2145,6 @@ int LuaUnsyncedCtrl::Restart(lua_State* L)
 	}
 
 	const std::string arguments = luaL_checkstring(L, 1);
-	// LogObject() << "Args: " << arguments;
 	const std::string script = luaL_checkstring(L, 2);
 
 	const std::string springFullName = (Platform::GetProcessExecutableFile());
@@ -2046,9 +2157,8 @@ int LuaUnsyncedCtrl::Restart(lua_State* L)
 	}
 
 	// script.txt, if content for it is given by Lua code
-	const std::string scriptFullName = FileSystemHandler::GetInstance().GetWriteDir() + "script.txt";
+	const std::string scriptFullName = dataDirLocater.GetWriteDirPath() + "script.txt";
 	if (!script.empty()) {
-		// LogObject() << "Writing script to: " << scriptFullName;
 		std::ofstream scriptfile(scriptFullName.c_str());
 		scriptfile << script;
 		scriptfile.close();
@@ -2065,9 +2175,9 @@ int LuaUnsyncedCtrl::Restart(lua_State* L)
 	const bool execOk = execError.empty();
 
 	if (execOk) {
-		LogObject() << "The game should restart";
+		LOG("The game should restart");
 	} else {
-		LogObject() << "Error in Restart: " << execError;
+		LOG_L(L_ERROR, "Error in Restart: %s", execError.c_str());
 	}
 
 	lua_pushboolean(L, execOk);
@@ -2138,7 +2248,7 @@ int LuaUnsyncedCtrl::SetUnitDefIcon(lua_State* L)
 	ud->iconType = icon::iconHandler->GetIcon(lua_tostring(L, 2));
 
 	// set decoys to the same icon
-	map<int, set<int> >::const_iterator fit;
+	std::map<int, std::set<int> >::const_iterator fit;
 
 	if (ud->decoyDef) {
 		ud->decoyDef->iconType = ud->iconType;
@@ -2147,8 +2257,8 @@ int LuaUnsyncedCtrl::SetUnitDefIcon(lua_State* L)
 		fit = unitDefHandler->decoyMap.find(ud->id);
 	}
 	if (fit != unitDefHandler->decoyMap.end()) {
-		const set<int>& decoySet = fit->second;
-		set<int>::const_iterator dit;
+		const std::set<int>& decoySet = fit->second;
+		std::set<int>::const_iterator dit;
 		for (dit = decoySet.begin(); dit != decoySet.end(); ++dit) {
   		const UnitDef* decoyDef = unitDefHandler->GetUnitDefByID(*dit);
 			decoyDef->iconType = ud->iconType;
@@ -2308,8 +2418,7 @@ int LuaUnsyncedCtrl::GiveOrder(lua_State* L)
 		return 1;
 	}
 
-	Command cmd;
-	LuaUtils::ParseCommand(L, __FUNCTION__, 1, cmd);
+	Command cmd = LuaUtils::ParseCommand(L, __FUNCTION__, 1);
 
 	selectedUnits.GiveCommand(cmd);
 
@@ -2335,8 +2444,7 @@ int LuaUnsyncedCtrl::GiveOrderToUnit(lua_State* L)
 		return 1;
 	}
 
-	Command cmd;
-	LuaUtils::ParseCommand(L, __FUNCTION__, 2, cmd);
+	Command cmd = LuaUtils::ParseCommand(L, __FUNCTION__, 2);
 
 	net->Send(CBaseNetProtocol::Get().SendAICommand(gu->myPlayerNum, unit->id, cmd.GetID(), cmd.aiCommandId, cmd.options, cmd.params));
 
@@ -2365,8 +2473,7 @@ int LuaUnsyncedCtrl::GiveOrderToUnitMap(lua_State* L)
 		return 1;
 	}
 
-	Command cmd;
-	LuaUtils::ParseCommand(L, __FUNCTION__, 2, cmd);
+	Command cmd = LuaUtils::ParseCommand(L, __FUNCTION__, 2);
 
 	vector<Command> commands;
 	commands.push_back(cmd);
@@ -2397,8 +2504,7 @@ int LuaUnsyncedCtrl::GiveOrderToUnitArray(lua_State* L)
 		return 1;
 	}
 
-	Command cmd;
-	LuaUtils::ParseCommand(L, __FUNCTION__, 2, cmd);
+	Command cmd = LuaUtils::ParseCommand(L, __FUNCTION__, 2);
 
 	vector<Command> commands;
 	commands.push_back(cmd);
@@ -2559,7 +2665,7 @@ int LuaUnsyncedCtrl::SetShareLevel(lua_State* L)
 		net->Send(CBaseNetProtocol::Get().SendSetShare(gu->myPlayerNum, gu->myTeam,	teamHandler->Team(gu->myTeam)->metalShare, shareLevel));
 	}
 	else {
-		logOutput.Print("SetShareLevel() unknown resource: %s", shareType.c_str());
+		LOG_L(L_WARNING, "SetShareLevel() unknown resource: %s", shareType.c_str());
 	}
 	return 0;
 }
@@ -2789,7 +2895,7 @@ int LuaUnsyncedCtrl::SetSunParameters(lua_State* L)
 
 	const int args = lua_gettop(L); // number of arguments
 	if (args != 6 ||
-		!lua_isnumber(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3) || 
+		!lua_isnumber(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3) ||
 		!lua_isnumber(L, 4) || !lua_isnumber(L, 5) || !lua_isnumber(L, 6)) {
 		luaL_error(L, "Incorrect arguments to SetSunParameters(float, float, float, float, float, float)");
 	}

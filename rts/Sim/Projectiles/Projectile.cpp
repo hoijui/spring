@@ -1,13 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "Projectile.h"
 #include "Game/Camera.h"
 #include "Map/MapInfo.h"
 #include "Rendering/Colors.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
@@ -136,14 +135,12 @@ void CProjectile::Collision()
 {
 	deleteMe = true;
 	checkCol = false;
-	pos.y = MAX_WORLD_SIZE;
 }
 
 void CProjectile::Collision(CUnit* unit)
 {
 	deleteMe = true;
 	checkCol = false;
-	pos.y = MAX_WORLD_SIZE;
 }
 
 void CProjectile::Collision(CFeature* feature)

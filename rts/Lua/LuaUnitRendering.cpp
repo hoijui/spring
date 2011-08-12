@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "LuaUnitRendering.h"
@@ -25,7 +24,7 @@
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/Util.h"
 
 
@@ -147,7 +146,7 @@ int LuaUnitRendering::SetLODDistance(lua_State* L)
 		return 0;
 	}
 	// adjusted for 45 degree FOV with a 1024x768 screen
-	const float scale = 2.0f * (float)streflop::tanf((45.0 * 0.5) * (PI / 180.0)) / 768.0f;
+	const float scale = 2.0f * (float)math::tanf((45.0 * 0.5) * (PI / 180.0)) / 768.0f;
 	const float dist = luaL_checkfloat(L, 3);
 	unit->lodLengths[lod] = dist * scale;
 	return 0;
@@ -512,10 +511,15 @@ static LuaMatRef ParseMaterial(lua_State* L, const char* caller, int index,
 				mat.cameraInvLoc = (GLint)lua_tonumber(L, -1);
 			}
 		}
-
 		else if (key == "cameraposloc") {
 			if (lua_isnumber(L, -1)) {
 				mat.cameraPosLoc = (GLint)lua_tonumber(L, -1);
+			}
+		}
+
+		else if (key == "sunposloc") {
+			if (lua_isnumber(L, -1)) {
+				mat.sunPosLoc = (GLint)lua_tonumber(L, -1);
 			}
 		}
 		else if (key == "shadowloc") {
@@ -576,7 +580,7 @@ static int material_index(lua_State* L)
 
 static int material_newindex(lua_State* L)
 {
-	LuaMatRef** matRef = (LuaMatRef**) luaL_checkudata(L, 1, "MatRef");
+	luaL_checkudata(L, 1, "MatRef");
 	return 0;
 }
 
@@ -754,8 +758,8 @@ static void PrintUnitLOD(CUnit* unit, int lod)
 {
 	GML_LODMUTEX_LOCK(unit); // PrintUnitLOD
 
-	logOutput.Print("  LOD %i:\n", lod);
-	logOutput.Print("    LodLength = %f\n", unit->lodLengths[lod]);
+	LOG("  LOD %i:", lod);
+	LOG("    LodLength = %f", unit->lodLengths[lod]);
 	for (int type = 0; type < LUAMAT_TYPE_COUNT; type++) {
 		const LuaUnitMaterial& luaMat = unit->luaMats[type];
 		const LuaUnitLODMaterial* lodMat = luaMat.GetMaterial(lod);
@@ -781,24 +785,24 @@ int LuaUnitRendering::Debug(lua_State* L)
 
 	GML_LODMUTEX_LOCK(unit); // Debug
 
-	logOutput.Print("\n");
-	logOutput.Print("UnitID      = %i\n", unit->id);
-	logOutput.Print("UnitDefID   = %i\n", unit->unitDef->id);
-	logOutput.Print("UnitDefName = %s\n", unit->unitDef->name.c_str());
-	logOutput.Print("LodCount    = %i\n", unit->lodCount);
-	logOutput.Print("CurrentLod  = %i\n", unit->currentLOD);
-	logOutput.Print("\n");
+	LOG_L(L_DEBUG, "%s", "");
+	LOG_L(L_DEBUG, "UnitID      = %i", unit->id);
+	LOG_L(L_DEBUG, "UnitDefID   = %i", unit->unitDef->id);
+	LOG_L(L_DEBUG, "UnitDefName = %s", unit->unitDef->name.c_str());
+	LOG_L(L_DEBUG, "LodCount    = %i", unit->lodCount);
+	LOG_L(L_DEBUG, "CurrentLod  = %i", unit->currentLOD);
+	LOG_L(L_DEBUG, "%s", "");
 
 	const LuaUnitMaterial& alphaMat      = unit->luaMats[LUAMAT_ALPHA];
 	const LuaUnitMaterial& opaqueMat     = unit->luaMats[LUAMAT_OPAQUE];
 	const LuaUnitMaterial& alphaReflMat  = unit->luaMats[LUAMAT_ALPHA_REFLECT];
 	const LuaUnitMaterial& opaqueReflMat = unit->luaMats[LUAMAT_OPAQUE_REFLECT];
 	const LuaUnitMaterial& shadowMat     = unit->luaMats[LUAMAT_SHADOW];
-	logOutput.Print("LUAMAT_ALPHA          lastLOD = %i\n", alphaMat.GetLastLOD());
-	logOutput.Print("LUAMAT_OPAQUE         lastLOD = %i\n", opaqueMat.GetLastLOD());
-	logOutput.Print("LUAMAT_ALPHA_REFLECT  lastLOD = %i\n", alphaReflMat.GetLastLOD());
-	logOutput.Print("LUAMAT_OPAQUE_REFLECT lastLOD = %i\n", opaqueReflMat.GetLastLOD());
-	logOutput.Print("LUAMAT_SHADOW         lastLOD = %i\n", shadowMat.GetLastLOD());
+	LOG_L(L_DEBUG, "LUAMAT_ALPHA          lastLOD = %i", alphaMat.GetLastLOD());
+	LOG_L(L_DEBUG, "LUAMAT_OPAQUE         lastLOD = %i", opaqueMat.GetLastLOD());
+	LOG_L(L_DEBUG, "LUAMAT_ALPHA_REFLECT  lastLOD = %i", alphaReflMat.GetLastLOD());
+	LOG_L(L_DEBUG, "LUAMAT_OPAQUE_REFLECT lastLOD = %i", opaqueReflMat.GetLastLOD());
+	LOG_L(L_DEBUG, "LUAMAT_SHADOW         lastLOD = %i", shadowMat.GetLastLOD());
 
 	for (unsigned lod = 0; lod < unit->lodCount; lod++) {
 		PrintUnitLOD(unit, lod);

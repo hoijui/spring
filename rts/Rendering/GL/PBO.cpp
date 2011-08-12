@@ -5,7 +5,6 @@
  * EXT_pixel_buffer_object class implementation
  */
 
-#include "System/StdAfx.h"
 #include <assert.h>
 #include <vector>
 #include "System/mmgr.h"
@@ -13,15 +12,16 @@
 #include "PBO.h"
 
 #include "Rendering/GlobalRendering.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 
+CONFIG(bool, UsePBO).defaultValue(true);
 
 /**
  * Returns if the current gpu drivers support Pixelbuffer Objects
  */
 bool PBO::IsSupported()
 {
-	return (GLEW_EXT_pixel_buffer_object && GLEW_ARB_map_buffer_range && !!configHandler->Get("UsePBO", 1));
+	return (GLEW_EXT_pixel_buffer_object && GLEW_ARB_map_buffer_range && configHandler->GetBool("UsePBO"));
 }
 
 

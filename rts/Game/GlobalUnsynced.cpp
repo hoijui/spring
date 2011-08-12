@@ -5,7 +5,6 @@
  * Contains implementation of synced and unsynced global stuff.
  */
 
-#include "System/StdAfx.h"
 
 #include "GlobalUnsynced.h"
 #include "Game/PlayerHandler.h"
@@ -13,12 +12,14 @@
 #include "Sim/Misc/GlobalConstants.h" // for RANDINT_MAX
 #include "Sim/Units/Unit.h" // required by CREG
 #include "System/mmgr.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/Util.h"
 #include "System/creg/creg_cond.h"
+#include "System/Sync/SyncTracer.h"
 
 #include <SDL_timer.h>
+#include <time.h>
 
 
 /**
@@ -128,6 +129,10 @@ float3 CGlobalUnsynced::usRandVector()
 void CGlobalUnsynced::SetMyPlayer(const int myNumber)
 {
 	myPlayerNum = myNumber;
+
+#ifdef TRACE_SYNC
+	tracefile.Initialize(myPlayerNum);
+#endif
 
 	const CPlayer* myPlayer = playerHandler->Player(myPlayerNum);
 

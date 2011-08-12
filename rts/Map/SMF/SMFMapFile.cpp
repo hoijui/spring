@@ -1,18 +1,18 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h" // TODO: ugh
-#include <assert.h>
 
 #include "SMFMapFile.h"
-#include "mapfile.h"
 #include "Map/ReadMap.h"
 #include "System/mmgr.h"
 #include "System/Exceptions.h"
 
+#include <cassert>
+#include <cstring>
+
 using std::string;
 
 
-CSmfMapFile::CSmfMapFile(const string& mapFileName)
+CSMFMapFile::CSMFMapFile(const string& mapFileName)
 	: ifs(mapFileName), featureFileOffset(0)
 {
 	memset(&header, 0, sizeof(header));
@@ -30,13 +30,13 @@ CSmfMapFile::CSmfMapFile(const string& mapFileName)
 }
 
 
-void CSmfMapFile::ReadMinimap(void* data)
+void CSMFMapFile::ReadMinimap(void* data)
 {
 	ifs.Seek(header.minimapPtr);
 	ifs.Read(data, MINIMAP_SIZE);
 }
 
-int CSmfMapFile::ReadMinimap(std::vector<boost::uint8_t>& data, unsigned miplevel)
+int CSMFMapFile::ReadMinimap(std::vector<boost::uint8_t>& data, unsigned miplevel)
 {
 	int offset=0;
 	int mipsize = 1024;
@@ -55,7 +55,7 @@ int CSmfMapFile::ReadMinimap(std::vector<boost::uint8_t>& data, unsigned mipleve
 	return mipsize;
 }
 
-void CSmfMapFile::ReadHeightmap(unsigned short* heightmap)
+void CSMFMapFile::ReadHeightmap(unsigned short* heightmap)
 {
 	const int hmx = header.mapx + 1;
 	const int hmy = header.mapy + 1;
@@ -64,12 +64,12 @@ void CSmfMapFile::ReadHeightmap(unsigned short* heightmap)
 	ifs.Read(heightmap, hmx * hmy * sizeof(short));
 
 	for (int y = 0; y < hmx * hmy; ++y) {
-		heightmap[y] = swabword(heightmap[y]);
+		swabWordInPlace(heightmap[y]);
 	}
 }
 
 
-void CSmfMapFile::ReadHeightmap(float* heightmap, float base, float mod)
+void CSMFMapFile::ReadHeightmap(float* heightmap, float base, float mod)
 {
 	const int hmx = header.mapx + 1;
 	const int hmy = header.mapy + 1;
@@ -79,14 +79,14 @@ void CSmfMapFile::ReadHeightmap(float* heightmap, float base, float mod)
 	ifs.Read(temphm, hmx * hmy * 2);
 
 	for (int y = 0; y < hmx * hmy; ++y) {
-		heightmap[y] = base + swabword(temphm[y]) * mod;
+		heightmap[y] = base + swabWord(temphm[y]) * mod;
 	}
 
 	delete[] temphm;
 }
 
 
-void CSmfMapFile::ReadFeatureInfo()
+void CSMFMapFile::ReadFeatureInfo()
 {
 	ifs.Seek(header.featurePtr);
 	READ_MAPFEATUREHEADER(featureHeader, (&ifs));
@@ -105,7 +105,7 @@ void CSmfMapFile::ReadFeatureInfo()
 }
 
 
-void CSmfMapFile::ReadFeatureInfo(MapFeatureInfo* f)
+void CSMFMapFile::ReadFeatureInfo(MapFeatureInfo* f)
 {
 	assert(featureFileOffset != 0);
 	ifs.Seek(featureFileOffset);
@@ -120,14 +120,14 @@ void CSmfMapFile::ReadFeatureInfo(MapFeatureInfo* f)
 }
 
 
-const char* CSmfMapFile::GetFeatureTypeName(int typeID) const
+const char* CSMFMapFile::GetFeatureTypeName(int typeID) const
 {
 	assert(typeID >= 0 && typeID < featureHeader.numFeatureType);
 	return featureTypes[typeID].c_str();
 }
 
 
-void CSmfMapFile::GetInfoMapSize(const string& name, MapBitmapInfo* info) const
+void CSMFMapFile::GetInfoMapSize(const string& name, MapBitmapInfo* info) const
 {
 	if (name == "height") {
 		*info = MapBitmapInfo(header.mapx + 1, header.mapy + 1);
@@ -147,7 +147,7 @@ void CSmfMapFile::GetInfoMapSize(const string& name, MapBitmapInfo* info) const
 }
 
 
-bool CSmfMapFile::ReadInfoMap(const string& name, void* data)
+bool CSMFMapFile::ReadInfoMap(const string& name, void* data)
 {
 	if (name == "height") {
 		ReadHeightmap((unsigned short*)data);
@@ -171,21 +171,21 @@ bool CSmfMapFile::ReadInfoMap(const string& name, void* data)
 }
 
 
-void CSmfMapFile::ReadGrassMap(void *data)
+void CSMFMapFile::ReadGrassMap(void *data)
 {
 	ifs.Seek(sizeof(SMFHeader));
 
 	for (int a = 0; a < header.numExtraHeaders; ++a) {
 		int size;
 		ifs.Read(&size, 4);
-		size = swabdword(size);
+		swabDWordInPlace(size);
 		int type;
 		ifs.Read(&type, 4);
-		type = swabdword(type);
+		swabDWordInPlace(type);
 		if (type == MEH_Vegetation) {
 			int pos;
 			ifs.Read(&pos, 4);
-			pos = swabdword(pos);
+			swabDWordInPlace(pos);
 			ifs.Seek(pos);
 			ifs.Read(data, header.mapx / 4 * header.mapy / 4);
 			/* char; no swabbing. */

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "GlobalSynced.h"
 
 #include <assert.h>
@@ -94,7 +93,7 @@ CGlobalSynced::~CGlobalSynced()
 
 void CGlobalSynced::LoadFromSetup(const CGameSetup* setup)
 {
-	noHelperAIs = !!setup->noHelperAIs;
+	noHelperAIs = setup->noHelperAIs;
 	useLuaGaia  = setup->useLuaGaia;
 
 	skirmishAIHandler.LoadFromSetup(*setup);

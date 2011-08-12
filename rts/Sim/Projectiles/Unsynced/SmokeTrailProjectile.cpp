@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "SmokeTrailProjectile.h"
@@ -8,7 +7,7 @@
 #include "Game/Camera.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
@@ -91,7 +90,7 @@ CSmokeTrailProjectile::CSmokeTrailProjectile(
 		const float dist = pos1.distance(pos2);
 		dirpos1 = pos1 - dir1 * dist * 0.33f;
 		dirpos2 = pos2 + dir2 * dist * 0.33f;
-		float3 mp = (pos1 + pos2) / 2;
+//		float3 mp = (pos1 + pos2) / 2;
 		midpos = CalcBeizer(0.5f, pos1, dirpos1, dirpos2, pos2);
 		middir = (dir1 + dir2).ANormalize();
 		drawSegmented = true;
@@ -195,7 +194,7 @@ void CSmokeTrailProjectile::Draw()
 			col[3] = (unsigned char) alpha;
 			float size = ((0.2f + (age + a) * (1.0f / lifeTime)) * orgSize) * 1.2f;
 
-			const float3 pos = CalcBeizer(a / 8.0f, pos1, dirpos1, dirpos2, pos2);
+//			const float3 pos = CalcBeizer(a / 8.0f, pos1, dirpos1, dirpos2, pos2);
 
 			#define st projectileDrawer->smoketex[0]
 			va->AddVertexQTC(pos1 + ( camera->up + camera->right) * size, st->xstart, st->ystart, col);

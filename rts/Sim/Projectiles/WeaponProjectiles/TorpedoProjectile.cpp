@@ -1,13 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "TorpedoProjectile.h"
 #include "Game/Camera.h"
 #include "Game/GameHelper.h"
 #include "Map/Ground.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
@@ -62,7 +61,7 @@ CTorpedoProjectile::CTorpedoProjectile(
 	SetRadius(0.0f);
 	drawRadius = maxSpeed * 8;
 
-	const float3 camDir = (pos - camera->pos).Normalize();
+//	const float3 camDir = (pos - camera->pos).Normalize();
 	texx = projectileDrawer->torpedotex->xstart - (projectileDrawer->torpedotex->xend - projectileDrawer->torpedotex->xstart) * 0.5f;
 	texy = projectileDrawer->torpedotex->ystart - (projectileDrawer->torpedotex->yend - projectileDrawer->torpedotex->ystart) * 0.5f;
 #ifdef TRACE_SYNC
@@ -141,9 +140,9 @@ void CTorpedoProjectile::Update()
 						dir = dif;
 					} else {
 						dif2 -= dir * (dif2.dot(dir));
-						dif2.Normalize();
+						dif2.SafeNormalize();
 						dir += dif2 * tracking;
-						dir.Normalize();
+						dir.SafeNormalize();
 					}
 				}
 
@@ -156,7 +155,7 @@ void CTorpedoProjectile::Update()
 				speed *= 0.98f;
 				speed.y += mygravity;
 				dir = speed;
-				dir.Normalize();
+				dir.SafeNormalize();
 			}
 		}
 	}

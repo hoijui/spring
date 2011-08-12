@@ -1,7 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/myMath.h"
+#include "System/OpenMP_cond.h"
+#include "System/Sync/FPUCheck.h"
 #include "System/Util.h"
 #include "System/Log/ILog.h"
 #include "System/Platform/errorhandler.h"
@@ -44,6 +45,26 @@ void CMyMath::Init()
 
 	// Set single precision floating point math.
 	streflop_init<streflop::Simple>();
+#if defined(__SUPPORT_SNAN__) && !defined(USE_GML)
+	streflop::feraiseexcept(streflop::FPU_Exceptions(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW));
+#endif
+
+	// Initialize FPU in all OpenMP threads, too
+	// Note: Tested on Linux it seems it's not needed to do this.
+	//       Either OMP threads copy the FPU state of the mainthread
+	//       or the FPU state per-process on Linux.
+	//       Still it hurts nobody to call these functions ;-)
+#ifdef _OPENMP
+	#pragma omp parallel
+	{
+		//good_fpu_control_registers("OMP-Init");
+		streflop_init<streflop::Simple>();
+	#if defined(__SUPPORT_SNAN__) && !defined(USE_GML)
+		streflop::feraiseexcept(streflop::FPU_Exceptions(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW));
+	#endif
+	}
+#endif
+
 #else
 	// probably should check if SSE was enabled during
 	// compilation and issue a warning about illegal
@@ -138,8 +159,8 @@ float3 ClosestPointOnLine(const float3& l1, const float3& l2, const float3& p)
  */
 std::pair<float, float> GetMapBoundaryIntersectionPoints(const float3& start, const float3& dir)
 {
-	const float rcpdirx = 1.0f / dir.x;
-	const float rcpdirz = 1.0f / dir.z;
+	const float rcpdirx = (dir.x != 0.0f)? (1.0f / dir.x): 10000.0f;
+	const float rcpdirz = (dir.z != 0.0f)? (1.0f / dir.z): 10000.0f;
 	float l1, l2, far, near;
 
 	//! x component
@@ -156,7 +177,8 @@ std::pair<float, float> GetMapBoundaryIntersectionPoints(const float3& start, co
 
 	if (far < 0.0f || far < near) {
 		//! outside of boundary
-		return std::pair<float, float>(-1.0f, -1.0f);
+		near = -1.0f;
+		far = -1.0f;
 	}
 	return std::pair<float, float>(near, far);
 }

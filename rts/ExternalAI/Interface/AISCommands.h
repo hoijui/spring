@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _AI_S_COMMANDS_H
-#define _AI_S_COMMANDS_H
+#ifndef AI_S_COMMANDS_H
+#define	AI_S_COMMANDS_H
 
 // IMPORTANT NOTE: external systems parse this file,
 // so DO NOT CHANGE the style and format it uses without
@@ -1632,4 +1632,4 @@ Command* newCommand(void* sUnitCommandData, int sCommandId, int maxUnits);
 #endif // __cplusplus
 
 
-#endif // _AI_S_COMMANDS_H
+#endif	// AI_S_COMMANDS_H

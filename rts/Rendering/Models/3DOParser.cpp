@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <vector>
 #include <set>
 #include <algorithm>
@@ -25,7 +24,9 @@
 #include "System/Platform/byteorder.h"
 #include <boost/cstdint.hpp>
 
-using namespace std;
+using std::list;
+using std::map;
+
 
 static const float  scaleFactor = 1 / (65536.0f);
 static const float3 DownVector  = -UpVector;
@@ -121,7 +122,7 @@ C3DOParser::C3DOParser()
 }
 
 
-S3DModel* C3DOParser::Load(const string& name)
+S3DModel* C3DOParser::Load(const std::string& name)
 {
 	CFileHandler file(name);
 	if (!file.FileExists()) {
@@ -214,7 +215,7 @@ void C3DOParser::GetPrimitives(S3DOPiece* obj, int pos, int num, int excludePrim
 		list<int> orderVert;
 		for(int b=0;b<sp.numVertex;b++){
 			SimStreamRead(&w,2);
-			w = swabword(w);
+			swabWordInPlace(w);
 			sp.vertices.push_back(w);
 			orderVert.push_back(w);
 		}
@@ -291,7 +292,7 @@ void C3DOParser::GetPrimitives(S3DOPiece* obj, int pos, int num, int excludePrim
 
 		for (int b = 0; b < sp.numVertex; b++) {
 			SimStreamRead(&w, 2);
-			w = swabword(w);
+			swabWordInPlace(w);
 			obj->vertices[w].prims.push_back(obj->prims.size() - 1);
 		}
 	}

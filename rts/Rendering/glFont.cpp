@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "glFont.h"
 #include <string>
@@ -17,7 +16,7 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/Bitmap.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/myMath.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/FileSystem.h"
@@ -30,6 +29,16 @@
 #undef GetCharWidth // winapi.h
 
 using std::string;
+
+
+#define LOG_SECTION_FONT "Font"
+LOG_REGISTER_SECTION_GLOBAL(LOG_SECTION_FONT)
+
+// use the specific section for all LOG*() calls in this source file
+#ifdef LOG_SECTION_CURRENT
+	#undef LOG_SECTION_CURRENT
+#endif
+#define LOG_SECTION_CURRENT LOG_SECTION_FONT
 
 /*******************************************************************************/
 /*******************************************************************************/
@@ -318,7 +327,7 @@ void CFontTextureRenderer::ApproximateTextureWidth(int* width, int* height)
 	 */
 	unsigned int numPixelsAvg = (numPixels + numPixels2) / 2;
 
-	*width  = next_power_of_2(math::ceil(streflop::sqrtf( (float)numPixelsAvg )));
+	*width  = next_power_of_2(math::ceil(math::sqrtf( (float)numPixelsAvg )));
 	*height = next_power_of_2(math::ceil( (float)numPixelsAvg / (float)*width ));
 
 	if (*width > 2048)
@@ -415,8 +424,6 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 	if (size<=0)
 		size = 14;
 
-	const float invSize = 1.0f / size;
-	const float normScale = invSize / 64.0f;
 
 	//! setup character range
 	charstart = 32;
@@ -424,6 +431,8 @@ CglFont::CglFont(const std::string& fontfile, int size, int _outlinewidth, float
 	chars     = (charend - charstart) + 1;
 
 #ifndef   HEADLESS
+	const float invSize = 1.0f / size;
+	const float normScale = invSize / 64.0f;
 	FT_Library library;
 	FT_Face face;
 
@@ -579,11 +588,11 @@ CglFont* CglFont::LoadFont(const std::string& fontFile, int size, int outlinewid
 	try {
 		CglFont* newFont = new CglFont(fontFile, size, outlinewidth, outlineweight);
 		return newFont;
-	} catch (texture_size_exception&) {
-		logOutput.Print("FONT-ERROR: Couldn't create GlyphAtlas! (try to reduce reduce font size/outlinewidth)");
+	} catch (const texture_size_exception& ex) {
+		LOG_L(L_ERROR, "Failed creating font: Could not create GlyphAtlas! (try to reduce the font size/outline-width)");
 		return NULL;
-	} catch (content_error& e) {
-		logOutput.Print(std::string(e.what()));
+	} catch (const content_error& ex) {
+		LOG_L(L_ERROR, "Failed creating font: %s", ex.what());
 		return NULL;
 	}
 }
@@ -1159,9 +1168,8 @@ void CglFont::AddEllipsis(std::list<line>& lines, std::list<word>& words, float 
 
 void CglFont::WrapTextConsole(std::list<word>& words, float maxWidth, float maxHeight) const
 {
-	if (words.empty())
+	if (words.empty() || (lineHeight<=0.0f))
 		return;
-
 	const bool splitAllWords = false;
 	const unsigned int maxLines = (unsigned int)math::floor(std::max(0.0f, maxHeight / lineHeight ));
 
@@ -1612,7 +1620,7 @@ const float4* CglFont::ChooseOutlineColor(const float4& textColor)
 void CglFont::Begin(const bool immediate, const bool resetColors)
 {
 	if (inBeginEnd) {
-		logOutput.Print("FontError: called Begin() multiple times");
+		LOG_L(L_ERROR, "called Begin() multiple times");
 		return;
 	}
 
@@ -1637,12 +1645,12 @@ void CglFont::Begin(const bool immediate, const bool resetColors)
 void CglFont::End()
 {
 	if (!inBeginEnd) {
-		logOutput.Print("FontError: called End() without Begin()");
+		LOG_L(L_ERROR, "called End() without Begin()");
 		return;
 	}
 	inBeginEnd = false;
 
-	if (va->drawIndex()==0) {
+	if (va->drawIndex() == 0) {
 		return;
 	}
 
@@ -1924,7 +1932,7 @@ void CglFont::glPrint(float x, float y, float s, const int& options, const std::
 		y = (int)y;
 	}
 
-	//! backup text & outline colors (also ::ColorResetIndicator will reset to those)
+	// backup text & outline colors (also ::ColorResetIndicator will reset to those)
 	baseTextColor = textColor;
 	baseOutlineColor = outlineColor;
 
@@ -1983,7 +1991,7 @@ void CglFont::glPrintTable(float x, float y, float s, const int& options, const 
 				--pos;
 				break;
 
-			//! column separator is `\t`==`horizontal tab`
+			// column separator is `\t`==`horizontal tab`
 			case '\x09':
 				++col;
 				if(col >= coltext.size()) {

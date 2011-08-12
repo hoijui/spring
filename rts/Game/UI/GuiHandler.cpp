@@ -7,7 +7,6 @@
 #include <SDL_keysym.h>
 #include <SDL_mouse.h>
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "GuiHandler.h"
@@ -48,7 +47,7 @@
 #include "Sim/Units/UnitLoader.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/GlobalConfig.h"
 #include "System/LogOutput.h"
@@ -59,6 +58,9 @@
 #include "System/Sound/SoundChannels.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/SimpleParser.h"
+
+CONFIG(bool, MiniMapMarker).defaultValue(true);
+CONFIG(bool, InvertQueueKey).defaultValue(false);
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -93,13 +95,13 @@ CGuiHandler::CGuiHandler():
 	LoadDefaults();
 	LoadConfig("ctrlpanel.txt");
 
-	miniMapMarker = !!configHandler->Get("MiniMapMarker", 1);
-	invertQueueKey = !!configHandler->Get("InvertQueueKey", 0);
+	miniMapMarker = configHandler->GetBool("MiniMapMarker");
+	invertQueueKey = configHandler->GetBool("InvertQueueKey");
 
 	autoShowMetal = mapInfo->gui.autoShowMetal;
 
 	useStencil = false;
-	if (GLEW_NV_depth_clamp && !!configHandler->Get("StencilBufferBits", 1)) {
+	if (GLEW_NV_depth_clamp && configHandler->GetBool("StencilBufferBits")) {
 		GLint stencilBits;
 		glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
 		useStencil = (stencilBits >= 1);
@@ -1608,7 +1610,7 @@ bool CGuiHandler::ProcessLocalActions(const Action& action)
 		const int iconCmd = (iconPos >= 0) ? icons[iconPos].commandsID : -1;
 		if ((iconCmd >= 0) && ((size_t)iconCmd < commands.size())) {
 			std::string cmd = "unbindaction " + commands[iconCmd].action;
-			keyBindings->Command(cmd);
+			keyBindings->ExecuteCommand(cmd);
 			logOutput.Print("%s", cmd.c_str());
 		}
 		return true;
@@ -1653,7 +1655,7 @@ bool CGuiHandler::ProcessLocalActions(const Action& action)
 
 void CGuiHandler::RunLayoutCommand(const std::string& command)
 {
-	if (command == "reload" || ((LUA_MT_OPT & LUA_STATE) && globalConfig->GetMultiThreadLua() >= 5 && command == "update")) {
+	if (command == "reload" || ((LUA_MT_OPT & LUA_STATE) && globalConfig->GetMultiThreadLua() == MT_LUA_DUAL_ALL && command == "update")) {
 		if (CLuaHandle::GetActiveHandle() != NULL) {
 			// NOTE: causes a SEGV through RunCallIn()
 			logOutput.Print("Can not reload from within LuaUI, yet");

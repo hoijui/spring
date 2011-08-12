@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "GlobalRendering.h"
 
@@ -8,12 +7,16 @@
 #include "Sim/Misc/GlobalConstants.h"
 #include "System/mmgr.h"
 #include "System/Util.h"
-#include "System/ConfigHandler.h"
-#include "System/LogOutput.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/Log/ILog.h"
 #include "System/creg/creg_cond.h"
 
 #include <string>
 
+CONFIG(bool, CompressTextures).defaultValue(false);
+CONFIG(int, AtiHacks).defaultValue(-1);
+CONFIG(bool, DualScreenMode).defaultValue(false);
+CONFIG(bool, DualScreenMiniMapOnLeft).defaultValue(false);
 
 /**
  * @brief global rendering
@@ -125,7 +128,7 @@ void CGlobalRendering::PostInit() {
 	if (GLEW_ARB_texture_compression) {
 		//! we don't even need to check it, 'cos groundtextures must have that extension
 		//! default to off because it reduces quality (smallest mipmap level is bigger)
-		compressTextures = !!configHandler->Get("CompressTextures", 0);
+		compressTextures = configHandler->GetBool("CompressTextures");
 	}
 
 	//! maximum 2D texture size
@@ -134,21 +137,21 @@ void CGlobalRendering::PostInit() {
 	}
 
 	//! use some ATI bugfixes?
-	const int atiHacksCfg = configHandler->Get("AtiHacks", -1);
+	const int atiHacksCfg = configHandler->GetInt("AtiHacks");
 	atiHacks = haveATI && (atiHacksCfg < 0); //! runtime detect
 	atiHacks |= (atiHacksCfg > 0); //! user override
 	if (atiHacks) {
-		logOutput.Print("ATI hacks enabled\n");
+		LOG("ATI hacks enabled");
 	}
 }
 
 
 
 void CGlobalRendering::SetDualScreenParams() {
-	dualScreenMode = !!configHandler->Get("DualScreenMode", 0);
+	dualScreenMode = configHandler->GetBool("DualScreenMode");
 
 	if (dualScreenMode) {
-		dualScreenMiniMapOnLeft = !!configHandler->Get("DualScreenMiniMapOnLeft", 0);
+		dualScreenMiniMapOnLeft = configHandler->GetBool("DualScreenMiniMapOnLeft");
 	} else {
 		dualScreenMiniMapOnLeft = false;
 	}

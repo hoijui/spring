@@ -1,19 +1,4 @@
-/*
-	Copyright (c) 2008 Robin Vobruba <hoijui.quaero@gmail.com>
-
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "AIAICallback.h"
 
@@ -119,48 +104,48 @@ springLegacyAI::CAIAICallback::~CAIAICallback() {
 		delete weaponDefs[i];
 		weaponDefs[i] = NULL;
 	}
-	delete weaponDefs;
+	delete[] weaponDefs;
 	weaponDefs = NULL;
-	delete weaponDefFrames;
+	delete[] weaponDefFrames;
 	weaponDefFrames = NULL;
 
 	for (int i=0; i < numUnitDefs; ++i) {
 		delete unitDefs[i];
 		unitDefs[i] = NULL;
 	}
-	delete unitDefs;
+	delete[] unitDefs;
 	unitDefs = NULL;
-	delete unitDefFrames;
+	delete[] unitDefFrames;
 	unitDefFrames = NULL;
 
 	for (int i=0; i < numFeatDefs; ++i) {
 		delete featureDefs[i];
 		featureDefs[i] = NULL;
 	}
-	delete featureDefs;
+	delete[] featureDefs;
 	featureDefs = NULL;
-	delete featureDefFrames;
+	delete[] featureDefFrames;
 	featureDefFrames = NULL;
 
 	for (int i=0; i < maxGroups; ++i) {
 		delete groupPossibleCommands[i];
 		groupPossibleCommands[i] = NULL;
 	}
-	delete groupPossibleCommands;
+	delete[] groupPossibleCommands;
 	groupPossibleCommands = NULL;
 
 	for (int i=0; i < MAX_UNITS; ++i) {
 		delete unitPossibleCommands[i];
 		unitPossibleCommands[i] = NULL;
 	}
-	delete unitPossibleCommands;
+	delete[] unitPossibleCommands;
 	unitPossibleCommands = NULL;
 
 	for (int i=0; i < MAX_UNITS; ++i) {
 		delete unitCurrentCommandQueues[i];
 		unitCurrentCommandQueues[i] = NULL;
 	}
-	delete unitCurrentCommandQueues;
+	delete[] unitCurrentCommandQueues;
 	unitCurrentCommandQueues = NULL;
 
 	if (numClbInstances == 0) {

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <boost/cstdint.hpp>
 #include <SDL_keysym.h>
 
@@ -10,18 +9,31 @@
 #include "Game/Camera.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
-#include "System/ConfigHandler.h"
-#include "System/LogOutput.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/Log/ILog.h"
 #include "System/Input/KeyInput.h"
 
 using std::max;
 using std::min;
 
+CONFIG(bool, CamFreeEnabled).defaultValue(false);
+CONFIG(bool, CamFreeInvertAlt).defaultValue(false);
+CONFIG(bool, CamFreeGoForward).defaultValue(false);
+CONFIG(float, CamFreeFOV).defaultValue(45.0f);
+CONFIG(float, CamFreeScrollSpeed).defaultValue(500.0f);
+CONFIG(float, CamFreeGravity).defaultValue(-500.0f);
+CONFIG(float, CamFreeSlide).defaultValue(0.5f);
+CONFIG(float, CamFreeGroundOffset).defaultValue(16.0f);
+CONFIG(float, CamFreeTiltSpeed).defaultValue(150.0f);
+CONFIG(float, CamFreeAutoTilt).defaultValue(150.0f);
+CONFIG(float, CamFreeVelTime).defaultValue(1.5f);
+CONFIG(float, CamFreeAngVelTime).defaultValue(1.0f);
+
 /******************************************************************************/
 /******************************************************************************/
 //
 //  TODO: - separate speed variable for tracking state
-//        - smooth ransitions between tracking states and units
+//        - smooth transitions between tracking states and units
 //        - improve controls
 //        - rename it?  ;-)
 //
@@ -45,21 +57,21 @@ CFreeController::CFreeController()
 	}
 	pos -= (dir * 1000.0f);
 
-	enabled     = !!configHandler->Get("CamFreeEnabled",   0);
-	invertAlt   = !!configHandler->Get("CamFreeInvertAlt", 0);
-	goForward   = !!configHandler->Get("CamFreeGoForward", 0);
-	fov         = configHandler->Get("CamFreeFOV",           45.0f);
-	scrollSpeed = configHandler->Get("CamFreeScrollSpeed",  500.0f);
-	gravity     = configHandler->Get("CamFreeGravity",     -500.0f);
-	slide       = configHandler->Get("CamFreeSlide",          0.5f);
-	gndOffset   = configHandler->Get("CamFreeGroundOffset",  16.0f);
-	tiltSpeed   = configHandler->Get("CamFreeTiltSpeed",    150.0f);
+	enabled     = configHandler->GetBool("CamFreeEnabled");
+	invertAlt   = configHandler->GetBool("CamFreeInvertAlt");
+	goForward   = configHandler->GetBool("CamFreeGoForward");
+	fov         = configHandler->GetFloat("CamFreeFOV");
+	scrollSpeed = configHandler->GetFloat("CamFreeScrollSpeed");
+	gravity     = configHandler->GetFloat("CamFreeGravity");
+	slide       = configHandler->GetFloat("CamFreeSlide");
+	gndOffset   = configHandler->GetFloat("CamFreeGroundOffset");
+	tiltSpeed   = configHandler->GetFloat("CamFreeTiltSpeed");
 	tiltSpeed   = tiltSpeed * (PI / 180.0);
-	autoTilt    = configHandler->Get("CamFreeAutoTilt",     150.0f);
+	autoTilt    = configHandler->GetFloat("CamFreeAutoTilt");
 	autoTilt    = autoTilt * (PI / 180.0);
-	velTime     = configHandler->Get("CamFreeVelTime",        1.5f);
+	velTime     = configHandler->GetFloat("CamFreeVelTime");
 	velTime     = max(0.1f, velTime);
-	avelTime    = configHandler->Get("CamFreeAngVelTime",     1.0f);
+	avelTime    = configHandler->GetFloat("CamFreeAngVelTime");
 	avelTime    = max(0.1f, avelTime);
 }
 
@@ -95,7 +107,7 @@ void CFreeController::Update()
 		prevAvel = avel;
 		return;
 	}
-	
+
 	// safeties
 	velTime  = max(0.1f,  velTime);
 	avelTime = max(0.1f, avelTime);
@@ -397,7 +409,7 @@ float3 CFreeController::SwitchFrom() const
 void CFreeController::SwitchTo(bool showText)
 {
 	if (showText) {
-		logOutput.Print("Switching to Free style camera");
+		LOG("Switching to Free style camera");
 	}
 	prevVel  = ZeroVector;
 	prevAvel = ZeroVector;

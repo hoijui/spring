@@ -6,6 +6,8 @@
 #include "GameVersion.h"
 
 #include <cstring>
+#include <boost/version.hpp>
+#include <boost/config.hpp>
 
 /**
  * @brief Defines the current version string.
@@ -104,6 +106,45 @@ const std::string& GetBuildTime()
 {
 	static const std::string buildTime = __DATE__ " " __TIME__;
 	return buildTime;
+}
+
+#define QUOTEME_(x) #x
+#define QUOTEME(x) QUOTEME_(x)
+
+const std::string& GetCompiler()
+{
+	static const std::string compiler = ""
+#ifdef __GNUC__
+	//"gcc-" QUOTEME(__GNUC__) "." QUOTEME(__GNUC_MINOR__) "." QUOTEME(__GNUC_PATCHLEVEL__);
+	"gcc-" __VERSION__;
+#elif defined(_MSC_VER)
+	#ifdef _MSC_FULL_VER
+		"msvc-" QUOTEME(_MSC_FULL_VER);
+	#else
+		"msvc-" QUOTEME(_MSC_VER);
+	#endif
+#elif defined(__VERSION__)
+	"unknown-" __VERSION__;
+#else
+	"unknown";
+#endif
+	return compiler;
+}
+
+const std::string& GetBuildEnvironment(){
+	static const std::string environment = "boost-"
+#ifdef BOOST_VERSION
+	QUOTEME(BOOST_VERSION)
+#else
+	"unknown"
+#endif
+	", "
+#ifdef BOOST_STDLIB
+	BOOST_STDLIB;
+#else
+	"unknown stdlib";
+#endif
+	return environment;
 }
 
 const std::string& Get()

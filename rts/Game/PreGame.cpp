@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <map>
 #include <SDL_keysym.h>
@@ -12,7 +11,7 @@
 #include "PreGame.h"
 
 #include "ClientSetup.h"
-#include "System/FPUCheck.h"
+#include "System/Sync/FPUCheck.h"
 #include "Game.h"
 #include "GameData.h"
 #include "GameServer.h"
@@ -31,7 +30,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/GlobalConstants.h"
 #include "Sim/Misc/TeamHandler.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Exceptions.h"
 #include "System/NetProtocol.h"
 #include "System/TdfParser.h"
@@ -49,6 +48,8 @@
 
 using netcode::RawPacket;
 using std::string;
+
+CONFIG(bool, DemoFromDemo).defaultValue(false);
 
 CPreGame* pregame = NULL;
 
@@ -85,7 +86,7 @@ void CPreGame::LoadSetupscript(const std::string& script)
 void CPreGame::LoadDemo(const std::string& demo)
 {
 	assert(settings->isHost);
-	if (!configHandler->Get("DemoFromDemo", false))
+	if (!configHandler->GetBool("DemoFromDemo"))
 		net->DisableDemoRecording();
 	ReadDataFromDemo(demo);
 }
@@ -216,9 +217,9 @@ void CPreGame::UpdateClientNet()
 					pckt >> message;
 					logOutput.Print(message);
 					handleerror(NULL, "Remote requested quit: " + message, "Quit message", MBF_OK | MBF_EXCL);
-				} catch (netcode::UnpackPacketException &e) {
-					logOutput.Print("Got invalid QuitMessage: %s", e.err.c_str());
-				}		
+				} catch (const netcode::UnpackPacketException& ex) {
+					logOutput.Print("Got invalid QuitMessage: %s", ex.what());
+				}
 				break;
 			}
 			case NETMSG_CREATE_NEWPLAYER: {
@@ -248,8 +249,8 @@ void CPreGame::UpdateClientNet()
 					// the global broadcast will overwrite the user with the
 					// same values as here
 					playerHandler->AddPlayer(player);
-				} catch (netcode::UnpackPacketException &e) {
-					logOutput.Print("Got invalid New player message: %s", e.err.c_str());
+				} catch (const netcode::UnpackPacketException& ex) {
+					logOutput.Print("Got invalid New player message: %s", ex.what());
 				}
 				break;
 			}
@@ -305,8 +306,8 @@ void CPreGame::ReadDataFromDemo(const std::string& demoName)
 			GameData* data = NULL;
 			try {
 				data = new GameData(boost::shared_ptr<const RawPacket>(buf));
-			} catch (netcode::UnpackPacketException &e) {
-				throw content_error("Demo contains invalid GameData: " + e.err);
+			} catch (const netcode::UnpackPacketException& ex) {
+				throw content_error(std::string("Demo contains invalid GameData: ") + ex.what());
 			}
 
 			CGameSetup* demoScript = new CGameSetup();
@@ -399,8 +400,8 @@ void CPreGame::GameDataReceived(boost::shared_ptr<const netcode::RawPacket> pack
 		GameData *data = new GameData(packet);
 
 		gameData.reset(data);
-	} catch (netcode::UnpackPacketException &e) {
-		throw content_error("Server sent us invalid GameData: " + e.err);
+	} catch (const netcode::UnpackPacketException& ex) {
+		throw content_error(std::string("Server sent us invalid GameData: ") + ex.what());
 	}
 
 	CGameSetup* temp = new CGameSetup();

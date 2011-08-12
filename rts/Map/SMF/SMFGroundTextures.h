@@ -1,44 +1,44 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _BF_GROUND_TEXTURES_H_
-#define _BF_GROUND_TEXTURES_H_
+#ifndef _SMF_GROUND_TEXTURES_H_
+#define _SMF_GROUND_TEXTURES_H_
 
+#include "Map/BaseGroundTextures.h"
 #include "Rendering/GL/PBO.h"
 
 class CFileHandler;
-class CSmfReadMap;
+class CSMFReadMap;
 
-class CBFGroundTextures
+class CSMFGroundTextures: public CBaseGroundTextures
 {
 public:
-	CBFGroundTextures(CSmfReadMap* srm);
-	~CBFGroundTextures(void);
-	void SetTexture(int x, int y);
-	void DrawUpdate(void);
-	void LoadSquare(int x, int y, int level);
+	CSMFGroundTextures(CSMFReadMap* rm);
+	~CSMFGroundTextures();
+
+	void DrawUpdate();
+	bool SetSquareLuaTexture(int texSquareX, int texSquareY, int texID);
+	bool GetSquareLuaTexture(int texSquareX, int texSquareY, int texID, int texSizeX, int texSizeY, int texMipLevel);
+	void BindSquareTexture(int texSquareX, int texSquareY);
 
 protected:
-	CSmfReadMap* map;
+	void ExtractSquareTiles(const int texSquareX, const int texSquareY, const int mipLevel, GLint* tileBuf) const;
+	void LoadSquareTexture(int x, int y, int level);
 
-	const int bigSquareSize;
-	const int numBigTexX;
-	const int numBigTexY;
+	CSMFReadMap* smfMap;
 
 	struct GroundSquare {
-		int texLevel;
-		GLuint texture;
-		unsigned int lastUsed;
+		unsigned int texLevel;
+		unsigned int textureID;
+		unsigned int lastBoundFrame;
+		bool luaTexture;
 	};
 
-	GroundSquare* squares;
+	std::vector<GroundSquare> squares;
 
-	int* tileMap;
-	int tileSize;
-	char* tiles;
-	int tileMapXSize;
-	int tileMapYSize;
+	std::vector<int> tileMap;
+	std::vector<char> tiles;
 
-	// FIXME? these are not updated at runtime
+	//! FIXME? these are not updated at runtime
 	std::vector<float> heightMaxima;
 	std::vector<float> heightMinima;
 	std::vector<float> stretchFactors;
@@ -46,9 +46,7 @@ protected:
 	//! use Pixel Buffer Objects for async. uploading (DMA)
 	PBO pbo;
 
-	float anisotropy;
-
-	inline bool TexSquareInView(int, int);
+	inline bool TexSquareInView(int, int) const;
 };
 
 #endif // _BF_GROUND_TEXTURES_H_

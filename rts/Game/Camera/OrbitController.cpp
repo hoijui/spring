@@ -5,14 +5,18 @@
 #include <SDL_mouse.h>
 #include <SDL_keysym.h>
 
-#include "System/StdAfx.h"
 #include "OrbitController.h"
 #include "Game/Camera.h"
 #include "Game/UI/MouseHandler.h"
 #include "Map/Ground.h"
-#include "System/LogOutput.h"
-#include "System/ConfigHandler.h"
+#include "System/Log/ILog.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Input/KeyInput.h"
+
+CONFIG(bool, OrbitControllerEnabled).defaultValue(true);
+CONFIG(float, OrbitControllerOrbitSpeed).defaultValue(0.25f);
+CONFIG(float, OrbitControllerPanSpeed).defaultValue(2.00f);
+CONFIG(float, OrbitControllerZoomSpeed).defaultValue(5.00f);
 
 #define DEG2RAD(a) ((a) * (3.141592653f / 180.0f))
 #define RAD2DEG(a) ((a) * (180.0f / 3.141592653f))
@@ -27,11 +31,11 @@ COrbitController::COrbitController():
 	rotation(0.0f), cRotation(0.0f),
 	elevation(0.0f), cElevation(0.0f)
 {
-	enabled = !!configHandler->Get("OrbitControllerEnabled", 1);
+	enabled = configHandler->GetBool("OrbitControllerEnabled");
 
-	orbitSpeedFact = configHandler->Get("OrbitControllerOrbitSpeed", 0.25f);
-	panSpeedFact   = configHandler->Get("OrbitControllerPanSpeed",   2.00f);
-	zoomSpeedFact  = configHandler->Get("OrbitControllerZoomSpeed",  5.00f);
+	orbitSpeedFact = configHandler->GetFloat("OrbitControllerOrbitSpeed");
+	panSpeedFact   = configHandler->GetFloat("OrbitControllerPanSpeed");
+	zoomSpeedFact  = configHandler->GetFloat("OrbitControllerZoomSpeed");
 
 	orbitSpeedFact = std::max(0.1f, std::min(10.0f, orbitSpeedFact));
 	panSpeedFact   = std::max(0.1f, std::min(10.0f, panSpeedFact));
@@ -273,7 +277,7 @@ float3 COrbitController::SwitchFrom() const
 void COrbitController::SwitchTo(bool showText)
 {
 	if (showText) {
-		logOutput.Print("Switching to Orbit style camera");
+		LOG("Switching to Orbit style camera");
 	}
 
 	Init(camera->pos, ZeroVector);

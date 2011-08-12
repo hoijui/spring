@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 #include <map>
 #include <boost/assign/list_of.hpp>
@@ -8,7 +7,6 @@
 #include "LuaOpenGLUtils.h"
 #include "Game/Camera.h"
 #include "Rendering/ShadowHandler.h"
-//#include "System/LogOutput.h"
 #include "System/Matrix44f.h"
 #include "System/Util.h"
 

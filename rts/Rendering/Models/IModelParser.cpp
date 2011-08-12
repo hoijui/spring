@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <algorithm>
 #include <cctype>
@@ -18,7 +17,7 @@
 #include "Sim/Units/Unit.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/Util.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/Exceptions.h"
 
 C3DModelLoader* modelParser = NULL;
@@ -58,7 +57,8 @@ static void RegisterAssimpModelParsers(C3DModelLoader::ParserMap& parsers, CAssP
 	// do not ignore the last extension
 	extensions += ";";
 
-	logOutput.Print("[%s] supported Assimp model formats: %s", __FUNCTION__, extensions.c_str());
+	LOG("[%s] supported Assimp model formats: %s",
+			__FUNCTION__, extensions.c_str());
 
 	size_t i = 0;
 	size_t j = 0;
@@ -139,7 +139,7 @@ S3DModel* C3DModelLoader::Load3DModel(std::string name, const float3& centerOffs
 	}
 
 	//! not found in cache, create the model and cache it
-	const std::string& fileExt = filesystem.GetExtension(name);
+	const std::string& fileExt = FileSystem::GetExtension(name);
 	const ParserMap::iterator pi = parsers.find(fileExt);
 
 	if (pi != parsers.end()) {
@@ -150,7 +150,7 @@ S3DModel* C3DModelLoader::Load3DModel(std::string name, const float3& centerOffs
 		try {
 			model = p->Load(name);
 			model->relMidPos += centerOffset;
-		} catch (const content_error& e) {
+		} catch (const content_error& ex) {
 			// crash-dummy
 			model = new S3DModel();
 			model->type = ModelExtToModelType(parsers, StringToLower(fileExt));
@@ -158,7 +158,8 @@ S3DModel* C3DModelLoader::Load3DModel(std::string name, const float3& centerOffs
 			model->SetRootPiece(ModelTypeToModelPiece(model->type));
 			model->GetRootPiece()->SetCollisionVolume(new CollisionVolume("box", UpVector * -1.0f, ZeroVector, CollisionVolume::COLVOL_HITTEST_CONT));
 
-			logOutput.Print("WARNING: could not load model \"" + name + "\" (reason: " + e.what() + ")");
+			LOG_L(L_WARNING, "could not load model \"%s\" (reason: %s)",
+					name.c_str(), ex.what());
 		}
 
 		if ((root = model->GetRootPiece()) != NULL) {
@@ -170,7 +171,8 @@ S3DModel* C3DModelLoader::Load3DModel(std::string name, const float3& centerOffs
 		return model;
 	}
 
-	logOutput.Print("ERROR: could not find a parser for model \"" + name + "\" (unknown format?)");
+	LOG_L(L_ERROR, "could not find a parser for model \"%s\" (unknown format?)",
+			name.c_str());
 	return NULL;
 }
 

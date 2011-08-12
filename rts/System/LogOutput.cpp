@@ -1,6 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
+#include "System/Platform/Win/win32.h"
 
 #include "System/LogOutput.h"
 
@@ -19,8 +19,8 @@
 #include "System/float3.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Game/GameVersion.h"
-#include "System/ConfigHandler.h"
-#include "System/FileSystem/FileSystemHandler.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/FileSystem/FileSystem.h"
 #include "System/Log/DefaultFilter.h"
 #include "System/Log/Level.h"
 #include "System/mmgr.h"
@@ -33,6 +33,9 @@ using std::vector;
 
 /******************************************************************************/
 /******************************************************************************/
+
+CONFIG(std::string, RotateLogFiles).defaultValue("auto");
+CONFIG(std::string, LogSubsystems).defaultValue("");
 
 CLogSubsystem* CLogSubsystem::linkedList;
 static CLogSubsystem LOG_DEFAULT("", true);
@@ -103,7 +106,7 @@ CLogOutput::CLogOutput()
 	bool doRotateLogFiles = false;
 	std::string rotatePolicy = "auto";
 	if (configHandler != NULL) {
-		rotatePolicy = configHandler->GetString("RotateLogFiles", "auto");
+		rotatePolicy = configHandler->GetString("RotateLogFiles");
 	}
 	if (rotatePolicy == "always") {
 		doRotateLogFiles = true;
@@ -161,7 +164,7 @@ void CLogOutput::SetFileName(std::string fname)
 
 std::string CLogOutput::CreateFilePath(const std::string& fileName)
 {
-	return FileSystemHandler::GetCwd() + (char)FileSystemHandler::GetNativePathSeparator() + fileName;
+	return FileSystem::GetCwd() + (char)FileSystem::GetNativePathSeparator() + fileName;
 }
 
 
@@ -179,23 +182,23 @@ void CLogOutput::RotateLogFile() const
 {
 
 	if (IsLogFileRotating()) {
-		if (FileSystemHandler::FileExists(filePath)) {
+		if (FileSystem::FileExists(filePath)) {
 			// logArchiveDir: /absolute/writeable/data/dir/log/
 			std::string logArchiveDir = filePath.substr(0, filePath.find_last_of("/\\") + 1);
-			logArchiveDir = logArchiveDir + "log" + (char)FileSystemHandler::GetNativePathSeparator();
+			logArchiveDir = logArchiveDir + "log" + (char)FileSystem::GetNativePathSeparator();
 
-			const std::string archivedLogFile = logArchiveDir + FileSystemHandler::GetFileModificationDate(filePath) + "_" + fileName;
+			const std::string archivedLogFile = logArchiveDir + FileSystem::GetFileModificationDate(filePath) + "_" + fileName;
 
-			// create the log archive dir if it does nto exist yet
-			if (!FileSystemHandler::DirExists(logArchiveDir)) {
-				FileSystemHandler::mkdir(logArchiveDir);
+			// create the log archive dir if it does not exist yet
+			if (!FileSystem::DirExists(logArchiveDir)) {
+				FileSystem::CreateDirectory(logArchiveDir);
 			}
 
 			// move the old log to the archive dir
 			const int moveError = rename(filePath.c_str(), archivedLogFile.c_str());
 			if (moveError != 0) {
 				// no log here yet
-				std::cout << "Failed rotating the log file" << std::endl;
+				std::cerr << "Failed rotating the log file" << std::endl;
 			}
 		}
 	}
@@ -215,7 +218,9 @@ void CLogOutput::Initialize()
 	initialized = true;
 	Print("LogOutput initialized.\n");
 	Print("Spring %s", SpringVersion::GetFull().c_str());
-	logOutput.Print("Build date/time: %s", SpringVersion::GetBuildTime().c_str());
+	Print("Build date/time: %s", SpringVersion::GetBuildTime().c_str());
+	Print("Build environment: %s", SpringVersion::GetBuildEnvironment().c_str());
+	Print("Compiler: %s", SpringVersion::GetCompiler().c_str());
 
 	InitializeSubsystems();
 
@@ -266,7 +271,7 @@ void CLogOutput::InitializeSubsystems()
 	// and the ones specified in the configuration file.
 	// configHandler cannot be accessed here in unitsync since it may not exist.
 #ifndef UNITSYNC
-	std::string subsystems = "," + StringToLower(configHandler->GetString("LogSubsystems", "")) + ",";
+	std::string subsystems = "," + StringToLower(configHandler->GetString("LogSubsystems")) + ",";
 #else
 	#ifdef DEBUG
 	// unitsync logging in debug mode always on
@@ -365,7 +370,7 @@ void CLogOutput::Output(const CLogSubsystem& subsystem, const std::string& str)
 	msg += str;
 
 	if (!initialized) {
-		ToStdout(subsystem, msg);
+		ToStderr(subsystem, msg);
 		preInitLog().push_back(PreInitLogEntry(&subsystem, msg));
 		return;
 	}
@@ -390,7 +395,7 @@ void CLogOutput::Output(const CLogSubsystem& subsystem, const std::string& str)
 #endif // _MSC_VER
 
 	ToFile(subsystem, msg);
-	ToStdout(subsystem, msg);
+	ToStderr(subsystem, msg);
 }
 
 
@@ -491,7 +496,7 @@ CLogSubsystem& CLogOutput::GetDefaultLogSubsystem()
 
 
 
-void CLogOutput::ToStdout(const CLogSubsystem& subsystem, const std::string& message)
+void CLogOutput::ToStderr(const CLogSubsystem& subsystem, const std::string& message)
 {
 	if (message.empty()) {
 		return;
@@ -499,14 +504,14 @@ void CLogOutput::ToStdout(const CLogSubsystem& subsystem, const std::string& mes
 
 	const bool newline = (message.at(message.size() -1) != '\n');
 
-	std::cout << message;
+	std::cerr << message;
 	if (newline)
-		std::cout << std::endl;
+		std::cerr << std::endl;
 #ifdef DEBUG
 	// flushing may be bad for in particular dedicated server performance
 	// crash handler should cleanly close the log file usually anyway
 	else
-		std::cout.flush();
+		std::cerr.flush();
 #endif
 }
 

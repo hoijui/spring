@@ -1,11 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
-
-#include <set>
-#include <list>
-#include <cctype>
 
 #include "LuaSyncedMoveCtrl.h"
 
@@ -22,10 +17,10 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "System/myMath.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "LuaHelper.h"
 
-using namespace std;
+#include <cctype>
 
 
 /******************************************************************************/
@@ -290,9 +285,9 @@ int LuaSyncedMoveCtrl::SetPhysics(lua_State* L)
 	const float3 rot(luaL_checkfloat(L, 8),
 	                 luaL_checkfloat(L, 9),
 	                 luaL_checkfloat(L, 10));
-	ASSERT_SYNCED_FLOAT3(pos);
-	ASSERT_SYNCED_FLOAT3(vel);
-	ASSERT_SYNCED_FLOAT3(rot);
+	ASSERT_SYNCED(pos);
+	ASSERT_SYNCED(vel);
+	ASSERT_SYNCED(rot);
 	moveType->SetPhysics(pos, vel, rot);
 	return 0;
 }
@@ -307,7 +302,7 @@ int LuaSyncedMoveCtrl::SetPosition(lua_State* L)
 	const float3 pos(luaL_checkfloat(L, 2),
 	                 luaL_checkfloat(L, 3),
 	                 luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(pos);
+	ASSERT_SYNCED(pos);
 	moveType->SetPosition(pos);
 	return 0;
 }
@@ -322,7 +317,7 @@ int LuaSyncedMoveCtrl::SetVelocity(lua_State* L)
 	const float3 vel(luaL_checkfloat(L, 2),
 	                 luaL_checkfloat(L, 3),
 	                 luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(vel);
+	ASSERT_SYNCED(vel);
 	moveType->SetVelocity(vel);
 	return 0;
 }
@@ -337,7 +332,7 @@ int LuaSyncedMoveCtrl::SetRelativeVelocity(lua_State* L)
 	const float3 relVel(luaL_checkfloat(L, 2),
 	                    luaL_checkfloat(L, 3),
 	                    luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(relVel);
+	ASSERT_SYNCED(relVel);
 	moveType->SetRelativeVelocity(relVel);
 	return 0;
 }
@@ -352,7 +347,7 @@ int LuaSyncedMoveCtrl::SetRotation(lua_State* L)
 	const float3 rot(luaL_checkfloat(L, 2),
 	                 luaL_checkfloat(L, 3),
 	                 luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(rot);
+	ASSERT_SYNCED(rot);
 	moveType->SetRotation(rot);
 	return 0;
 }
@@ -367,7 +362,7 @@ int LuaSyncedMoveCtrl::SetRotationOffset(lua_State* L)
 	const float3 rotOff(luaL_checkfloat(L, 2),
 	                    luaL_checkfloat(L, 3),
 	                    luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(rotOff);
+	ASSERT_SYNCED(rotOff);
 	moveType->SetRotationOffset(rotOff);
 	return 0;
 }
@@ -382,7 +377,7 @@ int LuaSyncedMoveCtrl::SetRotationVelocity(lua_State* L)
 	const float3 rotVel(luaL_checkfloat(L, 2),
 	                    luaL_checkfloat(L, 3),
 	                    luaL_checkfloat(L, 4));
-	ASSERT_SYNCED_FLOAT3(rotVel);
+	ASSERT_SYNCED(rotVel);
 	moveType->SetRotationVelocity(rotVel);
 	return 0;
 }
@@ -395,7 +390,7 @@ int LuaSyncedMoveCtrl::SetHeading(lua_State* L)
 		return 0;
 	}
 	const short heading = (short)luaL_checknumber(L, 2);
-	ASSERT_SYNCED_PRIMITIVE((short)heading);
+	ASSERT_SYNCED((short)heading);
 	moveType->SetHeading(heading);
 	return 0;
 }
@@ -633,16 +628,17 @@ static inline bool SetAirMoveTypeValue(CAirMoveType* mt, const string& key, bool
 static inline void SetSingleAirMoveTypeValue(lua_State *L, int keyidx, int validx, CAirMoveType *moveType)
 {
 	const string key = lua_tostring(L, keyidx);
+	bool failedToAssign = false;
 	if (lua_isnumber(L, validx)) {
-		const float value = float(lua_tonumber(L, validx));
-		if (!SetAirMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to AirMoveType";
-		}
+		const float value = lua_tofloat(L, validx);
+		failedToAssign = !SetAirMoveTypeValue(moveType, key, value);
 	} else if (lua_isboolean(L, validx)) {
 		bool value = lua_toboolean(L, validx);
-		if (!SetAirMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to AirMoveType";
-		}
+		failedToAssign = !SetAirMoveTypeValue(moveType, key, value);
+	}
+	if (failedToAssign) {
+		LOG_L(L_WARNING, "Can not assign key \"%s\" to AirMoveType",
+				key.c_str());
 	}
 }
 
@@ -713,16 +709,17 @@ static inline bool SetGroundMoveTypeValue(CGroundMoveType* mt, const string& key
 static inline void SetSingleGroundMoveTypeValue(lua_State *L, int keyidx, int validx, CGroundMoveType *moveType)
 {
 	const string key = lua_tostring(L, keyidx);
+	bool failedToAssign = false;
 	if (lua_isnumber(L, validx)) {
-		const float value = float(lua_tonumber(L, validx));
-		if (!SetGroundMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to GroundMoveType";
-		}
+		const float value = lua_tofloat(L, validx);
+		failedToAssign = !SetGroundMoveTypeValue(moveType, key, value);
 	} else if (lua_isboolean(L, validx)) {
 		bool value = lua_toboolean(L, validx);
-		if (!SetGroundMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to GroundMoveType";
-		}
+		failedToAssign = !SetGroundMoveTypeValue(moveType, key, value);
+	}
+	if (failedToAssign) {
+		LOG_L(L_WARNING, "Can not assign key \"%s\" to GroundMoveType",
+				key.c_str());
 	}
 }
 
@@ -813,16 +810,17 @@ static inline bool SetTAAirMoveTypeValue(CTAAirMoveType* mt, const string& key, 
 static inline void SetSingleTAAirMoveTypeValue(lua_State *L, int keyidx, int validx, CTAAirMoveType *moveType)
 {
 	const string key = lua_tostring(L, keyidx);
+	bool failedToAssign = false;
 	if (lua_isnumber(L, validx)) {
-		const float value = float(lua_tonumber(L, validx));
-		if (!SetTAAirMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to GunshipMoveType";
-		}
+		const float value = lua_tofloat(L, validx);
+		failedToAssign = !SetTAAirMoveTypeValue(moveType, key, value);
 	} else if (lua_isboolean(L, validx)) {
 		bool value = lua_toboolean(L, validx);
-		if (!SetTAAirMoveTypeValue(moveType, key, value)) {
-			LogObject() << "can't assign key \"" << key << "\" to GunshipMoveType";
-		}
+		failedToAssign = !SetTAAirMoveTypeValue(moveType, key, value);
+	}
+	if (failedToAssign) {
+		LOG_L(L_WARNING, "Can not assign key \"%s\" to GunshipMoveType",
+				key.c_str());
 	}
 }
 

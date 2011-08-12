@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "PathManager.h"
@@ -11,7 +10,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/MoveTypes/MoveMath/MoveMath.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/myMath.h"
 #include "System/TimeProfiler.h"
 
@@ -27,7 +26,7 @@ CPathManager::CPathManager(): nextPathId(0)
 	medResPE = new CPathEstimator(maxResPF,  8, "pe",  mapInfo->map.name);
 	lowResPE = new CPathEstimator(maxResPF, 32, "pe2", mapInfo->map.name);
 
-	logOutput.Print("[CPathManager] pathing data checksum: %08x\n", GetPathCheckSum());
+	LOG("[CPathManager] pathing data checksum: %08x", GetPathCheckSum());
 
 	#ifdef SYNCDEBUG
 	// clients may have a non-writable cache directory (which causes
@@ -399,11 +398,13 @@ void CPathManager::UpdatePath(const CSolidObject* owner, unsigned int pathId)
 
 	GetDetailedPathSquares(pathId, points);
 
-	float scale = 1.0f / points.size();
-	unsigned int i = points.size();
+	if (!points.empty()) {
+		float scale = 1.0f / points.size();
+		unsigned int i = points.size();
 
-	for (std::vector<int2>::const_iterator it = points.begin(); it != points.end(); ++it) {
-		SetHeatOnSquare(it->x, it->y, i * scale * owner->mobility->heatProduced, owner->id); i--;
+		for (std::vector<int2>::const_iterator it = points.begin(); it != points.end(); ++it) {
+			SetHeatOnSquare(it->x, it->y, i * scale * owner->mobility->heatProduced, owner->id); i--;
+		}
 	}
 }
 

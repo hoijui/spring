@@ -12,11 +12,13 @@
 #include <cstdlib>
 #include <cstdio>
 #include <inttypes.h> // for uintptr_t
+#include <boost/bind.hpp>
 #include <boost/static_assert.hpp> // for BOOST_STATIC_ASSERT
+#include <boost/thread.hpp>
 #include <SDL_events.h>
 
 #include "thread_backtrace.h"
-#include "System/FileSystem/FileSystemHandler.h"
+#include "System/FileSystem/FileSystem.h"
 #include "Game/GameVersion.h"
 #include "System/Log/ILog.h"
 #include "System/LogOutput.h"
@@ -24,6 +26,7 @@
 #include "System/myTime.h"
 #include "System/Platform/Misc.h"
 #include "System/Platform/errorhandler.h"
+#include "System/Platform/Threading.h"
 
 
 static const int MAX_STACKTRACE_DEPTH = 10;
@@ -102,18 +105,18 @@ static std::string LocateSymbolFile(const std::string& binaryFile)
 
 	if (bin_ext.length() > 0) {
 		symbolFile = bin_path + '/' + bin_file + bin_ext + ".dbg";
-		if (FileSystemHandler::IsReadableFile(symbolFile)) {
+		if (FileSystem::IsReadableFile(symbolFile)) {
 			return symbolFile;
 		}
 	}
 
 	symbolFile = bin_path + '/' + bin_file + ".dbg";
-	if (FileSystemHandler::IsReadableFile(symbolFile)) {
+	if (FileSystem::IsReadableFile(symbolFile)) {
 		return symbolFile;
 	}
 
 	symbolFile = debugPath + bin_path + '/' + bin_file + bin_ext;
-	if (FileSystemHandler::IsReadableFile(symbolFile)) {
+	if (FileSystem::IsReadableFile(symbolFile)) {
 		return symbolFile;
 	}
 
@@ -302,6 +305,12 @@ static void TranslateStackTrace(std::vector<std::string>* lines, const std::vect
 }
 
 
+void ForcedExitAfterFiveSecs() {
+	boost::this_thread::sleep(boost::posix_time::seconds(5));
+	exit(-1);
+}
+
+
 
 namespace CrashHandler
 {
@@ -432,22 +441,19 @@ namespace CrashHandler
 	void HandleSignal(int signal)
 	{
 		if (signal == SIGINT) {
-			static bool inExit = false;
-			static spring_time exitTime = spring_notime;
-			if (inExit) {
-				//! give Spring 3 seconds to cleanly exit
-				if (spring_gettime() > exitTime + spring_secs(3)) {
-					exit(-1);
-				}
-			} else {
-				inExit = true;
-				exitTime = spring_gettime();
-				SDL_Event event;
-				event.type = SDL_QUIT;
-				SDL_PushEvent(&event);
-			}
+			//! ctrl+c = kill
+			LOG("caught SIGINT, aborting");
+
+			//! first try a clean exit
+			SDL_Event event;
+			event.type = SDL_QUIT;
+			SDL_PushEvent(&event);
+
+			//! abort after 5sec
+			boost::thread(boost::bind(&ForcedExitAfterFiveSecs));
 			return;
 		}
+
 		logOutput.SetSubscribersEnabled(false);
 
 		std::string error;
@@ -461,6 +467,8 @@ namespace CrashHandler
 			error = "IO-Error (SIGIO)";
 		} else if (signal == SIGABRT) {
 			error = "Aborted (SIGABRT)";
+		} else if (signal == SIGFPE) {
+			error = "FloatingPointException (SIGFPE)";
 		} else {
 			//! we should never get here
 			error = "Unknown signal";
@@ -471,7 +479,7 @@ namespace CrashHandler
 		bool keepRunning = false;
 		Stacktrace(&keepRunning);
 
-		//! only try to keep on running for these signals
+		//! don't try to keep on running after these signals
 		if (keepRunning &&
 		    (signal != SIGSEGV) &&
 		    (signal != SIGILL) &&
@@ -505,6 +513,9 @@ namespace CrashHandler
 
 		//! exit app if we catched a critical one
 		if (!keepRunning) {
+			//! don't handle any further signals when exiting
+			Remove();
+			
 			std::ostringstream buf;
 			buf << "Spring has crashed:\n"
 				<< error << ".\n\n"
@@ -519,6 +530,7 @@ namespace CrashHandler
 		signal(SIGILL,  HandleSignal); //! illegal instruction
 		signal(SIGPIPE, HandleSignal); //! maybe some network error
 		signal(SIGIO,   HandleSignal); //! who knows?
+		signal(SIGFPE,  HandleSignal); //! div0 and more
 		signal(SIGABRT, HandleSignal);
 		signal(SIGINT,  HandleSignal);
 	}
@@ -528,6 +540,7 @@ namespace CrashHandler
 		signal(SIGILL,  SIG_DFL);
 		signal(SIGPIPE, SIG_DFL);
 		signal(SIGIO,   SIG_DFL);
+		signal(SIGFPE,  SIG_DFL);
 		signal(SIGABRT, SIG_DFL);
 		signal(SIGINT,  SIG_DFL);
 	}

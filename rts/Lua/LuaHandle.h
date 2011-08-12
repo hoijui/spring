@@ -2,13 +2,6 @@
 
 #ifndef LUA_HANDLE_H
 #define LUA_HANDLE_H
-
-#include <string>
-#include <vector>
-#include <set>
-using std::string;
-using std::vector;
-using std::set;
 #include <boost/cstdint.hpp>
 
 #include "System/EventClient.h"
@@ -23,6 +16,13 @@ using std::set;
 #include "LuaDisplayLists.h"
 #include "System/Platform/Threading.h"
 #include "System/LogOutput.h"
+
+#include <string>
+#include <vector>
+#include <set>
+using std::string;
+using std::vector;
+using std::set;
 
 
 #define LUA_HANDLE_ORDER_RULES            100
@@ -39,10 +39,12 @@ class CWeapon;
 class CFeature;
 class CProjectile;
 struct Command;
+struct Rectangle;
 struct LuaHashString;
 struct lua_State;
 class CLogSubsystem;
 class CLuaHandle;
+
 
 struct luaContextData {
 	luaContextData() : fullCtrl(false), fullRead(false), ctrlTeam(CEventClient::NoAccessTeam),
@@ -201,6 +203,7 @@ class CLuaHandle : public CEventClient
 
 		void Save(zipFile archive);
 
+		void UnsyncedHeightMapUpdate(const Rectangle& rect);
 		void Update();
 
 		bool KeyPress(unsigned short key, bool isRepeat);

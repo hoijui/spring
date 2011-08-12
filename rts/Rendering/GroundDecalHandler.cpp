@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <algorithm>
 #include <cctype>
 #include "System/mmgr.h"
@@ -17,21 +16,21 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/UnitDrawer.h"
-#include "Rendering/Env/BaseSky.h"
+#include "Rendering/Env/ISky.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
-#include "Rendering/Shaders/ShaderHandler.hpp"
-#include "Rendering/Shaders/Shader.hpp"
+#include "Rendering/Shaders/ShaderHandler.h"
+#include "Rendering/Shaders/Shader.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitTypes/Building.h"
 #include "Sim/Projectiles/ExplosionListener.h"
 #include "Sim/Weapons/WeaponDef.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/myMath.h"
 #include "System/Util.h"
 #include "System/FileSystem/FileSystem.h"
@@ -42,6 +41,8 @@ using std::max;
 
 CGroundDecalHandler* groundDecals = NULL;
 
+CONFIG(int, GroundDecals).defaultValue(1);
+CONFIG(int, GroundScarAlphaFade).defaultValue(0);
 
 CGroundDecalHandler::CGroundDecalHandler()
 	: CEventClient("[CGroundDecalHandler]", 314159, false)
@@ -50,8 +51,8 @@ CGroundDecalHandler::CGroundDecalHandler()
 	helper->AddExplosionListener(this);
 
 	drawDecals = false;
-	decalLevel = std::max(0, configHandler->Get("GroundDecals", 1));
-	groundScarAlphaFade = (configHandler->Get("GroundScarAlphaFade", 0) != 0);
+	decalLevel = std::max(0, configHandler->GetInt("GroundDecals"));
+	groundScarAlphaFade = (configHandler->GetInt("GroundScarAlphaFade") != 0);
 
 	if (decalLevel == 0) {
 		return;
@@ -65,7 +66,8 @@ CGroundDecalHandler::CGroundDecalHandler()
 	LuaParser resourcesParser("gamedata/resources.lua",
 	                          SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP);
 	if (!resourcesParser.Execute()) {
-		logOutput.Print(resourcesParser.GetErrorLog());
+		LOG_L(L_ERROR, "Failed to load resources: %s",
+				resourcesParser.GetErrorLog().c_str());
 	}
 
 	const LuaTable scarsTable = resourcesParser.GetRoot().SubTable("graphics").SubTable("scars");
@@ -222,12 +224,7 @@ inline void CGroundDecalHandler::DrawBuildingDecal(BuildingGroundDecal* decal)
 		return;
 	}
 
-	const float* hm =
-		#ifdef USE_UNSYNCED_HEIGHTMAP
-		readmap->GetCornerHeightMapUnsynced();
-		#else
-		readmap->GetCornerHeightMapSynced();
-		#endif
+	const float* hm = readmap->GetCornerHeightMapUnsynced();
 	const int gsmx = gs->mapx;
 	const int gsmx1 = gsmx + 1;
 	const int gsmy = gs->mapy;
@@ -336,12 +333,8 @@ inline void CGroundDecalHandler::DrawGroundScar(CGroundDecalHandler::Scar* scar,
 		return;
 	}
 
-	const float* hm =
-		#ifdef USE_UNSYNCED_HEIGHTMAP
-		readmap->GetCornerHeightMapUnsynced();
-		#else
-		readmap->GetCornerHeightMapSynced();
-		#endif
+	const float* hm = readmap->GetCornerHeightMapUnsynced();
+
 	const int gsmx = gs->mapx;
 	const int gsmx1 = gsmx + 1;
 
@@ -638,7 +631,7 @@ void CGroundDecalHandler::AddScars() {
 			}
 		}
 
-		scars.push_back(s); 
+		scars.push_back(s);
 	}
 }
 
@@ -911,7 +904,7 @@ unsigned int CGroundDecalHandler::LoadTexture(const std::string& name)
 	    (fullName.find_first_of('/')  == string::npos)) {
 		fullName = string("bitmaps/tracks/") + fullName;
 	}
-	bool isBitmap = (filesystem.GetExtension(fullName) == "bmp");
+	bool isBitmap = (FileSystem::GetExtension(fullName) == "bmp");
 
 	CBitmap bm;
 	if (!bm.Load(fullName)) {
@@ -999,7 +992,7 @@ void CGroundDecalHandler::LoadScar(const std::string& file, unsigned char* buf,
 	if (!bm.Load(file)) {
 		throw content_error("Could not load scar from file " + file);
 	}
-	bool isBitmap = (filesystem.GetExtension(file) == "bmp");
+	bool isBitmap = (FileSystem::GetExtension(file) == "bmp");
 	if (isBitmap) {
 		//! bitmaps don't have an alpha channel
 		//! so use: red := brightness & green := alpha
@@ -1216,7 +1209,8 @@ int CGroundDecalHandler::GetBuildingDecalType(const std::string& name)
 
 	CBitmap bm;
 	if (!bm.Load(fullName)) {
-		logOutput.Print("[%s] Could not load building-decal from file \"%s\"", __FUNCTION__, fullName.c_str());
+		LOG_L(L_ERROR, "[%s] Could not load building-decal from file \"%s\"",
+				__FUNCTION__, fullName.c_str());
 		return -1;
 	}
 

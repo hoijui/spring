@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "Game/GameHelper.h"
@@ -17,7 +16,6 @@
 #include "Map/Ground.h"
 #include "System/Matrix44f.h"
 #include "System/Sound/SoundChannels.h"
-#include "System/LogOutput.h"
 #ifdef TRACE_SYNC
 	#include "System/Sync/SyncTracer.h"
 #endif
@@ -127,7 +125,7 @@ void CWeaponProjectile::Collision(CFeature* feature)
 		// don't do damage only on odd-numbered frames
 		// for noExplode projectiles (it breaks coldet)
 		float3 impactDir = speed;
-		impactDir.Normalize();
+		impactDir.SafeNormalize();
 
 		// Dynamic Damage
 		DamageArray damageArray;
@@ -182,7 +180,7 @@ void CWeaponProjectile::Collision(CUnit* unit)
 		// don't do damage only on odd-numbered frames
 		// for noExplode projectiles (it breaks coldet)
 		float3 impactDir = speed;
-		impactDir.Normalize();
+		impactDir.SafeNormalize();
 
 		// Dynamic Damage
 		DamageArray damageArray;

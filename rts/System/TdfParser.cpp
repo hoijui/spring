@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <algorithm>
 #include <cctype>
 #include <limits.h>
@@ -13,7 +12,7 @@
 #include "System/Util.h"
 
 #include "System/TdfParser.h"
-#include "tdf_grammar.hpp"
+#include "tdf_grammar.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/Log/ILog.h"
 
@@ -132,9 +131,9 @@ void TdfParser::parse_buffer(char const* buf, size_t size) {
 				| comment_p("/*", "*/") // rule for C-comments
 				| comment_p("//")
 			);
-	} catch (parser_error<tdf_grammar::Errors, char const*> & e) { // thrown by assertion parsers in tdf_grammar
+	} catch (const parser_error<tdf_grammar::Errors, char const*>& ex) { // thrown by assertion parsers in tdf_grammar
 
-		switch(e.descriptor) {
+		switch(ex.descriptor) {
 			case tdf_grammar::semicolon_expected: message = "semicolon expected"; break;
 			case tdf_grammar::equals_sign_expected: message = "equals sign in name value pair expected"; break;
 			case tdf_grammar::square_bracket_expected: message = "square bracket to close section name expected"; break;
@@ -142,7 +141,7 @@ void TdfParser::parse_buffer(char const* buf, size_t size) {
 			default: message = "unknown boost::spirit::parser_error exception"; break;
 		};
 
-		std::ptrdiff_t target_pos = e.where - buf;
+		std::ptrdiff_t target_pos = ex.where - buf;
 		for (int i = 1; i < target_pos; ++i) {
 			++error_it;
 			if (error_it != (iterator_t(buf + i, buf + size))) {

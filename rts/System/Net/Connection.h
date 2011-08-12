@@ -39,7 +39,7 @@ public:
 
 	/**
 	 * @brief Deletes a packet from the buffer
-	 * @param queue index number
+	 * @param index queue index number
 	 * Useful for messages that skip queuing and need to be processed
 	 * immediately.
 	 */
@@ -66,6 +66,9 @@ public:
 
 	virtual std::string Statistics() const = 0;
 	virtual std::string GetFullAddress() const = 0;
+	virtual void Unmute() = 0;
+	virtual void Close(bool flush = false) = 0;
+	virtual void SetLossFactor(int factor) = 0;
 
 	/**
 	 * @brief update internals

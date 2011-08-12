@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 #include <fstream>
 
@@ -10,15 +9,14 @@
 #include "GuiHandler.h"
 #include "Rendering/glFont.h"
 
-#ifdef WIN32
-	#include "System/Platform/Win/win32.h"
-#endif
-
 #include "System/Sync/SyncTracer.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
 #include "InputReceiver.h"
 
 #define border 7
+
+CONFIG(int, InfoMessageTime).defaultValue(400);
+CONFIG(std::string, InfoConsoleGeometry).defaultValue("0.26 0.96 0.41 0.205");
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -37,10 +35,9 @@ CInfoConsole::CInfoConsole() :
 {
 	data.clear();
 
-	lifetime = configHandler->Get("InfoMessageTime", 400);
+	lifetime = configHandler->GetInt("InfoMessageTime");
 
-	const std::string geo = configHandler->GetString("InfoConsoleGeometry",
-			"0.26 0.96 0.41 0.205");
+	const std::string geo = configHandler->GetString("InfoConsoleGeometry");
 	const int vars = sscanf(geo.c_str(), "%f %f %f %f",
 	                        &xpos, &ypos, &width, &height);
 	if (vars != 4) {
@@ -74,10 +71,10 @@ void CInfoConsole::Draw()
 		glColor4f(0.2f, 0.2f, 0.2f, CInputReceiver::guiAlpha);
 
 		glBegin(GL_TRIANGLE_STRIP);
-			glVertex3f(xpos,ypos,0);
-			glVertex3f(xpos+width,ypos,0);
-			glVertex3f(xpos,ypos-height,0);
-			glVertex3f(xpos+width,ypos-height,0);
+			glVertex3f(xpos,         ypos,          0);
+			glVertex3f(xpos + width, ypos,          0);
+			glVertex3f(xpos,         ypos - height, 0);
+			glVertex3f(xpos + width, ypos - height, 0);
 		glEnd();
 	}
 
@@ -144,7 +141,6 @@ void CInfoConsole::GetNewRawLines(std::vector<RawLine>& lines)
 
 void CInfoConsole::NotifyLogMsg(const CLogSubsystem& subsystem, const std::string& text)
 {
-	if (!smallFont) return;
 
 	boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex);
 
@@ -158,15 +154,21 @@ void CInfoConsole::NotifyLogMsg(const CLogSubsystem& subsystem, const std::strin
 		newLines++;
 	}
 
-	const float maxWidth  = width * globalRendering->viewSizeX - border * 2;
-	const float maxHeight = height * globalRendering->viewSizeY - border * 2;
-	const unsigned int numLines = math::floor(maxHeight / (fontSize * smallFont->GetLineHeight()));
+	if (!smallFont) {
+		return;
+	}
 
-	std::list<std::string> lines = smallFont->Wrap(text,fontSize,maxWidth);
+	const float maxWidth  = (width  * globalRendering->viewSizeX) - (border * 2);
+	const float maxHeight = (height * globalRendering->viewSizeY) - (border * 2);
+	const unsigned int maxLines = (smallFont->GetLineHeight() > 0)
+			? math::floor(maxHeight / (fontSize * smallFont->GetLineHeight()))
+			: 1; // this will likely be the case on HEADLESS only
+
+	std::list<std::string> lines = smallFont->Wrap(text, fontSize, maxWidth);
 
 	std::list<std::string>::iterator il;
 	for (il = lines.begin(); il != lines.end(); ++il) {
-		//! add the line to the console
+		// add the line to the console
 		InfoLine l;
 		data.push_back(l);
 		data.back().text = *il;
@@ -174,7 +176,9 @@ void CInfoConsole::NotifyLogMsg(const CLogSubsystem& subsystem, const std::strin
 		lastTime = lifetime;
 	}
 
-	for (size_t i = data.size(); i > numLines; i--) {
+	// if we have more lines then we can show, remove the oldest one,
+	// and make sure the others are shown long enough
+	for (size_t i = data.size(); i > maxLines; i--) {
 		data[1].time += data[0].time;
 		data.pop_front();
 	}
@@ -190,7 +194,7 @@ void CInfoConsole::SetLastMsgPos(const float3& pos)
 		lastMsgPositions.pop_back();
 	}
 
-	//! reset the iterator when a new msg comes in
+	// reset the iterator when a new msg comes in
 	lastMsgIter = lastMsgPositions.begin();
 }
 

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Game/TraceRay.h"
 #include "LaserCannon.h"
 #include "Map/Ground.h"
@@ -70,7 +69,7 @@ bool CLaserCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	dir /= length;
 
 	if (!onlyForward) {
-		if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length)) {
+		if (!HaveFreeLineOfFire(weaponMuzzlePos, dir, length, unit)) {
 			return false;
 		}
 	}
@@ -121,7 +120,7 @@ void CLaserCannon::FireImpl()
 	}
 
 	new CLaserProjectile(weaponMuzzlePos, dir * projectileSpeed, owner,
-		weaponDef->duration * weaponDef->maxvelocity,
+		weaponDef->duration * (weaponDef->projectilespeed * GAME_SPEED),
 		weaponDef->visuals.color, weaponDef->visuals.color2,
 		weaponDef->intensity, weaponDef,
 		(int) ((weaponDef->range - fpsSub) / weaponDef->projectilespeed) - 6);

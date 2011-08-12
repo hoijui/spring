@@ -67,6 +67,12 @@ namespace SpringVersion
 	/// time of build
 	extern const std::string& GetBuildTime();
 
+	/// build options
+	extern const std::string& GetBuildEnvironment();
+
+	/// compiler information
+	extern const std::string& GetCompiler();
+
 	/**
 	 * The sync relevant part of a spring version.
 	 * This may only be used for sync-checking if it matches "[0-9.]+",

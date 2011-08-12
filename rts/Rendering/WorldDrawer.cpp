@@ -1,27 +1,26 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "Rendering/GL/myGL.h"
 
 #include "System/mmgr.h"
 
 #include "WorldDrawer.h"
 #include "Rendering/Env/CubeMapHandler.h"
-#include "Rendering/Env/BaseSky.h"
+#include "Rendering/Env/ISky.h"
 #include "Rendering/Env/ITreeDrawer.h"
-#include "Rendering/Env/BaseWater.h"
+#include "Rendering/Env/IWater.h"
 #include "Rendering/DebugColVolDrawer.h"
 #include "Rendering/FarTextureHandler.h"
 #include "Rendering/GroundDecalHandler.h"
 #include "Rendering/LineDrawer.h"
 #include "Rendering/FeatureDrawer.h"
-#include "Rendering/ProjectileDrawer.hpp"
+#include "Rendering/ProjectileDrawer.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/IPathDrawer.h"
 #include "Rendering/SmoothHeightMeshDrawer.h"
 #include "Rendering/InMapDrawView.h"
 #include "Rendering/ShadowHandler.h"
-#include "Rendering/Models/ModelDrawer.hpp"
+#include "Rendering/Models/ModelDrawer.h"
 #include "Lua/LuaUnsyncedCtrl.h"
 #include "Map/BaseGroundDrawer.h"
 #include "Map/MapInfo.h"
@@ -42,7 +41,7 @@ CWorldDrawer::CWorldDrawer()
 {
 	// rendering components
 	loadscreen->SetLoadMessage("Creating Sky");
-	sky = IBaseSky::GetSky();
+	sky = ISky::GetSky();
 
 	loadscreen->SetLoadMessage("Creating ShadowHandler & DecalHandler");
 	cubeMapHandler = new CubeMapHandler();
@@ -69,7 +68,7 @@ CWorldDrawer::CWorldDrawer()
 	modelDrawer = IModelDrawer::GetInstance();
 
 	loadscreen->SetLoadMessage("Creating Water");
-	water = CBaseWater::GetWater(NULL, -1);
+	water = IWater::GetWater(NULL, -1);
 }
 
 
@@ -124,8 +123,8 @@ void CWorldDrawer::Draw()
 		SCOPED_TIMER("Water::{UpdateWater,Draw} (solid)");
 
 		water->OcclusionQuery();
-		if (water->drawSolid) {
-			CBaseWater::ApplyPushedChanges(game);
+		if (water->IsDrawSolid()) {
+			IWater::ApplyPushedChanges(game);
 			water->UpdateWater(game);
 			water->Draw();
 		}
@@ -164,10 +163,10 @@ void CWorldDrawer::Draw()
 	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
 		SCOPED_TIMER("Water::{UpdateWater,Draw} (!solid)");
 
-		if (!water->drawSolid) {
+		if (!water->IsDrawSolid()) {
 			//! Water rendering will overwrite features, so save them
 			featureDrawer->SwapFeatures();
-			CBaseWater::ApplyPushedChanges(game);
+			IWater::ApplyPushedChanges(game);
 			water->UpdateWater(game);
 			water->Draw();
 			featureDrawer->SwapFeatures();

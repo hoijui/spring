@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include "Team.h"
@@ -18,7 +17,7 @@
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitDef.h"
 #include "System/EventHandler.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/NetProtocol.h"
 #include "System/creg/STL_List.h"
 #include "System/creg/STL_Map.h"
@@ -167,7 +166,7 @@ void CTeam::GiveEverythingTo(const unsigned toTeam)
 	CTeam* target = teamHandler->Team(toTeam);
 
 	if (!target) {
-		logOutput.Print("Team %i does not exist, can't give units", toTeam);
+		LOG_L(L_WARNING, "Team %i does not exist, can't give units", toTeam);
 		return;
 	}
 
@@ -189,28 +188,27 @@ void CTeam::GiveEverythingTo(const unsigned toTeam)
 }
 
 
-void CTeam::Died()
+void CTeam::Died(bool normalDeath)
 {
 	if (isDead)
 		return;
 
 	isDead = true;
 
-	if (leader >= 0) {
-		const CPlayer* leadPlayer = playerHandler->Player(leader);
-		const char* leaderName = leadPlayer->name.c_str();
-		logOutput.Print(CMessages::Tr("Team %i (lead by %s) is no more").c_str(), teamNum, leaderName);
-	} else {
-		logOutput.Print(CMessages::Tr("Team %i is no more").c_str(), teamNum);
+	if (normalDeath) {
+		if (leader >= 0) {
+			const CPlayer* leadPlayer = playerHandler->Player(leader);
+			const char* leaderName = leadPlayer->name.c_str();
+			LOG(CMessages::Tr("Team %i (lead by %s) is no more").c_str(), teamNum, leaderName);
+		} else {
+			LOG(CMessages::Tr("Team %i is no more").c_str(), teamNum);
+		}
+
+		// this message is not relayed to clients, it's only for the server
+		net->Send(CBaseNetProtocol::Get().SendTeamDied(gu->myPlayerNum, teamNum));
 	}
 
-	CSkirmishAIHandler::ids_t localTeamAIs = skirmishAIHandler.GetSkirmishAIsInTeam(teamNum, gu->myPlayerNum);
-	for (CSkirmishAIHandler::ids_t::const_iterator ai = localTeamAIs.begin(); ai != localTeamAIs.end(); ++ai) {
-		skirmishAIHandler.SetLocalSkirmishAIDieing(*ai, 2 /* = team died */);
-	}
-
-	// this message is not relayed to clients, it's only for the server
-	net->Send(CBaseNetProtocol::Get().SendTeamDied(gu->myPlayerNum, teamNum));
+	KillAIs();
 
 	// demote all players in _this_ team to spectators
 	for (int a = 0; a < playerHandler->ActivePlayers(); ++a) {
@@ -234,6 +232,15 @@ void CTeam::AddPlayer(int playerNum)
 
 	playerHandler->Player(playerNum)->JoinTeam(teamNum);
 	playerHandler->Player(playerNum)->SetControlledTeams();
+}
+
+void CTeam::KillAIs()
+{
+	const CSkirmishAIHandler::ids_t& localTeamAIs = skirmishAIHandler.GetSkirmishAIsInTeam(teamNum, gu->myPlayerNum);
+
+	for (CSkirmishAIHandler::ids_t::const_iterator ai = localTeamAIs.begin(); ai != localTeamAIs.end(); ++ai) {
+		skirmishAIHandler.SetLocalSkirmishAIDieing(*ai, 2 /* = team died */);
+	}
 }
 
 

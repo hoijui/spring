@@ -1,10 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#if   defined(_MSC_VER)
-#	include "StdAfx.h"
-#elif defined(_WIN32)
-#	include <windows.h>
-#endif
+#include "System/Net/UDPConnection.h"
 
 #include <SDL_timer.h>
 #include <boost/scoped_ptr.hpp>
@@ -14,7 +10,6 @@
 
 // NOTE: these _must_ be included before NetProtocol.h due to some ambiguity in
 // Boost hash_float.hpp ("call of overloaded ‘ldexp(float&, int&)’ is ambiguous")
-#include "System/Net/UDPConnection.h"
 #include "System/Net/LocalConnection.h"
 #include "System/NetProtocol.h"
 
@@ -23,10 +18,12 @@
 #include "Sim/Misc/GlobalConstants.h"
 #include "System/Net/UnpackPacket.h"
 #include "System/LoadSave/DemoRecorder.h"
-#include "System/ConfigHandler.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/GlobalConfig.h"
 #include "System/Log/ILog.h"
 #include "lib/gml/gmlmut.h"
 
+CONFIG(int, SourcePort).defaultValue(0);
 
 CNetProtocol::CNetProtocol() : loading(false), disableDemo(false)
 {
@@ -35,6 +32,7 @@ CNetProtocol::CNetProtocol() : loading(false), disableDemo(false)
 CNetProtocol::~CNetProtocol()
 {
 	Send(CBaseNetProtocol::Get().SendQuit(""));
+	Close();
 	LOG("%s", serverConn->Statistics().c_str());
 }
 
@@ -42,9 +40,10 @@ void CNetProtocol::InitClient(const char* server_addr, unsigned portnum, const s
 {
 	GML_STDMUTEX_LOCK(net); // InitClient
 
-	netcode::UDPConnection* conn = new netcode::UDPConnection(configHandler->Get("SourcePort", 0), server_addr, portnum);
+	netcode::UDPConnection* conn = new netcode::UDPConnection(configHandler->GetInt("SourcePort"), server_addr, portnum);
+	conn->Unmute();
 	serverConn.reset(conn);
-	serverConn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion));
+	serverConn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion, globalConfig->networkLossFactor));
 	serverConn->Flush(true);
 
 	LOG("Connecting to %s:%i using name %s", server_addr, portnum, myName.c_str());
@@ -54,7 +53,8 @@ void CNetProtocol::AttemptReconnect(const std::string& myName, const std::string
 	GML_STDMUTEX_LOCK(net); // AttemptReconnect
 
 	netcode::UDPConnection* conn = new netcode::UDPConnection(*serverConn);
-	conn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion, true));
+	conn->Unmute();
+	conn->SendData(CBaseNetProtocol::Get().SendAttemptConnect(myName, myPasswd, myVersion, globalConfig->networkLossFactor, true));
 	conn->Flush(true);
 
 	LOG("Reconnecting to server... %ds", dynamic_cast<netcode::UDPConnection&>(*serverConn).GetReconnectSecs());
@@ -111,7 +111,8 @@ boost::shared_ptr<const netcode::RawPacket> CNetProtocol::GetData(int framenum)
 	boost::shared_ptr<const netcode::RawPacket> ret = serverConn->GetData();
 
 	if (ret) {
-		float demoTime = (framenum == 0) ? gu->gameTime : gu->startTime + (float)framenum / (float)GAME_SPEED;
+		const float demoTime = (framenum == 0) ? gu->gameTime
+				: gu->startTime + (float)framenum / (float)GAME_SPEED;
 		if (record) {
 			record->SaveToDemo(ret->data, ret->length, demoTime);
 		} else if (ret->data[0] == NETMSG_GAMEDATA && !disableDemo) {
@@ -122,8 +123,8 @@ boost::shared_ptr<const netcode::RawPacket> CNetProtocol::GetData(int framenum)
 				record.reset(new CDemoRecorder());
 				record->WriteSetupText(gd.GetSetup());
 				record->SaveToDemo(ret->data, ret->length, demoTime);
-			} catch (netcode::UnpackPacketException &e) {
-				LOG_L(L_WARNING, "Invalid GameData received: %s", e.err.c_str());
+			} catch (const netcode::UnpackPacketException& ex) {
+				LOG_L(L_WARNING, "Invalid GameData received: %s", ex.what());
 			}
 		}
 	}
@@ -163,6 +164,12 @@ void CNetProtocol::Update()
 void CNetProtocol::DisableDemoRecording()
 {
 	disableDemo = true;
+}
+
+void CNetProtocol::Close(bool flush) {
+	GML_STDMUTEX_LOCK(net); // Close
+
+	serverConn->Close(flush);
 }
 
 CNetProtocol* net = NULL;

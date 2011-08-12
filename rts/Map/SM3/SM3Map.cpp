@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 
 #include "SM3Map.h"
 #include "SM3GroundDrawer.h"
@@ -14,8 +13,8 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/GL/myGL.h"
-#include "System/ConfigHandler.h"
-#include "System/LogOutput.h"
+#include "System/Config/ConfigHandler.h"
+#include "System/Log/ILog.h"
 #include "System/TdfParser.h"
 #include "System/Util.h"
 #include "System/FileSystem/FileHandler.h"
@@ -24,11 +23,12 @@
 #include <stdexcept>
 #include <fstream>
 
-
+CONFIG(bool, SM3ForceFallbackTex).defaultValue(false);
+CONFIG(int, SM3MaxTextureStages).defaultValue(10);
 
 struct Sm3LoadCB: terrain::ILoadCallback
 {
-	void Write(const char* msg) { logOutput.Print("%s", msg); }
+	void Write(const char* msg) { LOG("%s", msg); }
 };
 
 // FIXME - temporary, until the LuaParser change is done
@@ -39,9 +39,9 @@ static const TdfParser& GetMapDefParser()
 }
 
 
-CR_BIND_DERIVED(CSm3ReadMap, CReadMap, (""))
+CR_BIND_DERIVED(CSM3ReadMap, CReadMap, (""))
 
-CSm3ReadMap::CSm3ReadMap(const std::string& mapName)
+CSM3ReadMap::CSM3ReadMap(const std::string& mapName)
 {
 	groundDrawer = 0;
 	minimapTexture = 0;
@@ -75,14 +75,14 @@ CSm3ReadMap::CSm3ReadMap(const std::string& mapName)
 		for (int a = 0; a < numTypes; a++) {
 			char loc[100];
 			SNPRINTF(loc, 100, "map\\featuretypes\\type%d", a);
-			featureTypes.push_back (new std::string(GetMapDefParser().SGetValueDef("TreeType0", loc)));
+			featureTypes.push_back(new std::string(GetMapDefParser().SGetValueDef("TreeType0", loc)));
 			}
 	}
 
 	LoadFeatureData();
 }
 
-CSm3ReadMap::~CSm3ReadMap()
+CSM3ReadMap::~CSM3ReadMap()
 {
 	delete groundDrawer;
 	delete renderer;
@@ -96,7 +96,7 @@ CSm3ReadMap::~CSm3ReadMap()
 
 
 
-void CSm3ReadMap::ConfigNotify(const std::string& key, const std::string& value)
+void CSM3ReadMap::ConfigNotify(const std::string& key, const std::string& value)
 {
 	if (key == "Shadows") {
 		bool drawShadows = (std::atoi(value.c_str()) > 0);
@@ -109,10 +109,10 @@ void CSm3ReadMap::ConfigNotify(const std::string& key, const std::string& value)
 }
 
 
-CBaseGroundDrawer* CSm3ReadMap::GetGroundDrawer() { return groundDrawer; }
-void CSm3ReadMap::NewGroundDrawer() {
+CBaseGroundDrawer* CSM3ReadMap::GetGroundDrawer() { return groundDrawer; }
+void CSM3ReadMap::NewGroundDrawer() {
 	renderer->config.cacheTextures = false;
-	renderer->config.forceFallbackTexturing = !!configHandler->Get("SM3ForceFallbackTex", 0);
+	renderer->config.forceFallbackTexturing = configHandler->GetBool("SM3ForceFallbackTex");
 
 	if (!renderer->config.forceFallbackTexturing && GLEW_ARB_fragment_shader && GLEW_ARB_shading_language_100) {
 		renderer->config.useBumpMaps = true;
@@ -126,7 +126,7 @@ void CSm3ReadMap::NewGroundDrawer() {
 
 	/*
 	int numStages = atoi(mapDefParser.SGetValueDef("0", "map\\terrain\\numtexturestages").c_str());
-	int maxStages = configHandler->Get("SM3MaxTextureStages", 10);
+	int maxStages = configHandler->GetInt("SM3MaxTextureStages");
 	if (numStages > maxStages) {
 		renderer->config.cacheTextures = true;
 		renderer->config.cacheTextureSize = 256;
@@ -145,13 +145,13 @@ void CSm3ReadMap::NewGroundDrawer() {
 
 	renderer->Load(GetMapDefParser(), &lightInfo, &loadcb);
 
-	groundDrawer = new CSm3GroundDrawer(this);
+	groundDrawer = new CSM3GroundDrawer(this);
 
 	configHandler->NotifyOnChange(this);
 }
 
 
-void CSm3ReadMap::UpdateHeightMapUnsynced(const HeightMapUpdate& update)
+void CSM3ReadMap::UpdateHeightMapUnsynced(const HeightMapUpdate& update)
 {
 	int x1 = update.x1, y1 = update.y1;
 	int x2 = update.x2, y2 = update.y2;
@@ -174,7 +174,7 @@ void CSm3ReadMap::UpdateHeightMapUnsynced(const HeightMapUpdate& update)
 }
 
 
-void CSm3ReadMap::DrawMinimap() const
+void CSM3ReadMap::DrawMinimap() const
 {
 	if (!minimapTexture)
 		return;
@@ -228,27 +228,27 @@ void CSm3ReadMap::DrawMinimap() const
 }
 
 // Feature creation
-int CSm3ReadMap::GetNumFeatures ()
+int CSM3ReadMap::GetNumFeatures()
 {
 	return (int)numFeatures;
 }
 
-int CSm3ReadMap::GetNumFeatureTypes ()
+int CSM3ReadMap::GetNumFeatureTypes()
 {
 	return featureTypes.size();
 }
 
-void CSm3ReadMap::GetFeatureInfo (MapFeatureInfo* f)
+void CSM3ReadMap::GetFeatureInfo(MapFeatureInfo* f)
 {
 	std::copy(featureInfo,featureInfo+numFeatures,f);
 }
 
-const char *CSm3ReadMap::GetFeatureTypeName (int typeID)
+const char* CSM3ReadMap::GetFeatureTypeName(int typeID)
 {
 	return featureTypes[typeID]->c_str();
 }
 
-void CSm3ReadMap::LoadFeatureData()
+void CSM3ReadMap::LoadFeatureData()
 {
 		// returns MapFeatureInfo[GetNumFeatures()]
 	std::string fd = GetMapDefParser().SGetValueDef(std::string(),"map\\featuredata");
@@ -265,7 +265,7 @@ void CSm3ReadMap::LoadFeatureData()
 
 		unsigned int nf;
 		fh.Read(&nf, 4);
-		numFeatures = swabdword(nf);
+		numFeatures = swabDWord(nf);
 
 		featureInfo = new MapFeatureInfo[numFeatures];
 		for (unsigned int a=0;a<numFeatures;a++) {
@@ -274,11 +274,11 @@ void CSm3ReadMap::LoadFeatureData()
 			fh.Read(&fi.pos, 12);
 			fh.Read(&fi.rotation, 4);
 
-			fi.featureType = swabdword(fi.featureType);
-			fi.pos.x = swabfloat(fi.pos.x);
-			fi.pos.y = swabfloat(fi.pos.y);
-			fi.pos.z = swabfloat(fi.pos.z);
-			fi.rotation = swabfloat(fi.rotation);
+			fi.featureType = swabDWord(fi.featureType);
+			fi.pos.x = swabFloat(fi.pos.x);
+			fi.pos.y = swabFloat(fi.pos.y);
+			fi.pos.z = swabFloat(fi.pos.z);
+			fi.rotation = swabFloat(fi.rotation);
 		}
 	}/* //testing features...
 	else {
@@ -297,13 +297,13 @@ void CSm3ReadMap::LoadFeatureData()
 	}*/
 }
 
-CSm3ReadMap::InfoMap::InfoMap() :
+CSM3ReadMap::InfoMap::InfoMap() :
 	  w(0)
 	, h(0)
 	, data(NULL)
 {
 }
-CSm3ReadMap::InfoMap::~InfoMap() {
+CSM3ReadMap::InfoMap::~InfoMap() {
 	delete[] data;
 }
 
@@ -311,7 +311,7 @@ CSm3ReadMap::InfoMap::~InfoMap() {
 // Some map types:
 //   "metal"  -  metalmap
 //   "grass"  -  grassmap
-unsigned char* CSm3ReadMap::GetInfoMap(const std::string& name, MapBitmapInfo* bm)
+unsigned char* CSM3ReadMap::GetInfoMap(const std::string& name, MapBitmapInfo* bm)
 {
 	std::string map;
 	if (!GetMapDefParser().SGetValue(map, "MAP\\INFOMAPS\\" + name))
@@ -333,20 +333,20 @@ unsigned char* CSm3ReadMap::GetInfoMap(const std::string& name, MapBitmapInfo* b
 }
 
 
-void CSm3ReadMap::FreeInfoMap (const std::string& name, unsigned char *data)
+void CSM3ReadMap::FreeInfoMap(const std::string& name, unsigned char* data)
 {
-	infoMaps.erase (name);
+	infoMaps.erase(name);
 }
 
 struct DrawGridParms
 {
 	int quadSize;
-	CSm3ReadMap::IQuadDrawer *cb;
+	CSM3ReadMap::IQuadDrawer* cb;
 	float maxdist;
-	Frustum *frustum;
+	Frustum* frustum;
 };
 
-static void DrawGrid(terrain::TQuad *tq, DrawGridParms *param)
+static void DrawGrid(terrain::TQuad* tq, DrawGridParms* param)
 {
 	if (tq->InFrustum(param->frustum)) {
 		if (tq->width == param->quadSize)
@@ -360,7 +360,7 @@ static void DrawGrid(terrain::TQuad *tq, DrawGridParms *param)
 	}
 }
 
-void CSm3ReadMap::GridVisibility(CCamera *cam, int quadSize, float maxdist, IQuadDrawer *cb, int extraSize)
+void CSM3ReadMap::GridVisibility(CCamera* cam, int quadSize, float maxdist, IQuadDrawer* cb, int extraSize)
 {
 	float aspect = cam->viewport[2]/(float)cam->viewport[3];
 	tmpFrustum.CalcCameraPlanes(&cam->pos, &cam->right, &cam->up, &cam->forward, cam->GetTanHalfFov(), aspect);

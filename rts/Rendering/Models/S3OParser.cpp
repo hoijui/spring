@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include <cctype>
 #include <stdexcept>
 #include "System/mmgr.h"
@@ -84,7 +83,7 @@ SS3OPiece* CS3OParser::LoadPiece(S3DModel* model, SS3OPiece* parent, unsigned ch
 		Vertex* v = reinterpret_cast<Vertex*>(&buf[vertexOffset]);
 			v->swap();
 		SS3OVertex* sv = reinterpret_cast<SS3OVertex*>(&buf[vertexOffset]);
-			sv->normal.ANormalize();
+			sv->normal.SafeANormalize();
 
 		piece->vertices.push_back(*sv);
 		vertexOffset += sizeof(Vertex);
@@ -95,7 +94,7 @@ SS3OPiece* CS3OParser::LoadPiece(S3DModel* model, SS3OPiece* parent, unsigned ch
 	int vertexTableOffset = fp->vertexTable;
 
 	for (int a = 0; a < fp->vertexTableSize; ++a) {
-		const int vertexDrawIdx = swabdword(*(int*) &buf[vertexTableOffset]);
+		const int vertexDrawIdx = swabDWord(*(int*) &buf[vertexTableOffset]);
 
 		piece->vertexDrawOrder.push_back(vertexDrawIdx);
 		vertexTableOffset += sizeof(int);
@@ -126,7 +125,7 @@ SS3OPiece* CS3OParser::LoadPiece(S3DModel* model, SS3OPiece* parent, unsigned ch
 	int childTableOffset = fp->childs;
 
 	for (int a = 0; a < fp->numChilds; ++a) {
-		int childOffset = swabdword(*(int*) &buf[childTableOffset]);
+		int childOffset = swabDWord(*(int*) &buf[childTableOffset]);
 
 		SS3OPiece* childPiece = LoadPiece(model, piece, buf, childOffset);
 		piece->childs.push_back(childPiece);

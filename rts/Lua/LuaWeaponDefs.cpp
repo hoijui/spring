@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include "System/StdAfx.h"
 #include "System/mmgr.h"
 
 #include <set>
@@ -24,11 +23,8 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "System/FileSystem/SimpleParser.h"
-#include "System/LogOutput.h"
 #include "System/Util.h"
 #include "Sim/Misc/GlobalSynced.h"
-
-using namespace std;
 
 
 static ParamMap paramMap;
@@ -419,6 +415,14 @@ static int GuiSoundSetTable(lua_State* L, const void* data)
 }
 
 
+static int DeprecatedMaxVelocity(lua_State* L, const void* data)
+{
+	const float projspeed = *((const float*) data);
+	lua_pushnumber(L, projspeed * GAME_SPEED);
+	return 1;
+}
+
+
 /******************************************************************************/
 /******************************************************************************/
 
@@ -443,6 +447,8 @@ static bool InitParamMap()
 	ADD_FUNCTION("noNeutralCollide",     wd.collisionFlags, NoNeutralCollide);
 	ADD_FUNCTION("noGroundCollide",      wd.collisionFlags, NoGroundCollide);
 	ADD_FUNCTION("onlyTargetCategories", wd.onlyTargetCategory, CategorySetFromBits);
+
+	ADD_FUNCTION("maxVelocity", wd.projectilespeed, DeprecatedMaxVelocity); // NOTE: deprecated (needs to be linked via _FUNCTION, else it would be writeable)
 
 	ADD_INT("id", wd.id);
 
@@ -526,7 +532,6 @@ static bool InitParamMap()
 	ADD_FLOAT("startvelocity", wd.startvelocity);
 	ADD_FLOAT("weaponAcceleration", wd.weaponacceleration);
 	ADD_FLOAT("turnRate", wd.turnrate);
-	ADD_FLOAT("maxVelocity", wd.maxvelocity);
 
 	ADD_FLOAT("projectilespeed", wd.projectilespeed);
 	ADD_FLOAT("explosionSpeed", wd.explosionSpeed);

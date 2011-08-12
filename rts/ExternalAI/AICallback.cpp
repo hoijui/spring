@@ -2,7 +2,6 @@
 
 #include "ExternalAI/AICallback.h"
 
-#include "System/StdAfx.h"
 #include "Game/Game.h"
 #include "Game/Camera/CameraController.h"
 #include "Game/Camera.h"
@@ -34,6 +33,7 @@
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Misc/Wind.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/Path/IPathManager.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Groups/GroupHandler.h"
@@ -53,9 +53,14 @@
 #include "System/LogOutput.h"
 #include "System/NetProtocol.h"
 #include "System/FileSystem/FileHandler.h"
+#include "System/FileSystem/DataDirsAccess.h"
 #include "System/FileSystem/FileSystem.h"
-#include "System/FileSystem/FileSystemHandler.h"
+#include "System/FileSystem/FileQueryFlags.h"
 #include "System/Platform/errorhandler.h"
+
+#include <string>
+#include <vector>
+#include <map>
 
 // Cast id to unsigned to catch negative ids in the same operations,
 // cast MAX_* to unsigned to suppress GCC comparison between signed/unsigned warning.
@@ -1251,7 +1256,12 @@ int CAICallback::GetFeatures(int* featureIds, int featureIds_sizeMax)
 		assert(f);
 
 		if (f->IsInLosForAllyTeam(allyteam)) {
-			featureIds[featureIds_size++] = f->id;
+			// if it is NULL, the caller only wants to know
+			// the number of features
+			if (featureIds != NULL) {
+				featureIds[featureIds_size] = f->id;
+			}
+			featureIds_size++;
 		}
 	}
 
@@ -1272,7 +1282,12 @@ int CAICallback::GetFeatures(int* featureIds, int featureIds_sizeMax, const floa
 		assert(f);
 
 		if (f->IsInLosForAllyTeam(allyteam)) {
-			featureIds[featureIds_size++] = f->id;
+			// if it is NULL, the caller only wants to know
+			// the number of features
+			if (featureIds != NULL) {
+				featureIds[featureIds_size] = f->id;
+			}
+			featureIds_size++;
 		}
 	}
 
@@ -1395,13 +1410,13 @@ bool CAICallback::GetValue(int id, void *data)
 			return true;
 		}case AIVAL_LOCATE_FILE_R:{
 			std::string f((char*) data);
-			f = filesystem.LocateFile(f);
+			f = dataDirsAccess.LocateFile(f);
 			strcpy((char*) data, f.c_str());
-			return FileSystemHandler::IsReadableFile(f);
+			return FileSystem::IsReadableFile(f);
 		}case AIVAL_LOCATE_FILE_W:{
 			std::string f((char*) data);
-			std::string f_abs = filesystem.LocateFile(f, FileSystem::WRITE | FileSystem::CREATE_DIRS);
-			if (!FileSystemHandler::IsAbsolutePath(f_abs)) {
+			std::string f_abs = dataDirsAccess.LocateFile(f, FileQueryFlags::WRITE | FileQueryFlags::CREATE_DIRS);
+			if (!FileSystem::IsAbsolutePath(f_abs)) {
 				return false;
 			} else {
 				strcpy((char*) data, f.c_str());
@@ -1767,7 +1782,7 @@ float3 CAICallback::GetMousePos() {
 }
 
 
-int CAICallback::GetMapPoints(PointMarker* pm, int pm_sizeMax, bool includeAllies)
+void CAICallback::GetMapPoints(std::vector<PointMarker>& pm, int pm_sizeMax, bool includeAllies)
 {
 	verify();
 
@@ -1791,10 +1806,10 @@ int CAICallback::GetMapPoints(PointMarker* pm, int pm_sizeMax, bool includeAllie
 		}
 	}
 
-	return (inMapDrawer->GetPoints(pm, pm_sizeMax, includeTeamIDs));
+	inMapDrawer->GetPoints(pm, pm_sizeMax, includeTeamIDs);
 }
 
-int CAICallback::GetMapLines(LineMarker* lm, int lm_sizeMax, bool includeAllies)
+void CAICallback::GetMapLines(std::vector<LineMarker>& lm, int lm_sizeMax, bool includeAllies)
 {
 	verify();
 
@@ -1818,7 +1833,7 @@ int CAICallback::GetMapLines(LineMarker* lm, int lm_sizeMax, bool includeAllies)
 		}
 	}
 
-	return (inMapDrawer->GetLines(lm, lm_sizeMax, includeTeamIDs));
+	inMapDrawer->GetLines(lm, lm_sizeMax, includeTeamIDs);
 }
 
 
