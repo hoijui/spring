@@ -27,26 +27,27 @@ static const int SECTION_SIZE_MAX = 20;
 
 // *******************************************************************************************
 // Helpers
-static inline void ResizeBuffer(char** buffer, size_t* bufferSize, const bool copy = false)
+static inline void ResizeBuffer(char*** buffer, size_t* bufferSize, const bool copy = false)
 {
 	*bufferSize <<= 1;
-	char* old = *buffer;
-	*buffer = new char[*bufferSize];
+	char* oldBuf = **buffer;
+	char* newBuf = new char[*bufferSize];
+	*buffer = &newBuf;
 	if (copy) {
-		memcpy(*buffer, old, *bufferSize >> 1);
+		memcpy(**buffer, oldBuf, *bufferSize >> 1);
 	}
-	delete[] old;
+	delete[] oldBuf;
 }
 
 
-static inline void PrintfAppend(char** buffer, size_t* bufferSize, const char* fmt, va_list arguments)
+static inline void PrintfAppend(char*** buffer, size_t* bufferSize, const char* fmt, va_list arguments)
 {
 	// dynamically adjust the buffer size until VSNPRINTF returns fine
-	const size_t bufferPos = strlen(*buffer);
+	const size_t bufferPos = strlen(**buffer);
 
 	do {
 		size_t freeBufferSize = (*bufferSize) - bufferPos;
-		char* bufAppendPos = &((*buffer)[bufferPos]);
+		char* bufAppendPos = &((**buffer)[bufferPos]);
 		const int writtenChars = VSNPRINTF(bufAppendPos, freeBufferSize, fmt, arguments);
 		if (writtenChars < freeBufferSize) break;
 
@@ -99,15 +100,15 @@ static void log_formatter_createPrefix_default(char** buffer,
 }
 
 
-static inline void log_formatter_createPrefix(char** buffer, size_t* bufferSize,
+static inline void log_formatter_createPrefix(char*** buffer, size_t* bufferSize,
 		const char* section, int level)
 {
 	//log_formatter_createPrefix_xorgStyle(buffer, bufferSize, section, level);
 	//log_formatter_createPrefix_testing(buffer, bufferSize, section, level);
-	log_formatter_createPrefix_default(buffer, bufferSize, section, level);
+	log_formatter_createPrefix_default(*buffer, bufferSize, section, level);
 
 	// check if the buffer was large enough, if not resize it and try again
-	const bool bufferTooSmall = ((strlen(*buffer) + 1) >= *bufferSize);
+	const bool bufferTooSmall = ((strlen(**buffer) + 1) >= *bufferSize);
 	if (bufferTooSmall) {
 		ResizeBuffer(buffer, bufferSize);
 		log_formatter_createPrefix(buffer, bufferSize, section, level); // recursive
@@ -129,8 +130,8 @@ char* log_formatter_format(const char* section, int level, const char* fmt, va_l
 	char* mem = new char[bufferSize];
 	char** buffer = &mem;
 
-	log_formatter_createPrefix(buffer, &bufferSize, section, level);
-	PrintfAppend(buffer, &bufferSize, fmt, arguments);
+	log_formatter_createPrefix(&buffer, &bufferSize, section, level);
+	PrintfAppend(&buffer, &bufferSize, fmt, arguments);
 
 	return *buffer;
 }
