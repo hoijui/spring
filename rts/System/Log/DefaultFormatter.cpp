@@ -47,8 +47,8 @@ static inline void PrintfAppend(char** buffer, size_t* bufferSize, const char* f
 	do {
 		size_t freeBufferSize = (*bufferSize) - bufferPos;
 		char* bufAppendPos = &((*buffer)[bufferPos]);
-		int ret = VSNPRINTF(bufAppendPos, freeBufferSize, fmt, arguments);
-		if (ret >= 0) break;
+		const int writtenChars = VSNPRINTF(bufAppendPos, freeBufferSize, fmt, arguments);
+		if (writtenChars < freeBufferSize) break;
 
 		ResizeBuffer(buffer, bufferSize, true);
 	} while (true);
