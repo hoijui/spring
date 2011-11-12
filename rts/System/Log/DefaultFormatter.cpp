@@ -25,13 +25,6 @@ extern "C" {
 static const int SECTION_SIZE_MIN = 10;
 static const int SECTION_SIZE_MAX = 20;
 
-static int* frameNum = NULL;
-
-void log_formatter_setFrameNumReference(int* frameNumReference)
-{
-	frameNum = frameNumReference;
-}
-
 static void log_formatter_createPrefix_xorgStyle(char* prefix,
 		size_t prefixSize, const char* section, int level)
 {
