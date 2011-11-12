@@ -42,7 +42,7 @@ static inline void ResizeBuffer(char** buffer, size_t* bufferSize, const bool co
 static inline void PrintfAppend(char** buffer, size_t* bufferSize, const char* fmt, va_list arguments)
 {
 	// dynamically adjust the buffer size until VSNPRINTF returns fine
-	size_t bufferPos = strlen(*buffer);
+	const size_t bufferPos = strlen(*buffer);
 
 	do {
 		size_t freeBufferSize = (*bufferSize) - bufferPos;
