@@ -56,7 +56,7 @@ namespace streflop {
 // Give warning in case these flags would be defined already, this is indication
 // of potential confusion!
 
-#if defined(FE_INVALID) || defined(FE_DENORMAL) || defined(FE_DIVBYZERO) || defined(FE_OVERFLOW) || defined(FE_UNDERFLOW) || defined(FE_INEXACT) || defined(FE_DOWNWARD) || defined(FE_TONEAREST) || defined(FE_TOWARDZERO) || defined(FE_UPWARD)
+#if defined(FE_INVALID) || defined(FE_DENORMAL) || defined(FE_DIVBYZERO) || defined(FE_OVERFLOW) || defined(FE_UNDERFLOW) || defined(FE_INEXACT) || defined(FE_DOWNWARD) || defined(FE_TONEAREST) || defined(FE_TOWARDZERO) || defined(FE_UPWARD) || defined(FE_DFL_ENV)
 
 #warning STREFLOP: FE_XXX flags were already defined and will be redefined! Check you do not use the system libm.
 #undef FE_INVALID
@@ -71,6 +71,7 @@ namespace streflop {
 #undef FE_TONEAREST
 #undef FE_TOWARDZERO
 #undef FE_UPWARD
+#undef FE_DFL_ENV
 #endif // defined(FE_INVALID) || ...
 
 
