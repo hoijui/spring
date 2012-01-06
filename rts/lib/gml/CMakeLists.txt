@@ -1,5 +1,4 @@
 
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/rts/System)
 
 ADD_DEFINITIONS(-DUSE_GML)
 # USE_GML requires this
@@ -18,6 +17,7 @@ INCLUDE_DIRECTORIES(${SDL_INCLUDE_DIR})
 SET(gmlSources
 		"ThreadSafeContainers.cpp"
 		"gml.cpp"
+		"gml_base.cpp"
 		"speedy-tls.cpp"
 	)
 

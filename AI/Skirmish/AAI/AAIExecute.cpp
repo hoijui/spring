@@ -1,7 +1,7 @@
 // -------------------------------------------------------------------------
 // AAI
 //
-// A skirmish AI for the TA Spring engine.
+// A skirmish AI for the Spring engine.
 // Copyright Alexander Seizinger
 //
 // Released under GPL license: see LICENSE.html for more information.
@@ -67,11 +67,11 @@ AAIExecute::~AAIExecute(void)
 //		for(int i = 0; i < numOfFactories; ++i)
 //			buildques[i].clear();
 
-//		delete [] buildques;
+//		SafeDeleteArray(buildques);
 //	}
 
 //	if(factory_table)
-//		delete [] factory_table;
+//		SafeDeleteArray(factory_table);
 }
 
 
@@ -1754,7 +1754,9 @@ bool AAIExecute::BuildFactory()
 		{
 			++factory_types_requested;
 
-			my_rating = bt->GetFactoryRating(*fac) / pow( (float) (1 + bt->units_dynamic[*fac].active), 2.0f);
+			const float activeFacsOfType = bt->units_dynamic[*fac].active;
+
+			my_rating = bt->GetFactoryRating(*fac) / pow(activeFacsOfType + 1.0f, 2.0f);
 			my_rating *= (1 + sqrt(2.0 + (float) GetBuildqueueOfFactory(*fac)->size()));
 
 			if(ut->activeFactories < 1)

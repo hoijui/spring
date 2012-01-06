@@ -38,10 +38,13 @@ struct SAIInterfaceCallback {
 	 */
 	int               (CALLING_CONV *Engine_AIInterface_ABIVersion_getWarningPart)(int interfaceId);
 
-	/// Returns the major engine revision number (e.g. 0.77)
+	/// Returns the major engine revision number (e.g. 83)
 	const char*       (CALLING_CONV *Engine_Version_getMajor)(int interfaceId);
 
-	/// Returns the minor engine revision
+	/**
+	 * Minor version number (e.g. "5")
+	 * @deprecated since 4. October 2011 (pre release 83), will always return "0"
+	 */
 	const char*       (CALLING_CONV *Engine_Version_getMinor)(int interfaceId);
 
 	/**
@@ -50,16 +53,51 @@ struct SAIInterfaceCallback {
 	 */
 	const char*       (CALLING_CONV *Engine_Version_getPatchset)(int interfaceId);
 
-	/// additional information (compiler flags, svn revision etc.)
+	/**
+	 * SCM Commits version part (e.g. "" or "13")
+	 * Number of commits since the last version tag.
+	 * This matches the regex "[0-9]*".
+	 */
+	const char*       (CALLING_CONV *Engine_Version_getCommits)(int interfaceId);
+
+	/**
+	 * SCM unique identifier for the current commit.
+	 * This matches the regex "([0-9a-f]{6})?".
+	 */
+	const char*       (CALLING_CONV *Engine_Version_getHash)(int interfaceId);
+
+	/**
+	 * SCM branch name (e.g. "master" or "develop")
+	 */
+	const char*       (CALLING_CONV *Engine_Version_getBranch)(int interfaceId);
+
+	/// Additional information (compiler flags, svn revision etc.)
 	const char*       (CALLING_CONV *Engine_Version_getAdditional)(int interfaceId);
 
 	/// time of build
 	const char*       (CALLING_CONV *Engine_Version_getBuildTime)(int interfaceId);
 
-	/// Major.Minor
+	/// Returns whether this is a release build of the engine
+	bool              (CALLING_CONV *Engine_Version_isRelease)(int interfaceId);
+
+	/**
+	 * The basic part of a spring version.
+	 * This may only be used for sync-checking if IsRelease() returns true.
+	 * @return "Major.PatchSet" or "Major.PatchSet.1"
+	 */
 	const char*       (CALLING_CONV *Engine_Version_getNormal)(int interfaceId);
 
-	/// Major.Minor.Patchset (Additional)
+	/**
+	 * The sync relevant part of a spring version.
+	 * This may be used for sync-checking through a simple string-equality test.
+	 * @return "Major" or "Major.PatchSet.1-Commits-gHash Branch"
+	 */
+	const char*       (CALLING_CONV *Engine_Version_getSync)(int interfaceId);
+
+	/**
+	 * The verbose, human readable version.
+	 * @return "Major.Patchset[.1-Commits-gHash Branch] (Additional)"
+	 */
 	const char*       (CALLING_CONV *Engine_Version_getFull)(int interfaceId);
 
 	/**
@@ -129,7 +167,7 @@ struct SAIInterfaceCallback {
 	const char*       (CALLING_CONV *DataDirs_getConfigDir)(int interfaceId);
 
 	/**
-	 * This interfaces writeable data dir, which is where eg logs, caches
+	 * This interfaces writable data dir, which is where eg logs, caches
 	 * and learning data should be stored, e.g.:
 	 * /home/userX/.spring/AI/Interfaces/C/0.1/
 	 */
@@ -148,9 +186,9 @@ struct SAIInterfaceCallback {
 	 * @see DataDirs_Roots_locatePath
 	 * @param   path          store for the resulting absolute path
 	 * @param   path_sizeMax  storage size of the above
-	 * @param   writeable  if true, only the writeable data-dir is considered
+	 * @param   writeable  if true, only the writable data-dir is considered
 	 * @param   create     if true, and realPath is not found, its dir structure
-	 *                     is created recursively under the writeable data-dir
+	 *                     is created recursively under the writable data-dir
 	 * @param   dir        if true, realPath specifies a dir, which means if
 	 *                     create is true, the whole path will be created,
 	 *                     including the last part
@@ -187,9 +225,9 @@ struct SAIInterfaceCallback {
 	 * @param   path          store for the resulting absolute path
 	 * @param   path_sizeMax  storage size of the above
 	 * @param   relPath    the relative path to find
-	 * @param   writeable  if true, only the writeable data-dir is considered
+	 * @param   writeable  if true, only the writable data-dir is considered
 	 * @param   create     if true, and realPath is not found, its dir structure
-	 *                     is created recursively under the writeable data-dir
+	 *                     is created recursively under the writable data-dir
 	 * @param   dir        if true, realPath specifies a dir, which means if
 	 *                     create is true, the whole path will be created,
 	 *                     including the last part

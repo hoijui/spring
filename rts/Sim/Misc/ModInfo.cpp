@@ -24,7 +24,6 @@ CModInfo modInfo;
 void CModInfo::Init(const char* modArchive)
 {
 	filename = modArchive;
-
 	humanName = archiveScanner->NameFromArchive(modArchive);
 
 	const CArchiveScanner::ArchiveData md = archiveScanner->GetArchiveData(humanName);
@@ -48,9 +47,12 @@ void CModInfo::Init(const char* modArchive)
 	}
 	const LuaTable root = parser.GetRoot();
 
-	// determine if bombers are allowed to leave map boundaries
+	// movement
 	const LuaTable movementTbl = root.SubTable("movement");
-	allowAirPlanesToLeaveMap = movementTbl.GetBool("allowAirPlanesToLeaveMap", true);
+	allowAircraftToLeaveMap = movementTbl.GetBool("allowAirPlanesToLeaveMap", true);
+	allowPushingEnemyUnits = movementTbl.GetBool("allowPushingEnemyUnits", false);
+	allowCrushingAlliedUnits = movementTbl.GetBool("allowCrushingAlliedUnits", false);
+	allowUnitCollisionDamage = movementTbl.GetBool("allowUnitCollisionDamage", false);
 
 	// determine whether the modder allows the user to use team coloured nanospray
 	const LuaTable nanosprayTbl = root.SubTable("nanospray");
@@ -64,7 +66,7 @@ void CModInfo::Init(const char* modArchive)
 	const LuaTable constructionTbl = root.SubTable("construction");
 	constructionDecay = constructionTbl.GetBool("constructionDecay", true);
 	constructionDecayTime = (int)(constructionTbl.GetFloat("constructionDecayTime", 6.66) * 30);
-	constructionDecaySpeed = constructionTbl.GetFloat("constructionDecaySpeed", 0.03);
+	constructionDecaySpeed = std::max(constructionTbl.GetFloat("constructionDecaySpeed", 0.03), 0.01f);
 
 	// reclaim
 	const LuaTable reclaimTbl = root.SubTable("reclaim");
@@ -146,4 +148,6 @@ void CModInfo::Init(const char* modArchive)
 
 	const LuaTable system = root.SubTable("system");
 	luaThreadingModel = system.GetInt("luaThreadingModel", MT_LUA_SINGLE_BATCH);
+	pathFinderSystem = system.GetInt("pathFinderSystem", PFS_TYPE_DEFAULT) % PFS_NUM_TYPES;
 }
+

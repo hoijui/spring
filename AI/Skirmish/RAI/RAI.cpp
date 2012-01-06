@@ -4,6 +4,7 @@
 #include "LegacyCpp/CommandQueue.h"
 #include "LegacyCpp/MoveData.h"
 #include "System/Util.h"
+#include "System/SafeCStrings.h"
 
 #include "lib/cutils/Util.h"
 
@@ -12,8 +13,9 @@
 //#include <sys/stat.h>	// mkdir function (linux)
 #include <time.h>		// time(NULL)
 
-static GlobalResourceMap* GRMap=NULL;
-static GlobalTerrainMap* GTMap=NULL;
+static GlobalResourceMap* GRMap = NULL;
+static GlobalTerrainMap* GTMap  = NULL;
+static cLogFile* gl = NULL;
 static int RAIs=0;
 
 namespace std
@@ -116,26 +118,40 @@ cRAI::~cRAI()
 	}
 
 	delete UM;
+	UM = NULL;
 	delete B;
+	B = NULL;
 	delete SWM;
+	SWM = NULL;
 	delete CM;
+	CM = NULL;
 	delete UDH;
+	UDH = NULL;
 
 	RAIs--;
 	if( RAIs == 0 )
 	{
-		*l<<"\n Global RAI Shutting Down";
+		*gl<<"\n Global RAI Shutting Down";
 //		double closingTimer = clock();
-		delete RM;
-		RM = 0;
-//		*l<<"\n Resource-Map Closing Time: "<<(clock()-closingTimer)/(double)CLOCKS_PER_SEC<<" seconds";
-		delete TM;
-		TM = 0;
-		*l<<"\n Global RAI Shutdown Complete.";
+		GlobalResourceMap* tmpRM = GRMap;
+		GRMap = NULL;
+		RM    = NULL;
+		delete tmpRM;
+		tmpRM = NULL;
+//		*gl<<"\n Resource-Map Closing Time: "<<(clock()-closingTimer)/(double)CLOCKS_PER_SEC<<" seconds";
+		GlobalTerrainMap* tmpTM = GTMap;
+		GTMap = NULL;
+		TM    = NULL;
+		delete tmpTM;
+		tmpTM = NULL;
+		*gl<<"\n Global RAI Shutdown Complete.";
+		delete gl;
+		gl = NULL;
 	}
 
 	*l<<"\nShutdown Complete.";
 	delete l;
+	l = NULL;
 }
 
 void cRAI::InitAI(IGlobalAICallback* callback, int team)
@@ -151,18 +167,19 @@ void cRAI::InitAI(IGlobalAICallback* callback, int team)
 	if( GRMap == 0 )
 	{
 		ClearLogFiles();
-		*l<<"Loading Global RAI...";
-		*l<<"\n Mod = " << cb->GetModHumanName() << "(" << IntToString(cb->GetModHash(), "%x") << ")";
-		*l<<"\n Map = " << cb->GetMapName()      << "(" << IntToString(cb->GetMapHash(), "%x") << ")";
+		gl = new cLogFile(cb, "log/RAIGlobal_LastGame.log", false);
+		*gl<<"Loading Global RAI...";
+		*gl<<"\n Mod = " << cb->GetModHumanName() << "(" << IntToString(cb->GetModHash(), "%x") << ")";
+		*gl<<"\n Map = " << cb->GetMapName()      << "(" << IntToString(cb->GetMapHash(), "%x") << ")";
 		int seed = time(NULL);
 		srand(seed);
 		RAIs=0;
 		double loadingTimer = clock();
-		GTMap = new GlobalTerrainMap(cb,l);
-		*l<<"\n  Terrain-Map Loading Time: "<<(clock()-loadingTimer)/(double)CLOCKS_PER_SEC<<" seconds";
+		GTMap = new GlobalTerrainMap(cb,gl);
+		*gl<<"\n  Terrain-Map Loading Time: "<<(clock()-loadingTimer)/(double)CLOCKS_PER_SEC<<" seconds";
 		loadingTimer = clock();
-		GRMap = new GlobalResourceMap(cb,l,GTMap);
-		*l<<"\n  Resource-Map Loading Time: "<<(clock()-loadingTimer)/(double)CLOCKS_PER_SEC<<" seconds\n";
+		GRMap = new GlobalResourceMap(cb,gl,GTMap);
+		*gl<<"\n  Resource-Map Loading Time: "<<(clock()-loadingTimer)/(double)CLOCKS_PER_SEC<<" seconds\n";
 /*
 		loadingTimer = clock();
 		CMetalMap* KMM;
@@ -172,7 +189,7 @@ void cRAI::InitAI(IGlobalAICallback* callback, int team)
 		*l<<"\n   KAI Metal-Sites Found: "<<KMM->NumSpotsFound;
 		delete KMM;
 */
-		*l<<"\nGlobal RAI Loading Complete.\n\n";
+		*gl<<"\nGlobal RAI Loading Complete.\n\n";
 	}
 	RM = GRMap;
 	TM = GTMap;
@@ -1102,7 +1119,7 @@ bool cRAI::LocateFile(IAICallback* cb, const string& relFileName, string& absFil
 	int action = forWriting ? AIVAL_LOCATE_FILE_W : AIVAL_LOCATE_FILE_R;
 
 	char absFN[2048];
-	STRCPYS(absFN, sizeof(absFN), relFileName.c_str());
+	STRCPY_T(absFN, sizeof(absFN), relFileName.c_str());
 	const bool located = cb->GetValue(action, absFN);
 
 	if (located) {

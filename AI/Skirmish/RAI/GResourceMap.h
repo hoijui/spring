@@ -1,6 +1,6 @@
 // _____________________________________________________
 //
-// RAI - Skirmish AI for TA Spring
+// RAI - Skirmish AI for Spring
 // Author: Reth / Michael Vadovszki
 // _____________________________________________________
 
@@ -10,6 +10,7 @@
 #include "LegacyCpp/IAICallback.h"
 #include "GTerrainMap.h"
 #include <set>
+#include <string>
 using std::map;
 using std::set;
 using std::vector;
@@ -106,7 +107,7 @@ private:
 	int MMXSize;
 	int MMExtractorRadiusI;
 
-	IAICallback* cb;
+	string resourceFileName_w;
 
 	// needed to save the file
 	string relResourceFileName;

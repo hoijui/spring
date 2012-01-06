@@ -19,6 +19,7 @@
 
 #include "lib/cutils/SimpleLog.h"
 #include "System/maindefines.h"
+#include "System/SafeCStrings.h"
 
 // implemented in the OS specific files
 const char* GetArchPath();
@@ -56,7 +57,7 @@ bool GetJREPathFromConfig(char* path, size_t pathSize, const char* configFile)
 		return false;
 	} else {
 		simpleLog_logL(SIMPLELOG_LEVEL_FINER, "JRE found in config file!");
-		STRCPYS(path, pathSize, jvmLocation);
+		STRCPY_T(path, pathSize, jvmLocation);
 		return true;
 	}
 #else // defined LOC_PROP_FILE
@@ -87,7 +88,7 @@ bool GetJREPathFromConfig(char* path, size_t pathSize, const char* configFile)
 		if (line_size > 0 && *line == '/') {
 			*(line+line_size-1) = '\0'; // remove trailing '/'
 		}
-		STRCPYS(path, pathSize, line);
+		STRCPY_T(path, pathSize, line);
 		found = true;
 	}
 	fclose(cfp);

@@ -2,11 +2,12 @@
 
 /*
  * This file has to be C90 compatible, as it is not only used by the engine,
- * but also by AIs.
+ * but also by AIs, which might be compiled with compilers (for example VS)
+ * that do not support C99.
  */
 
-#ifndef _MAIN_DEFINES_H
-#define _MAIN_DEFINES_H
+#ifndef MAIN_DEFINES_H
+#define MAIN_DEFINES_H
 
 #include <stdio.h>
 
@@ -18,6 +19,12 @@
 #include <stdbool.h>
 #endif
 #endif // !defined __cplusplus && !defined bool
+
+// define if we have a X11 enviroment (:= linux/freebsd)
+#if !defined(__APPLE__) && !defined(_WIN32)
+	//FIXME move this check to cmake, which has FindX11.cmake?
+	#define _X11
+#endif
 
 // define a common indicator for 32bit or 64bit-ness
 #if defined _WIN64 || defined __LP64__ || defined __ppc64__ || defined __ILP64__ || defined __SILP64__ || defined __LLP64__ || defined(__sparcv9)
@@ -56,13 +63,13 @@
 		#define PRINTF    printf_s
 		#define FPRINTF   fprintf_s
 		#define SNPRINTF  sprintf_s
-		#define VSNPRINTF vsprintf_s
+		#define VSNPRINTF _vsnprintf // vsprintf_s misbehaves in debug mode, triggering breakpoints
 		#define STRCPY    strcpy
 		#define STRCPYS   strcpy_s
-		#define STRNCPY   strncpy_s
+		#define STRNCPY   strncpy
 		#define STRCAT    strcat
 		#define STRCATS   strcat_s
-		#define STRNCAT   strncat_s
+		#define STRNCAT   strncat
 		#define FOPEN     fopen_s
 	#else              // Visual Studio 2003
 		#define PRINTF    _printf
@@ -141,4 +148,4 @@
 #endif // cPD
 
 
-#endif // _MAIN_DEFINES_H
+#endif // MAIN_DEFINES_H

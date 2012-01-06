@@ -1,17 +1,18 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "Rendering/GL/myGL.h"
-#include <fstream>
 
 #include "System/mmgr.h"
 
 #include "InfoConsole.h"
+#include "InputReceiver.h"
 #include "GuiHandler.h"
 #include "Rendering/glFont.h"
-
-#include "System/Sync/SyncTracer.h"
+#include "System/EventHandler.h"
 #include "System/Config/ConfigHandler.h"
-#include "InputReceiver.h"
+#include "System/Log/LogSinkHandler.h"
+
+#include <fstream>
 
 #define border 7
 
@@ -25,8 +26,9 @@ CONFIG(std::string, InfoConsoleGeometry).defaultValue("0.26 0.96 0.41 0.205");
 const size_t CInfoConsole::maxRawLines   = 1024;
 const size_t CInfoConsole::maxLastMsgPos = 10;
 
-CInfoConsole::CInfoConsole() :
-	  fontScale(1.0f)
+CInfoConsole::CInfoConsole()
+	: CEventClient("InfoConsole", 999, false)
+	, fontScale(1.0f)
 	, enabled(true)
 	, lastMsgIter(lastMsgPositions.begin())
 	, newLines(0)
@@ -49,12 +51,14 @@ CInfoConsole::CInfoConsole() :
 
 	fontSize = fontScale * smallFont->GetSize();
 
-	logOutput.AddSubscriber(this);
+	logSinkHandler.AddSink(this);
+	eventHandler.AddClient(this);
 }
 
 CInfoConsole::~CInfoConsole()
 {
-	logOutput.RemoveSubscriber(this);
+	logSinkHandler.RemoveSink(this);
+	eventHandler.RemoveClient(this);
 }
 
 void CInfoConsole::Draw()
@@ -113,6 +117,31 @@ void CInfoConsole::Update()
 	}
 }
 
+void CInfoConsole::PushNewLinesToEventHandler()
+{
+	if (newLines == 0)
+		return;
+
+	std::deque<RawLine> newRawLines;
+
+	{
+		boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex);
+
+		const int count = (int)rawData.size();
+		const int start = count - newLines;
+		for (int i = start; i < count; i++) {
+			const RawLine& rawLine = rawData[i];
+			newRawLines.push_back(rawLine);
+		}
+		newLines = 0;
+	}
+
+	for (std::deque<RawLine>::iterator it = newRawLines.begin(); it != newRawLines.end(); ++it) {
+		const RawLine& rawLine = (*it);
+		eventHandler.AddConsoleLine(rawLine.text, rawLine.section, rawLine.level);
+	}
+}
+
 
 int CInfoConsole::GetRawLines(std::deque<RawLine>& lines)
 {
@@ -127,24 +156,12 @@ int CInfoConsole::GetRawLines(std::deque<RawLine>& lines)
 }
 
 
-void CInfoConsole::GetNewRawLines(std::vector<RawLine>& lines)
+void CInfoConsole::RecordLogMessage(const std::string& section, int level,
+			const std::string& text)
 {
 	boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex);
-	const int count = (int)rawData.size();
-	const int start = count - newLines;
-	for (int i = start; i < count; i++) {
-		lines.push_back(rawData[i]);
-	}
-	newLines = 0;
-}
 
-
-void CInfoConsole::NotifyLogMsg(const CLogSubsystem& subsystem, const std::string& text)
-{
-
-	boost::recursive_mutex::scoped_lock scoped_lock(infoConsoleMutex);
-
-	RawLine rl(text, &subsystem, rawId);
+	RawLine rl(text, section, level, rawId);
 	rawId++;
 	rawData.push_back(rl);
 	if (rawData.size() > maxRawLines) {
@@ -185,7 +202,7 @@ void CInfoConsole::NotifyLogMsg(const CLogSubsystem& subsystem, const std::strin
 }
 
 
-void CInfoConsole::SetLastMsgPos(const float3& pos)
+void CInfoConsole::LastMessagePosition(const float3& pos)
 {
 	if (lastMsgPositions.size() < maxLastMsgPos) {
 		lastMsgPositions.push_front(pos);

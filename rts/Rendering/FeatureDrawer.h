@@ -25,7 +25,7 @@ typedef std::map<int, FeatureSet>::iterator FeatureRenderBinIt;
 
 public:
 	CFeatureDrawer();
-	virtual ~CFeatureDrawer();
+	~CFeatureDrawer();
 
 	void UpdateDrawQuad(CFeature* feature);
 	void Update();
@@ -67,7 +67,6 @@ private:
 
 	void PostLoad();
 
-private:
 	std::set<CFeature*> unsortedFeatures;
 
 	struct DrawQuad {
@@ -86,6 +85,7 @@ private:
 	std::vector<IWorldObjectModelRenderer*> cloakedModelRenderers;
 
 	friend class CFeatureQuadDrawer;
+	float unitDrawDistSq;
 };
 
 extern CFeatureDrawer* featureDrawer;

@@ -15,7 +15,6 @@
 
 class CWeapon;
 struct Command;
-class CLogSubsystem;
 
 class CEventHandler
 {
@@ -37,7 +36,10 @@ class CEventHandler
 		bool IsController(const std::string& ciName) const;
 
 	public:
-		// Synced events
+		/**
+		 * @name Synced_events
+		 * @{
+		 */
 		void Load(IArchive* archive);
 
 		void GamePreload();
@@ -131,12 +133,16 @@ class CEventHandler
 
 		void StockpileChanged(const CUnit* unit,
 		                      const CWeapon* weapon, int oldCount);
+		/// @}
 
 	public:
-		// Unsynced events
+		/**
+		 * @name Unsynced_events
+		 * @{
+		 */
 		void Save(zipFile archive);
 
-		void UnsyncedHeightMapUpdate(const Rectangle& rect);
+		void UnsyncedHeightMapUpdate(const SRectangle& rect);
 		void Update();
 
 		bool KeyPress(unsigned short key, bool isRepeat);
@@ -154,7 +160,9 @@ class CEventHandler
 
 		bool CommandNotify(const Command& cmd);
 
-		bool AddConsoleLine(const std::string& msg, const CLogSubsystem& zone);
+		bool AddConsoleLine(const std::string& msg, const std::string& section, int level);
+
+		void LastMessagePosition(const float3& pos);
 
 		bool GroupChanged(int groupID);
 
@@ -169,6 +177,8 @@ class CEventHandler
 		                const float3* pos0,
 		                const float3* pos1,
 		                const std::string* label);
+
+		void SunChanged(const float3& sunDir);
 
 		void ViewResize();
 
@@ -185,8 +195,8 @@ class CEventHandler
 		/// @brief this UNSYNCED event is generated every gameProgressFrameInterval ( defined in gameserver.cpp ), skips network queuing and caching and it's useful
 		/// to calculate the current fast-forwarding % compared to the real game
 		void GameProgress(int gameFrame);
+		/// @}
 
-		// FIXME: void ShockFront(float power, const float3& pos, float areaOfEffect);
 		inline void LoadedModelRequested();
 
 	private:
@@ -324,10 +334,13 @@ class CEventHandler
 		EventClientList listConfigCommand;
 		EventClientList listCommandNotify;
 		EventClientList listAddConsoleLine;
+		EventClientList listLastMessagePosition;
 		EventClientList listGroupChanged;
 		EventClientList listGameSetup;
 		EventClientList listWorldTooltip;
 		EventClientList listMapDrawCmd;
+
+		EventClientList listSunChanged;
 
 		EventClientList listViewResize;
 
@@ -816,7 +829,7 @@ inline void CEventHandler::RenderProjectileDestroyed(const CProjectile* proj)
 }
 
 
-inline void CEventHandler::UnsyncedHeightMapUpdate(const Rectangle& rect)
+inline void CEventHandler::UnsyncedHeightMapUpdate(const SRectangle& rect)
 {
 	const int count = listUnsyncedHeightMapUpdate.size();
 	for (int i = 0; i < count; i++) {

@@ -29,12 +29,13 @@ CRepulseGfx::CRepulseGfx(CUnit* owner, CProjectile* repulsed, float maxDist, con
 	color(color)
 {
 	if (repulsed) {
-		AddDeathDependence(repulsed);
+		AddDeathDependence(repulsed, DEPENDENCE_REPULSE);
 	}
 
 	checkCol = false;
 	useAirLos = true;
-	SetRadius(maxDist);
+
+	SetRadiusAndHeight(maxDist, 0.0f);
 
 	for (int y = 0; y < 5; ++y) {
 		float yp = (y / 4.0f - 0.5f);

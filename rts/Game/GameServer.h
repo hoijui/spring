@@ -16,7 +16,7 @@
 #include "Sim/Misc/TeamBase.h"
 #include "System/UnsyncedRNG.h"
 #include "System/float3.h"
-#include "System/myTime.h"
+#include "System/Misc/SpringTime.h"
 #include "System/Platform/Synchro.h"
 
 
@@ -116,7 +116,6 @@ private:
 	void ProcessPacket(const unsigned playerNum, boost::shared_ptr<const netcode::RawPacket> packet);
 	void CheckSync();
 	void ServerReadNet();
-	void CheckForGameEnd();
 
 	/** @brief Generate a unique game identifier and send it to all clients. */
 	void GenerateAndSendGameID();
@@ -168,11 +167,11 @@ private:
 	float internalSpeed;
 	bool cheating;
 
-	size_t ReserveNextAvailableSkirmishAIId();
+	unsigned char ReserveNextAvailableSkirmishAIId();
 
-	std::map<size_t, GameSkirmishAI> ais;
-	std::list<size_t> usedSkirmishAIIds;
-	void FreeSkirmishAIId(const size_t skirmishAIId);
+	std::map<unsigned char, GameSkirmishAI> ais;
+	std::list<unsigned char> usedSkirmishAIIds;
+	void FreeSkirmishAIId(const unsigned char skirmishAIId);
 
 	std::vector<GameParticipant> players;
 	std::vector<GameTeam> teams;
@@ -204,6 +203,7 @@ private:
 	float minUserSpeed;
 
 	bool noHelperAIs;
+	bool canReconnect;
 	bool allowSpecDraw;
 	bool allowAdditionalPlayers;
 	bool whiteListAdditionalPlayers;
@@ -220,7 +220,7 @@ private:
 	void InternalSpeedChange(float newSpeed);
 	void UserSpeedChange(float newSpeed, int player);
 
-	void AddAdditionalUser( const std::string& name, const std::string& passwd, bool fromDemo = false );
+	void AddAdditionalUser( const std::string& name, const std::string& passwd, bool fromDemo = false, bool spectator = true, int team = 0);
 
 	bool hasLocalClient;
 	unsigned localClientNumber;
@@ -239,7 +239,6 @@ private:
 
 	mutable Threading::RecursiveMutex gameServerMutex;
 
-	bool canReconnect;
 	volatile bool gameHasStarted;
 	volatile bool generatedGameID;
 
@@ -250,4 +249,3 @@ private:
 extern CGameServer* gameServer;
 
 #endif // _GAME_SERVER_H
-

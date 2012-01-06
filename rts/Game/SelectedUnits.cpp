@@ -1,20 +1,18 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include <map>
-#include <SDL_keysym.h>
-
-#include "System/mmgr.h"
-
 #include "SelectedUnits.h"
+
 #include "SelectedUnitsAI.h"
 #include "Camera.h"
 #include "GlobalUnsynced.h"
 #include "WaitCommandsAI.h"
+#include "Player.h"
 #include "PlayerHandler.h"
 #include "UI/CommandColors.h"
 #include "UI/GuiHandler.h"
 #include "UI/TooltipConsole.h"
 #include "ExternalAI/EngineOutHandler.h"
+#include "ExternalAI/SkirmishAIHandler.h"
 #include "Rendering/CommandDrawer.h"
 #include "Rendering/LineDrawer.h"
 #include "Rendering/GL/myGL.h"
@@ -35,10 +33,17 @@
 #include "System/EventHandler.h"
 #include "System/Log/ILog.h"
 #include "System/Util.h"
+#include "System/mmgr.h"
 #include "System/NetProtocol.h"
 #include "System/Net/PackPacket.h"
 #include "System/Input/KeyInput.h"
+#include "System/Sound/ISound.h"
 #include "System/Sound/SoundChannels.h"
+
+#include <SDL_mouse.h>
+#include <SDL_keysym.h>
+#include <map>
+
 
 #define PLAY_SOUNDS 1
 
@@ -52,6 +57,7 @@ CSelectedUnits::CSelectedUnits()
 	, possibleCommandsChanged(true)
 	, buildIconsFirst(false)
 	, selectedGroup(-1)
+	, soundMultiselID(0)
 {
 }
 
@@ -63,6 +69,7 @@ CSelectedUnits::~CSelectedUnits()
 
 void CSelectedUnits::Init(unsigned numPlayers)
 {
+	soundMultiselID = sound->GetSoundId("MultiSelect", false);
 	buildIconsFirst = configHandler->GetBool("BuildIconsFirst");
 	netSelected.resize(numPlayers);
 }
@@ -248,16 +255,104 @@ void CSelectedUnits::GiveCommand(Command c, bool fromUser)
 	#if (PLAY_SOUNDS == 1)
 	if (!selectedUnits.empty()) {
 		CUnitSet::const_iterator ui = selectedUnits.begin();
-
-		const int soundIdx = (*ui)->unitDef->sounds.ok.getRandomIdx();
-		if (soundIdx >= 0) {
-			Channels::UnitReply.PlaySample(
-				(*ui)->unitDef->sounds.ok.getID(soundIdx), (*ui),
-				(*ui)->unitDef->sounds.ok.getVolume(soundIdx));
-		}
+		Channels::UnitReply.PlayRandomSample((*ui)->unitDef->sounds.ok, *ui);
 	}
 	#endif
 }
+
+
+void CSelectedUnits::HandleUnitBoxSelection(const float4& planeRight, const float4& planeLeft, const float4& planeTop, const float4& planeBottom)
+{
+	GML_RECMUTEX_LOCK(sel); // SelectUnits
+
+	CUnit* unit = NULL;
+	int addedunits = 0;
+	int team, lastTeam;
+
+	if (gu->spectatingFullSelect) {
+		team = 0;
+		lastTeam = teamHandler->ActiveTeams() - 1;
+	} else {
+		team = gu->myTeam;
+		lastTeam = gu->myTeam;
+	}
+	for (; team <= lastTeam; team++) {
+		CUnitSet& teamUnits = teamHandler->Team(team)->units;
+		for (CUnitSet::iterator ui = teamUnits.begin(); ui != teamUnits.end(); ++ui) {
+			const float4 vec((*ui)->midPos, 1.0f);
+
+			if (vec.dot4(planeRight) < 0.0f && vec.dot4(planeLeft) < 0.0f && vec.dot4(planeTop) < 0.0f && vec.dot4(planeBottom) < 0.0f) {
+				if (keyInput->IsKeyPressed(SDLK_LCTRL) && (selectedUnits.find(*ui) != selectedUnits.end())) {
+					RemoveUnit(*ui);
+				} else {
+					AddUnit(*ui);
+					unit = *ui;
+					addedunits++;
+				}
+			}
+		}
+	}
+
+	#if (PLAY_SOUNDS == 1)
+	if (addedunits >= 2) {
+		Channels::UserInterface.PlaySample(soundMultiselID);
+	}
+	else if (addedunits == 1) {
+		Channels::UnitReply.PlayRandomSample(unit->unitDef->sounds.select, unit);
+	}
+	#endif
+}
+
+
+void CSelectedUnits::HandleSingleUnitClickSelection(CUnit* unit, bool doInViewTest)
+{
+	GML_RECMUTEX_LOCK(sel); // SelectUnits
+
+	int button = SDL_BUTTON_LEFT; //FIXME make modular?
+	CMouseHandler::ButtonPressEvt& bp = mouse->buttons[button];
+
+	if (unit && ((unit->team == gu->myTeam) || gu->spectatingFullSelect)) {
+		if (bp.lastRelease < (gu->gameTime - mouse->doubleClickTime)) {
+			if (keyInput->IsKeyPressed(SDLK_LCTRL) && (selectedUnits.find(unit) != selectedUnits.end())) {
+				RemoveUnit(unit);
+			} else {
+				AddUnit(unit);
+			}
+		} else {
+			//double click
+			if (unit->group && !keyInput->IsKeyPressed(SDLK_LCTRL)) {
+				//select the current units group if it has one
+				SelectGroup(unit->group->id);
+			} else {
+				//select all units of same type (on screen, unless CTRL is pressed)
+				int team, lastTeam;
+				if (gu->spectatingFullSelect) {
+					team = 0;
+					lastTeam = teamHandler->ActiveTeams() - 1;
+				} else {
+					team = gu->myTeam;
+					lastTeam = gu->myTeam;
+				}
+				for (; team <= lastTeam; team++) {
+					CUnitSet::iterator ui;
+					CUnitSet& teamUnits = teamHandler->Team(team)->units;
+					for (ui = teamUnits.begin(); ui != teamUnits.end(); ++ui) {
+						if ((*ui)->unitDef->id == unit->unitDef->id) {
+							if (!doInViewTest || camera->InView((*ui)->midPos) || keyInput->IsKeyPressed(SDLK_LCTRL)) {
+								AddUnit(*ui);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		#if (PLAY_SOUNDS == 1)
+		Channels::UnitReply.PlayRandomSample(unit->unitDef->sounds.select, unit);
+		#endif
+	}
+}
+
 
 
 void CSelectedUnits::AddUnit(CUnit* unit)
@@ -275,8 +370,8 @@ void CSelectedUnits::AddUnit(CUnit* unit)
 
 	GML_RECMUTEX_LOCK(sel); // AddUnit
 
-	selectedUnits.insert(unit);
-	AddDeathDependence(unit);
+	if (selectedUnits.insert(unit).second)
+		AddDeathDependence(unit, DEPENDENCE_SELECTED);
 	selectionChanged = true;
 	possibleCommandsChanged = true;
 
@@ -292,8 +387,8 @@ void CSelectedUnits::RemoveUnit(CUnit* unit)
 {
 	GML_RECMUTEX_LOCK(sel); // RemoveUnit
 
-	selectedUnits.erase(unit);
-	DeleteDeathDependence(unit);
+	if (selectedUnits.erase(unit))
+		DeleteDeathDependence(unit, DEPENDENCE_SELECTED);
 	selectionChanged = true;
 	possibleCommandsChanged = true;
 	selectedGroup = -1;
@@ -308,7 +403,7 @@ void CSelectedUnits::ClearSelected()
 	CUnitSet::iterator ui;
 	for (ui = selectedUnits.begin(); ui != selectedUnits.end(); ++ui) {
 		(*ui)->commandAI->selected = false;
-		DeleteDeathDependence(*ui);
+		DeleteDeathDependence(*ui, DEPENDENCE_SELECTED);
 	}
 
 	selectedUnits.clear();
@@ -331,7 +426,7 @@ void CSelectedUnits::SelectGroup(int num)
 		if (!(*ui)->noSelect) {
 			(*ui)->commandAI->selected = true;
 			selectedUnits.insert(*ui);
-			AddDeathDependence(*ui);
+			AddDeathDependence(*ui, DEPENDENCE_SELECTED);
 		}
 	}
 
@@ -648,6 +743,7 @@ void CSelectedUnits::DrawCommands()
 	glLineWidth(cmdColors.QueuedLineWidth());
 
 	GML_RECMUTEX_LOCK(unit); // DrawCommands
+	GML_RECMUTEX_LOCK(feat); // DrawCommands
 	GML_RECMUTEX_LOCK(grpsel); // DrawCommands
 	GML_STDMUTEX_LOCK(cai); // DrawCommands
 
@@ -831,7 +927,7 @@ void CSelectedUnits::SendCommandsToUnits(const std::vector<int>& unitIDs, const 
 	}
 
 	unsigned msgLen = 0;
-	msgLen += (1 + 2 + 1); // msg type, msg size, player ID
+	msgLen += (1 + 2 + 1 + 1); // msg type, msg size, player ID, AI ID
 	msgLen += 2; // unitID count
 	msgLen += unitIDCount * 2;
 	msgLen += 2; // command count
@@ -845,7 +941,8 @@ void CSelectedUnits::SendCommandsToUnits(const std::vector<int>& unitIDs, const 
 	netcode::PackPacket* packet = new netcode::PackPacket(msgLen);
 	*packet << static_cast<unsigned char>(NETMSG_AICOMMANDS)
 	        << static_cast<unsigned short>(msgLen)
-	        << static_cast<unsigned char>(gu->myPlayerNum);
+	        << static_cast<unsigned char>(gu->myPlayerNum)
+	        << skirmishAIHandler.GetCurrentAIID();
 
 	*packet << static_cast<unsigned short>(unitIDCount);
 	for (std::vector<int>::const_iterator it = unitIDs.begin(); it != unitIDs.end(); ++it)

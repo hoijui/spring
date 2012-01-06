@@ -24,14 +24,17 @@
 # DoxyGen output
 /doc/doxygen
 
+# CMake generated version container file for use within tarballs
+/VERSION
+
 # CMake related
 # though it is cleaner to not build directly in the repository root
 CMakeFiles
 /CMakeCache.txt
 *.sdz
 Makefile
-# user scripts use .cmake extension
-#*.cmake
+cmake_install.cmake
+CTestTestfile.cmake
 
 # Visual Studio related
 *.ncb
@@ -80,8 +83,8 @@ Makefile
 # ???
 progress.make
 
-#buildbot generated dirs
-/build-*
+#buildbot generated dir
+/build
 
 #installer downloaded/generated stuff
 /installer/Springlobby/

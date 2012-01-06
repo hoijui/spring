@@ -39,6 +39,7 @@
 #include "System/exportdefines.h"
 #include "System/Info.h"
 #include "System/Option.h"
+#include "System/SafeCStrings.h"
 
 #ifdef WIN32
 #include <windows.h>
@@ -276,7 +277,7 @@ EXPORT(const char*) GetNextError()
 
 EXPORT(const char*) GetSpringVersion()
 {
-	return GetStr(SpringVersion::Get());
+	return GetStr(SpringVersion::GetSync());
 }
 
 
@@ -286,15 +287,19 @@ EXPORT(const char*) GetSpringVersionPatchset()
 }
 
 
+EXPORT(bool) IsSpringReleaseVersion()
+{
+	return SpringVersion::IsRelease();
+}
+
+
 static void internal_deleteMapInfos();
 
-static void _UnInit()
+static void _Cleanup()
 {
 	internal_deleteMapInfos();
 
 	lpClose();
-
-	FileSystemInitializer::Cleanup();
 
 	if (syncer) {
 		SafeDelete(syncer);
@@ -311,6 +316,9 @@ EXPORT(int) Init(bool isServer, int id)
 #ifndef DEBUG
 		log_filter_section_setMinLevel(LOG_SECTION_UNITSYNC, LOG_LEVEL_INFO);
 #endif
+		if (archiveScanner || vfsHandler){
+			FileSystemInitializer::Cleanup(); //reinitialize filesystem to detect new files
+		}
 		if (!configHandler) {
 			ConfigHandler::Instantiate(); // use the default config file
 		}
@@ -322,7 +330,7 @@ EXPORT(int) Init(bool isServer, int id)
 		}
 		LOG("loaded, %s", SpringVersion::GetFull().c_str());
 
-		_UnInit();
+		_Cleanup();
 
 		std::vector<std::string> filesToCheck;
 		filesToCheck.push_back("base/springcontent.sdz");
@@ -349,7 +357,8 @@ EXPORT(int) Init(bool isServer, int id)
 EXPORT(void) UnInit()
 {
 	try {
-		_UnInit();
+		_Cleanup();
+		FileSystemInitializer::Cleanup();
 		ConfigHandler::Deallocate();
 	}
 	UNITSYNC_CATCH_BLOCKS;
@@ -519,10 +528,7 @@ EXPORT(const char*) GetArchivePath(const char* archiveName)
 
 static void safe_strzcpy(char* dst, std::string src, size_t max)
 {
-	if (src.length() > max-1) {
-		src = src.substr(0, max-1);
-	}
-	STRCPY(dst, src.c_str());
+	STRCPY_T(dst, max, src.c_str());
 }
 
 
@@ -579,8 +585,7 @@ static bool internal_GetMapInfo(const char* mapName, InternalMapInfo* outInfo)
 			catch (content_error&) {
 				outInfo->width  = -1;
 			}
-		}
-		else {
+		} else {
 			const int w = mapTable.GetInt("gameAreaW", 0);
 			const int h = mapTable.GetInt("gameAreaW", 1);
 
@@ -591,8 +596,7 @@ static bool internal_GetMapInfo(const char* mapName, InternalMapInfo* outInfo)
 		// Make sure we found stuff in both the smd and the header
 		if (outInfo->width <= 0) {
 			err = "Bad map width";
-		}
-		else if (outInfo->height <= 0) {
+		} else if (outInfo->height <= 0) {
 			err = "Bad map height";
 		}
 	}

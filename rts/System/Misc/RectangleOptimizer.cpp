@@ -2,7 +2,8 @@
 
 #include "RectangleOptimizer.h"
 #include "System/Log/ILog.h"
-#include <assert.h>
+
+#include <cassert>
 
 
 unsigned CRectangleOptimizer::statsTotalSize = 0;
@@ -10,7 +11,7 @@ unsigned CRectangleOptimizer::statsOptSize   = 0;
 
 
 CRectangleOptimizer::CRectangleOptimizer()
-	: maxAreaPerRect(500*500) //FIXME auto adjust this in HeightMapUpdate!
+	: maxAreaPerRect(500 * 500) // FIXME auto adjust this in HeightMapUpdate!
 	, needsUpdate(false)
 {
 }
@@ -20,7 +21,7 @@ CRectangleOptimizer::~CRectangleOptimizer()
 {
 	float reduction = 0.f;
 	if (statsTotalSize > 0) {
-		reduction = 100.f - ((100.f * statsOptSize) / statsTotalSize) ;
+		reduction = 100.f - ((100.f * statsOptSize) / statsTotalSize);
 	}
 	LOG("Statistics for RectangleOptimizer: %.0f%%", reduction);
 }
@@ -87,12 +88,12 @@ void CRectangleOptimizer::Optimize()
 
 	//! Split too large
 	for (it = rectangles.begin(); it != rectangles.end(); ++it) {
-		Rectangle& rect1 = *it;
+		SRectangle& rect1 = *it;
 		int width  = rect1.GetWidth();
 		int height = rect1.GetHeight();
 
 		while ((width * height) > maxAreaPerRect) {
-			Rectangle rect2 = rect1;
+			SRectangle rect2 = rect1;
 			if (width > maxAreaPerRect) {
 				rect1.x2 = (rect1.x1 + rect1.x2) / 2;
 				rect2.x1 = (rect2.x1 + rect2.x2) / 2;
@@ -109,7 +110,7 @@ void CRectangleOptimizer::Optimize()
 }
 
 
-std::bitset<4> CRectangleOptimizer::GetEdgesInRect(const Rectangle& rect1, const Rectangle& rect2)
+inline std::bitset<4> CRectangleOptimizer::GetEdgesInRect(const SRectangle& rect1, const SRectangle& rect2)
 {
 	std::bitset<4> bits;
 	bits[0] = (rect2.x1 >= rect1.x1) && (rect2.x1 <= rect1.x2);
@@ -120,7 +121,7 @@ std::bitset<4> CRectangleOptimizer::GetEdgesInRect(const Rectangle& rect1, const
 }
 
 
-std::bitset<4> CRectangleOptimizer::GetSharedEdges(const Rectangle& rect1, const Rectangle& rect2)
+inline std::bitset<4> CRectangleOptimizer::GetSharedEdges(const SRectangle& rect1, const SRectangle& rect2)
 {
 	std::bitset<4> bits;
 	bits[0] = (rect2.x1 == rect1.x1) || (rect2.x1 == rect1.x2);
@@ -131,9 +132,9 @@ std::bitset<4> CRectangleOptimizer::GetSharedEdges(const Rectangle& rect1, const
 }
 
 
-bool CRectangleOptimizer::DoOverlap(const Rectangle& rect1, const Rectangle& rect2)
+inline bool CRectangleOptimizer::DoOverlap(const SRectangle& rect1, const SRectangle& rect2)
 {
-	Rectangle boundRect(rect1);
+	SRectangle boundRect(rect1);
 	if (rect2.x1 < rect1.x1) boundRect.x1 = rect2.x1;
 	if (rect2.x2 > rect1.x2) boundRect.x2 = rect2.x2;
 	if (rect2.z1 < rect1.z1) boundRect.z1 = rect2.z1;
@@ -147,9 +148,9 @@ bool CRectangleOptimizer::DoOverlap(const Rectangle& rect1, const Rectangle& rec
 }
 
 
-bool CRectangleOptimizer::AreMergable(const Rectangle& rect1, const Rectangle& rect2)
+inline bool CRectangleOptimizer::AreMergable(const SRectangle& rect1, const SRectangle& rect2)
 {
-	Rectangle boundRect(rect1);
+	SRectangle boundRect(rect1);
 	if (rect2.x1 < rect1.x1) boundRect.x1 = rect2.x1;
 	if (rect2.x2 > rect1.x2) boundRect.x2 = rect2.x2;
 	if (rect2.z1 < rect1.z1) boundRect.z1 = rect2.z1;
@@ -164,7 +165,7 @@ bool CRectangleOptimizer::AreMergable(const Rectangle& rect1, const Rectangle& r
 }
 
 
-bool CRectangleOptimizer::HandleMerge(Rectangle& rect1, Rectangle& rect2)
+bool CRectangleOptimizer::HandleMerge(SRectangle& rect1, SRectangle& rect2)
 {
 	if (!AreMergable(rect1, rect2)) {
 		//  ____
@@ -180,7 +181,7 @@ bool CRectangleOptimizer::HandleMerge(Rectangle& rect1, Rectangle& rect2)
 	std::bitset<4> edgesInRect21 = GetEdgesInRect(rect2, rect1);
 	if (edgesInRect12.count() < edgesInRect21.count()) {
 		std::swap(edgesInRect12, edgesInRect21);
-		std::swap(rect1, rect2); //FIXME only swap if we `return false`!!!
+		std::swap(rect1, rect2); //FIXME only swap if we `return true`!!!
 	}
 
 	//! check if edges are really shared
@@ -214,7 +215,7 @@ bool CRectangleOptimizer::HandleMerge(Rectangle& rect1, Rectangle& rect2)
 }
 
 
-int CRectangleOptimizer::HandleOverlapping(Rectangle* rect1, Rectangle* rect2)
+int CRectangleOptimizer::HandleOverlapping(SRectangle* rect1, SRectangle* rect2)
 {
 	if (!DoOverlap(*rect1, *rect2)) {
 		//  ______
@@ -275,7 +276,7 @@ int CRectangleOptimizer::HandleOverlapping(Rectangle* rect1, Rectangle* rect2)
 		//   |________|
 
 		//! make one smaller and create a new one
-		Rectangle rect3 = *rect2;
+		SRectangle rect3 = *rect2;
 
 		if (edgesInRect12[2]) {
 			rect2->z1 = rect1->z2;
@@ -304,7 +305,7 @@ int CRectangleOptimizer::HandleOverlapping(Rectangle* rect1, Rectangle* rect2)
 		//
 
 		//! make one smaller and create a new one
-		Rectangle rect3 = *rect2;
+		SRectangle rect3 = *rect2;
 
 		if (edgesInRect12[0]) {
 			assert(edgesInRect12[0] && edgesInRect12[1] && !edgesInRect12[2] && !edgesInRect12[3]);

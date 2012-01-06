@@ -8,6 +8,7 @@
 #include <map>
 
 #include "System/float3.h"
+#include "System/Vec2.h"
 #include "MouseCursor.h"
 
 static const int NUM_BUTTONS = 10;
@@ -22,17 +23,15 @@ public:
 	CMouseHandler();
 	virtual ~CMouseHandler();
 
-	void SetCursor(const std::string& cmdName);
+	void ChangeCursor(const std::string& cmdName, const float& scale = 1.0f);
 
-	void UpdateHwCursor(); /// calls SDL_ShowCursor, used for ingame hwcursor enabling
-
-	void EmptyMsgQueUpdate(void);
+	void Update();
 	void UpdateCursors();
-	std::string GetCurrentTooltip(void);
+	std::string GetCurrentTooltip();
 
 	void HideMouse();
 	void ShowMouse();
-	void ToggleState(); /// lock+hide (used by fps camera and middle click scrolling)
+	void ToggleMiddleClickScroll(); /// lock+hide
 	void WarpMouse(int x, int y);
 
 	void DrawSelectionBox(); /// draw mousebox (selection box)
@@ -51,25 +50,30 @@ public:
 	                        const std::string& newName,
 	                        CMouseCursor::HotSpot hotSpot);
 
+	const CMouseCursor* FindCursor(const std::string& cursorName) const {
+		std::map<std::string, CMouseCursor*>::const_iterator it = cursorCommandMap.find(cursorName);
+		if (it != cursorCommandMap.end()) {
+			return it->second;
+		}
+		return NULL;
+	}
+
+	const std::string& GetCurrentCursor() const { return newCursor; }
+	const float&  GetCurrentCursorScale() const { return cursorScale; }
+
+	void ToggleHwCursor(const bool& enable);
+
 	/// @see ConfigHandler::ConfigNotifyCallback
 	void ConfigNotify(const std::string& key, const std::string& value);
 
-	bool hardwareCursor;
+public:
 	int lastx;
 	int lasty;
-	bool hide;
-	bool hwHide;
+
 	bool locked;
-	bool invertMouse;
+
 	float doubleClickTime;
 	float scrollWheelSpeed;
-	float dragScrollThreshold;
-
-	/// locked mouse indicator size
-	float crossSize;
-	float crossAlpha;
-	float crossMoveScale;
-	float cursorScale;
 
 	struct ButtonPressEvt {
 		bool pressed;
@@ -87,27 +91,45 @@ public:
 	int activeButton;
 	float3 dir;
 
-	int soundMultiselID;
-
-	std::string cursorText; /// current cursor name
-	CMouseCursor* currentCursor;
-
 	/// Stores if the mouse was locked or not before going into direct control,
 	/// so we can restore it when we return to normal.
 	bool wasLocked;
 
-	std::map<std::string, CMouseCursor*> cursorFileMap;
-	std::map<std::string, CMouseCursor*> cursorCommandMap;
+	/// locked mouse indicator size
+	float crossSize;
+	float crossAlpha;
+	float crossMoveScale;
 
 private:
+	void SetCursor(const std::string& cmdName, const bool& forceRebind = false);
+
 	void SafeDeleteCursor(CMouseCursor* cursor);
 	void LoadCursors();
+
+	static void GetSelectionBoxCoeff(const float3& pos1, const float3& dir1, const float3& pos2, const float3& dir2, float2& topright, float2& btmleft);
 
 	void DrawScrollCursor();
 	void DrawFPSCursor();
 
+private:
+	std::string newCursor; /// cursor changes are delayed
+	std::string cursorText; /// current cursor name
+	CMouseCursor* currentCursor;
+
+	float cursorScale;
+
+	bool hide;
+	bool hwHide;
+	bool hardwareCursor;
+	bool invertMouse;
+
+	float dragScrollThreshold;
+
 	float scrollx;
 	float scrolly;
+
+	std::map<std::string, CMouseCursor*> cursorFileMap;
+	std::map<std::string, CMouseCursor*> cursorCommandMap;
 };
 
 extern CMouseHandler* mouse;

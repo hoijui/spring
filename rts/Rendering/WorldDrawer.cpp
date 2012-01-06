@@ -23,6 +23,7 @@
 #include "Rendering/Models/ModelDrawer.h"
 #include "Lua/LuaUnsyncedCtrl.h"
 #include "Map/BaseGroundDrawer.h"
+#include "Map/HeightMapTexture.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Game/Camera.h"
@@ -58,6 +59,7 @@ CWorldDrawer::CWorldDrawer()
 	pathDrawer = IPathDrawer::GetInstance();
 
 	farTextureHandler = new CFarTextureHandler();
+	heightMapTexture = new HeightMapTexture();
 
 	loadscreen->SetLoadMessage("Creating ProjectileDrawer & UnitDrawer");
 	projectileDrawer = new CProjectileDrawer();
@@ -85,7 +87,9 @@ CWorldDrawer::~CWorldDrawer()
 	SafeDelete(featureDrawer);
 	SafeDelete(unitDrawer); // depends on unitHandler, cubeMapHandler, groundDecals
 	SafeDelete(projectileDrawer);
+
 	SafeDelete(farTextureHandler);
+	SafeDelete(heightMapTexture);
 
 	SafeDelete(cubeMapHandler);
 	SafeDelete(groundDecals);
@@ -99,12 +103,13 @@ void CWorldDrawer::Update()
 	unitDrawer->Update();
 	featureDrawer->Update();
 	lineDrawer.UpdateLineStipple();
+	IWater::ApplyPushedChanges(game);
 }
 
 
 void CWorldDrawer::Draw()
 {
-	SCOPED_TIMER("WorldDrawer::Draw");
+	SCOPED_TIMER("WorldDrawer::Total");
 
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 
@@ -113,18 +118,18 @@ void CWorldDrawer::Draw()
 	}
 
 	if (globalRendering->drawGround) {
-		gd->Draw();
+		SCOPED_TIMER("WorldDrawer::Terrain");
+		gd->Draw(DrawPass::Normal);
 		smoothHeightMeshDrawer->Draw(1.0f);
 		treeDrawer->DrawGrass();
 		gd->DrawTrees();
 	}
 
 	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
-		SCOPED_TIMER("Water::{UpdateWater,Draw} (solid)");
+		SCOPED_TIMER("WorldDrawer::Water");
 
 		water->OcclusionQuery();
 		if (water->IsDrawSolid()) {
-			IWater::ApplyPushedChanges(game);
 			water->UpdateWater(game);
 			water->Draw();
 		}
@@ -133,11 +138,14 @@ void CWorldDrawer::Draw()
 	selectedUnits.Draw();
 	eventHandler.DrawWorldPreUnit();
 
-	DebugColVolDrawer::Draw();
-	unitDrawer->Draw(false);
-	modelDrawer->Draw();
-	featureDrawer->Draw();
-	pathDrawer->Draw();
+	{
+		SCOPED_TIMER("WorldDrawer::Models");
+		DebugColVolDrawer::Draw();
+		unitDrawer->Draw(false);
+		modelDrawer->Draw();
+		featureDrawer->Draw();
+		pathDrawer->DrawAll();
+	}
 
 	//! transparent stuff
 	glEnable(GL_BLEND);
@@ -161,12 +169,11 @@ void CWorldDrawer::Draw()
 
 	//! draw water
 	if (globalRendering->drawWater && !mapInfo->map.voidWater) {
-		SCOPED_TIMER("Water::{UpdateWater,Draw} (!solid)");
+		SCOPED_TIMER("WorldDrawer::Water");
 
 		if (!water->IsDrawSolid()) {
 			//! Water rendering will overwrite features, so save them
 			featureDrawer->SwapFeatures();
-			IWater::ApplyPushedChanges(game);
 			water->UpdateWater(game);
 			water->Draw();
 			featureDrawer->SwapFeatures();
@@ -184,7 +191,10 @@ void CWorldDrawer::Draw()
 		glDisable(GL_CLIP_PLANE3);
 	}
 
-	projectileDrawer->Draw(false);
+	{
+		SCOPED_TIMER("WorldDrawer::Projectiles");
+		projectileDrawer->Draw(false);
+	}
 
 	if (globalRendering->drawSky) {
 		sky->DrawSun();

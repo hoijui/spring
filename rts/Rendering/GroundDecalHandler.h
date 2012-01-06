@@ -113,15 +113,15 @@ struct BuildingGroundDecal {
 };
 
 
-class CGroundDecalHandler: public CEventClient, public CExplosionListener
+class CGroundDecalHandler: public CEventClient, public IExplosionListener
 {
 public:
 	CGroundDecalHandler();
-	virtual ~CGroundDecalHandler();
+	~CGroundDecalHandler();
 
 	void Draw();
 	void Update();
-	void UpdateSunDir();
+	void SunChanged(const float3& sunDir);
 
 	void UnitMoved(const CUnit*);
 	void UnitMovedNow(CUnit* unit);
@@ -139,7 +139,9 @@ public:
 	void SetDrawDecals(bool v) { if (decalLevel > 0) { drawDecals = v; } }
 
 	bool WantsEvent(const std::string& eventName) {
-		return (eventName == "UnitMoved");
+		return 
+			(eventName == "UnitMoved") ||
+			(eventName == "SunChanged");
 	}
 	bool GetFullRead() const { return true; }
 	int GetReadAllyTeam() const { return AllAccessTeam; }

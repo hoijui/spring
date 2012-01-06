@@ -10,12 +10,13 @@
 #include "Game/GlobalUnsynced.h"
 #include "Game/TraceRay.h"
 #include "Game/GameSetup.h"
+#include "Game/Player.h"
 #include "Game/PlayerHandler.h"
 #include "Game/SelectedUnits.h"
 #include "Game/InMapDraw.h"
-#include "Game/UI/LuaUI.h"
 #include "Game/UI/MiniMap.h"
 #include "Lua/LuaRules.h"
+#include "Lua/LuaUI.h"
 #include "Map/MapInfo.h"
 #include "Map/MetalMap.h"
 #include "Map/ReadMap.h"
@@ -34,6 +35,7 @@
 #include "Sim/Misc/Wind.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/MoveTypes/MoveInfo.h"
+#include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Path/IPathManager.h"
 #include "Sim/Units/Groups/Group.h"
 #include "Sim/Units/Groups/GroupHandler.h"
@@ -49,8 +51,8 @@
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "ExternalAI/EngineOutHandler.h"
 #include "System/mmgr.h"
+#include "System/EventHandler.h"
 #include "System/Log/ILog.h"
-#include "System/LogOutput.h"
 #include "System/NetProtocol.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/DataDirsAccess.h"
@@ -103,7 +105,14 @@ CUnit* CAICallback::GetInSensorRangeUnit(int unitId, unsigned short losFlags) co
 
 	if (CHECK_UNITID(unitId)) {
 		CUnit* unitTmp = uh->units[unitId];
-		if (unitTmp && (unitTmp->losStatus[teamHandler->AllyTeam(team)] & losFlags)) {
+		// Skip in-sensor-range test if the unit is allied with our team.
+		// This prevents errors where an allied unit is starting to build,
+		// but is not yet (technically) in LOS, because LOS was not yet updated,
+		// and thus would be invisible for us, without the ally check.
+		if (unitTmp
+				&& (teamHandler->AlliedTeams(unitTmp->team, team)
+				||  (unitTmp->losStatus[teamHandler->AllyTeam(team)] & losFlags)))
+		{
 			unit = unitTmp;
 		}
 	}
@@ -158,7 +167,7 @@ void CAICallback::SendTextMsg(const char* text, int zone)
 
 void CAICallback::SetLastMsgPos(const float3& pos)
 {
-	logOutput.SetLastMsgPos(pos);
+	eventHandler.LastMessagePosition(pos);
 }
 
 void CAICallback::AddNotification(const float3& pos, const float3& color, float alpha)
@@ -192,7 +201,7 @@ bool CAICallback::SendResources(float mAmount, float eAmount, int receivingTeamI
 		eAmount = std::max(0.0f, std::min(eAmount, GetEnergy()));
 		std::vector<short> empty;
 
-		net->Send(CBaseNetProtocol::Get().SendAIShare(ubyte(gu->myPlayerNum), ubyte(team), ubyte(receivingTeamId), mAmount, eAmount, empty));
+		net->Send(CBaseNetProtocol::Get().SendAIShare(ubyte(gu->myPlayerNum), skirmishAIHandler.GetCurrentAIID(), ubyte(team), ubyte(receivingTeamId), mAmount, eAmount, empty));
 	}
 
 	return ret;
@@ -231,7 +240,7 @@ int CAICallback::SendUnits(const std::vector<int>& unitIds, int receivingTeamId)
 		if (!sentUnitIDs.empty()) {
 			// we ca not use SendShare() here either, since
 			// AIs do not have a notion of "selected units"
-			net->Send(CBaseNetProtocol::Get().SendAIShare(ubyte(gu->myPlayerNum), ubyte(team), ubyte(receivingTeamId), 0.0f, 0.0f, sentUnitIDs));
+			net->Send(CBaseNetProtocol::Get().SendAIShare(ubyte(gu->myPlayerNum), skirmishAIHandler.GetCurrentAIID(), ubyte(team), ubyte(receivingTeamId), 0.0f, 0.0f, sentUnitIDs));
 		}
 	}
 
@@ -304,12 +313,16 @@ void CAICallback::ReleasedSharedMemArea(char* name)
 
 int CAICallback::CreateGroup()
 {
+	GML_RECMUTEX_LOCK(group); // CreateGroup
+
 	const CGroup* g = gh->CreateNewGroup();
 	return g->id;
 }
 
 void CAICallback::EraseGroup(int groupId)
 {
+	GML_RECMUTEX_LOCK(group); // EraseGroup
+
 	if (CHECK_GROUPID(groupId)) {
 		if (gh->groups[groupId]) {
 			gh->RemoveGroup(gh->groups[groupId]);
@@ -322,8 +335,12 @@ bool CAICallback::AddUnitToGroup(int unitId, int groupId)
 	bool added = false;
 
 	CUnit* unit = GetMyTeamUnit(unitId);
-	if (unit && CHECK_GROUPID(groupId) && gh->groups[groupId]) {
-		added = unit->SetGroup(gh->groups[groupId]);
+	if (unit) {
+		GML_RECMUTEX_LOCK(group); // AddUnitToGroup
+
+		if (CHECK_GROUPID(groupId) && gh->groups[groupId]) {
+			added = unit->SetGroup(gh->groups[groupId]);
+		}
 	}
 
 	return added;
@@ -390,7 +407,7 @@ int CAICallback::GiveOrder(int unitId, Command* c)
 		return -5;
 	}
 
-	net->Send(CBaseNetProtocol::Get().SendAICommand(gu->myPlayerNum, unitId, c->GetID(), c->aiCommandId, c->options, c->params));
+	net->Send(CBaseNetProtocol::Get().SendAICommand(gu->myPlayerNum, skirmishAIHandler.GetCurrentAIID(), unitId, c->GetID(), c->aiCommandId, c->options, c->params));
 
 	return 0;
 }
@@ -517,7 +534,7 @@ float CAICallback::GetUnitSpeed(int unitId)
 		if (unit) {
 			const int allyTeam = teamHandler->AllyTeam(team);
 			if (teamHandler->Ally(unit->allyteam, allyTeam)) {
-				speed = unit->maxSpeed;
+				speed = unit->moveType->GetMaxSpeed();
 			} else if (unit->losStatus[allyTeam] & LOS_INLOS) {
 				const UnitDef* unitDef = unit->unitDef;
 				const UnitDef* decoyDef = unitDef->decoyDef;
@@ -611,16 +628,17 @@ const UnitDef* CAICallback::GetUnitDef(int unitId)
 			const int allyTeam = teamHandler->AllyTeam(team);
 			if (teamHandler->Ally(unit->allyteam, allyTeam)) {
 				def = unitDef;
-			}
-			const unsigned short losStatus = unit->losStatus[allyTeam];
-			const unsigned short prevMask = (LOS_PREVLOS | LOS_CONTRADAR);
-			if (((losStatus & LOS_INLOS) != 0) ||
-					((losStatus & prevMask) == prevMask)) {
-				const UnitDef* decoyDef = unitDef->decoyDef;
-				if (decoyDef == NULL) {
-					def = unitDef;
-				} else {
-					def = decoyDef;
+			} else {
+				const unsigned short losStatus = unit->losStatus[allyTeam];
+				const unsigned short prevMask = (LOS_PREVLOS | LOS_CONTRADAR);
+				if (((losStatus & LOS_INLOS) != 0) ||
+						((losStatus & prevMask) == prevMask)) {
+					const UnitDef* decoyDef = unitDef->decoyDef;
+					if (decoyDef == NULL) {
+						def = unitDef;
+					} else {
+						def = decoyDef;
+					}
 				}
 			}
 		}
@@ -724,7 +742,7 @@ int CAICallback::InitPath(const float3& start, const float3& end, int pathType, 
 
 float3 CAICallback::GetNextWaypoint(int pathId)
 {
-	return pathManager->NextWaypoint(pathId, ZeroVector, 0.0f, 0, 0, false);
+	return pathManager->NextWayPoint(pathId, ZeroVector, 0.0f, 0, 0, false);
 }
 
 void CAICallback::FreePath(int pathId)
@@ -744,7 +762,7 @@ float CAICallback::GetPathLength(float3 start, float3 end, int pathType, float g
 	std::vector<float3> points;
 	std::vector<int>    lengths;
 
-	pathManager->GetEstimatedPath(pathID, points, lengths);
+	pathManager->GetPathWayPoints(pathID, points, lengths);
 
 	if (points.empty()) {
 		return 0.0f;
@@ -806,7 +824,7 @@ float CAICallback::GetPathNodeCost(unsigned int x, unsigned int z) {
 
 
 
-static int FilterUnitsVector(const std::vector<CUnit*>& units, int* unitIds, int unitIds_max, bool (*includeUnit)(CUnit*) = NULL)
+static int FilterUnitsVector(const std::vector<CUnit*>& units, int* unitIds, int unitIds_max, bool (*includeUnit)(const CUnit*) = NULL)
 {
 	int a = 0;
 
@@ -829,7 +847,7 @@ static int FilterUnitsVector(const std::vector<CUnit*>& units, int* unitIds, int
 
 	return a;
 }
-static int FilterUnitsList(const std::list<CUnit*>& units, int* unitIds, int unitIds_max, bool (*includeUnit)(CUnit*) = NULL)
+static int FilterUnitsList(const std::list<CUnit*>& units, int* unitIds, int unitIds_max, bool (*includeUnit)(const CUnit*) = NULL)
 {
 	int a = 0;
 
@@ -854,46 +872,58 @@ static int FilterUnitsList(const std::list<CUnit*>& units, int* unitIds, int uni
 }
 
 
-static inline bool unit_IsNeutral(CUnit* unit) {
+static inline bool unit_IsNeutral(const CUnit* unit) {
 	return unit->IsNeutral();
 }
 
 static int myAllyTeamId = -1;
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsEnemy(CUnit* unit) {
+static inline bool unit_IsEnemy(const CUnit* unit) {
 	return (!teamHandler->Ally(unit->allyteam, myAllyTeamId)
 			&& !unit_IsNeutral(unit));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsFriendly(CUnit* unit) {
+static inline bool unit_IsFriendly(const CUnit* unit) {
 	return (teamHandler->Ally(unit->allyteam, myAllyTeamId)
 			&& !unit_IsNeutral(unit));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsInLos(CUnit* unit) {
-	return ((unit->losStatus[myAllyTeamId] & LOS_INLOS) != 0);
+static inline bool unit_IsInLos(const CUnit* unit) {
+
+	// Skip in-sensor-range test if the unit is allied with our team.
+	// This prevents errors where an allied unit is starting to build,
+	// but is not yet (technically) in LOS, because LOS was not yet updated,
+	// and thus would be invisible for us, without the ally check.
+	return (teamHandler->Ally(myAllyTeamId, unit->allyteam)
+			|| ((unit->losStatus[myAllyTeamId] & LOS_INLOS) != 0));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsInRadar(CUnit* unit) {
-	return ((unit->losStatus[myAllyTeamId] & LOS_INRADAR) != 0);
+static inline bool unit_IsInRadar(const CUnit* unit) {
+
+	// Skip in-sensor-range test if the unit is allied with our team.
+	// This prevents errors where an allied unit is starting to build,
+	// but is not yet (technically) in LOS, because LOS was not yet updated,
+	// and thus would be invisible for us, without the ally check.
+	return (teamHandler->Ally(myAllyTeamId, unit->allyteam)
+			|| ((unit->losStatus[myAllyTeamId] & LOS_INRADAR) != 0));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsEnemyAndInLos(CUnit* unit) {
+static inline bool unit_IsEnemyAndInLos(const CUnit* unit) {
 	return (unit_IsEnemy(unit) && unit_IsInLos(unit));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsEnemyAndInLosOrRadar(CUnit* unit) {
+static inline bool unit_IsEnemyAndInLosOrRadar(const CUnit* unit) {
 	return (unit_IsEnemy(unit) && (unit_IsInLos(unit) || unit_IsInRadar(unit)));
 }
 
 /// You have to set myAllyTeamId before calling this function. NOT thread safe!
-static inline bool unit_IsNeutralAndInLos(CUnit* unit) {
+static inline bool unit_IsNeutralAndInLos(const CUnit* unit) {
 	return (unit_IsNeutral(unit) && unit_IsInLos(unit));
 }
 
@@ -1403,10 +1433,10 @@ bool CAICallback::GetValue(int id, void *data)
 			*(float*)data = globalRendering->viewSizeY;
 			return true;
 		}case AIVAL_GUI_CAMERA_DIR:{
-			*(float3*)data = camHandler->GetCurrentController().GetDir();
+			*(static_cast<float3*>(data)) = camHandler->GetCurrentController().GetDir();
 			return true;
 		}case AIVAL_GUI_CAMERA_POS:{
-			*(float3*)data = camHandler->GetCurrentController().GetPos();
+			*(static_cast<float3*>(data)) = camHandler->GetCurrentController().GetPos();
 			return true;
 		}case AIVAL_LOCATE_FILE_R:{
 			std::string f((char*) data);
@@ -1486,7 +1516,8 @@ int CAICallback::HandleCommand(int commandId, void* data)
 					const float realLen = TraceRay::TraceRay(cmdData->rayPos, cmdData->rayDir, cmdData->rayLen, cmdData->flags, srcUnit, hitUnit, hitFeature);
 
 					if (hitUnit != NULL) {
-						const bool isUnitVisible = (hitUnit->losStatus[teamHandler->AllyTeam(team)] & LOS_INLOS);
+						myAllyTeamId = teamHandler->AllyTeam(team);
+						const bool isUnitVisible = unit_IsInLos(hitUnit);
 						if (isUnitVisible) {
 							cmdData->rayLen = realLen;
 							cmdData->hitUID = hitUnit->id;
@@ -1653,7 +1684,8 @@ bool CAICallback::GetProperty(int unitId, int property, void* data)
 	if (CHECK_UNITID(unitId)) {
 		const CUnit* unit = uh->units[unitId];
 		const int allyTeam = teamHandler->AllyTeam(team);
-		if (!(unit && (unit->losStatus[allyTeam] & LOS_INLOS))) {
+		myAllyTeamId = allyTeam;
+		if (!(unit && unit_IsInLos(unit))) {
 			// the unit does not exist or can not be seen
 			return false;
 		}
@@ -1692,7 +1724,7 @@ bool CAICallback::GetProperty(int unitId, int property, void* data)
 				return true;
 			}
 			case AIVAL_UNIT_MAXSPEED: {
-				(*(float*) data) = unit->maxSpeed;
+				(*(float*) data) = unit->moveType->GetMaxSpeed();
 				return true;
 			}
 			default:

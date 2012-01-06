@@ -1088,26 +1088,32 @@ bool springLegacyAI::CAIAICallback::GetValue(int valueId, void *data)
 		}case AIVAL_GUI_CAMERA_DIR:{
 			float pos_cache[3];
 			sAICallback->Gui_Camera_getDirection(skirmishAIId, pos_cache);
-			*(float3*)data = pos_cache;
+			*(static_cast<float3*>(data)) = pos_cache;
 			return true;
 		}case AIVAL_GUI_CAMERA_POS:{
 			float pos_cache[3];
 			sAICallback->Gui_Camera_getPosition(skirmishAIId, pos_cache);
-			*(float3*)data = pos_cache;
+			*(static_cast<float3*>(data)) = pos_cache;
 			return true;
 		}case AIVAL_LOCATE_FILE_R:{
 			//sAICallback->File_locateForReading(skirmishAIId, (char*) data);
 			static const size_t absPath_sizeMax = 2048;
 			char absPath[absPath_sizeMax];
 			bool located = sAICallback->DataDirs_locatePath(skirmishAIId, absPath, absPath_sizeMax, (const char*) data, false, false, false, false);
-			STRCPYS((char*)data, absPath_sizeMax, absPath);
+			// NOTE We can not use STRCPY_T or STRNCPY here, as we do not know
+			//   the size of data. It might be below absPath_sizeMax,
+			//   and thus we would corrupt the stack.
+			STRCPY((char*)data, absPath);
 			return located;
 		}case AIVAL_LOCATE_FILE_W:{
 			//sAICallback->File_locateForWriting(skirmishAIId, (char*) data);
 			static const size_t absPath_sizeMax = 2048;
 			char absPath[absPath_sizeMax];
 			bool located = sAICallback->DataDirs_locatePath(skirmishAIId, absPath, absPath_sizeMax, (const char*) data, true, true, false, false);
-			STRCPYS((char*)data, absPath_sizeMax, absPath);
+			// NOTE We can not use STRCPY_T or STRNCPY here, as we do not know
+			//   the size of data. It might be below absPath_sizeMax,
+			//   and thus we would corrupt the stack.
+			STRCPY((char*)data, absPath);
 			return located;
 		}
 		case AIVAL_UNIT_LIMIT: {
@@ -1431,7 +1437,6 @@ weaponDef->uptime = sAICallback->WeaponDef_getUpTime(skirmishAIId, weaponDefId);
 weaponDef->flighttime = sAICallback->WeaponDef_getFlightTime(skirmishAIId, weaponDefId);
 weaponDef->metalcost = sAICallback->WeaponDef_getCost(skirmishAIId, weaponDefId, m);
 weaponDef->energycost = sAICallback->WeaponDef_getCost(skirmishAIId, weaponDefId, e);
-weaponDef->supplycost = sAICallback->WeaponDef_getSupplyCost(skirmishAIId, weaponDefId);
 weaponDef->projectilespershot = sAICallback->WeaponDef_getProjectilesPerShot(skirmishAIId, weaponDefId);
 //weaponDef->id = sAICallback->WeaponDef_getId(skirmishAIId, weaponDefId);
 weaponDef->id = weaponDefId;

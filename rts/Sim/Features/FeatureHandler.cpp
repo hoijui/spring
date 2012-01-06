@@ -13,6 +13,7 @@
 #include "System/creg/STL_List.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
+#include "System/myMath.h"
 #include "System/Log/ILog.h"
 #include "System/TimeProfiler.h"
 #include "System/creg/STL_Set.h"
@@ -172,9 +173,12 @@ FeatureDef* CFeatureHandler::CreateFeatureDef(const LuaTable& fdTable, const str
 	fd->xsize = std::max(1 * 2, fdTable.GetInt("footprintX", 1) * 2);
 	fd->zsize = std::max(1 * 2, fdTable.GetInt("footprintZ", 1) * 2);
 
-	const float minMass = 1.0f;
+	const float minMass = CSolidObject::MINIMUM_MASS;
+	const float maxMass = CSolidObject::MAXIMUM_MASS;
 	const float defMass = (fd->metal * 0.4f) + (fd->maxHealth * 0.1f);
-	fd->mass = std::max(minMass, fdTable.GetFloat("mass", defMass));
+
+	fd->mass = Clamp(fdTable.GetFloat("mass", defMass), minMass, maxMass);
+	fd->crushResistance = fdTable.GetFloat("crushResistance", fd->mass);
 
 	// custom parameters table
 	fdTable.SubTable("customParams").GetMap(fd->customParams);
@@ -185,9 +189,9 @@ FeatureDef* CFeatureHandler::CreateFeatureDef(const LuaTable& fdTable, const str
 
 FeatureDef* CFeatureHandler::CreateDefaultTreeFeatureDef(const std::string& name) const {
 	FeatureDef* fd = new FeatureDef();
-	fd->blocking = 1;
+	fd->blocking = true;
 	fd->burnable = true;
-	fd->destructable = 1;
+	fd->destructable = true;
 	fd->reclaimable = true;
 	fd->drawType = DRAWTYPE_TREE + atoi(name.substr(8).c_str());
 	fd->energy = 250;
@@ -205,9 +209,9 @@ FeatureDef* CFeatureHandler::CreateDefaultTreeFeatureDef(const std::string& name
 
 FeatureDef* CFeatureHandler::CreateDefaultGeoFeatureDef(const std::string& name) const {
 	FeatureDef* fd = new FeatureDef();
-	fd->blocking = 0;
-	fd->burnable = 0;
-	fd->destructable = 0;
+	fd->blocking = false;
+	fd->burnable = false;
+	fd->destructable = false;
 	fd->reclaimable = false;
 	fd->geoThermal = true;
 	// geos are (usually) rendered only as vents baked into
@@ -431,15 +435,17 @@ void CFeatureHandler::Update()
 				CFeature* feature = GetFeature(toBeRemoved.back());
 				toBeRemoved.pop_back();
 				if (feature) {
-					toBeFreedIDs.push_back(feature->id);
+					int delID = feature->id;
+					toBeFreedIDs.push_back(delID);
 					activeFeatures.erase(feature);
-					features[feature->id] = 0;
+					features[delID] = 0;
 
 					if (feature->inUpdateQue) {
 						updateFeatures.erase(feature);
 					}
-
+					CSolidObject::SetDeletingRefID(delID + uh->MaxUnits());
 					delete feature;
+					CSolidObject::SetDeletingRefID(-1);
 				}
 			}
 		}

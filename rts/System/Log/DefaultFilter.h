@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _LOG_DEFAULT_FILTER_H
-#define _LOG_DEFAULT_FILTER_H
+#ifndef LOG_DEFAULT_FILTER_H
+#define LOG_DEFAULT_FILTER_H
 
 /**
  * A simple filter implementation for the ILog.h logging API.
@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /**
- * @group logging_filter_defaultFilter_control
+ * @name logging_filter_defaultFilter_control
  * @{
  */
 
@@ -93,7 +93,7 @@ const char* log_filter_section_getRegisteredIndex(int index);
 std::set<const char*> log_filter_section_getRegisteredSet();
 #endif
 
-/** @} */ // group logging_filter_defaultFilter_control
+/** @} */ // logging_filter_defaultFilter_control
 
-#endif // _LOG_DEFAULT_FILTER_H
+#endif // LOG_DEFAULT_FILTER_H
 

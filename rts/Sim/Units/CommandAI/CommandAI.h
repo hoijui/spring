@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __COMMAND_AI_H__
-#define __COMMAND_AI_H__
+#ifndef _COMMAND_AI_H
+#define _COMMAND_AI_H
 
 #include <vector>
 #include <set>
@@ -25,8 +25,16 @@ public:
 	CCommandAI();
 	virtual ~CCommandAI();
 	void PostLoad();
-
 	void DependentDied(CObject* o);
+	inline void SetOrderTarget(CUnit* o);
+
+	void SetScriptMaxSpeed(float speed);
+	void SlowUpdateMaxSpeed();
+
+	virtual void AddDeathDependence(CObject* o, DependenceType dep);
+	virtual void DeleteDeathDependence(CObject* o, DependenceType dep);
+	void AddCommandDependency(const Command &c);
+	void ClearCommandDependencies();
 	/// feeds into GiveCommandReal()
 	void GiveCommand(const Command& c, bool fromSynced = true);
 	virtual int GetDefaultCmd(const CUnit* pointed, const CFeature* feature);
@@ -35,7 +43,7 @@ public:
 	virtual std::vector<CommandDescription>& GetPossibleCommands();
 	virtual void FinishCommand();
 	virtual void WeaponFired(CWeapon* weapon);
-	virtual void BuggerOff(const float3& pos, float radius);
+	virtual void BuggerOff(const float3& pos, float radius) {}
 	virtual void LoadSave(CLoadSaveInterface* file, bool loading);
 	/**
 	 * @brief Determins if c will cancel a queued command
@@ -122,16 +130,25 @@ protected:
 	 *   the location of the origional command.
 	 */
 	void PushOrUpdateReturnFight(const float3& cmdPos1, const float3& cmdPos2);
-	int UpdateTargetLostTimer(int unitid);
+	int UpdateTargetLostTimer(int unitID);
 	void DrawDefaultCommand(const Command& c) const;
 
 private:
+	std::set<CObject*> commandDeathDependences;
 	/**
-	 * continously set to some non-zero value while target is in radar
-	 * decremented every frame, command is canceled if it reaches 0
+	 * continuously set to some non-zero value while target is in radar
+	 * decremented by 1 every SlowUpdate (!), command is canceled when
+	 * timer reaches 0
 	 */
 	int targetLostTimer;
 };
 
+inline void CCommandAI::SetOrderTarget(CUnit* o) {
+	if (orderTarget != NULL)
+		DeleteDeathDependence((CObject*)orderTarget, DEPENDENCE_ORDERTARGET);
+	orderTarget = o;
+	if (orderTarget != NULL)
+		AddDeathDependence((CObject*)orderTarget, DEPENDENCE_ORDERTARGET);
+}
 
-#endif // __COMMAND_AI_H__
+#endif // _COMMAND_AI_H

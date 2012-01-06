@@ -5,16 +5,20 @@
 
 #include "Projectile.h"
 #include "ProjectileHandler.h"
+#include "Game/GlobalUnsynced.h"
 #include "Game/TraceRay.h"
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
+#include "Rendering/GlobalRendering.h"
 #include "Rendering/GroundFlash.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureDef.h"
 #include "Sim/Misc/CollisionHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Misc/QuadField.h"
+#include "Sim/Misc/TeamHandler.h"
 #include "Sim/Projectiles/Unsynced/FlyingPiece.h"
+#include "Sim/Projectiles/Unsynced/GfxProjectile.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "System/Config/ConfigHandler.h"
@@ -23,6 +27,11 @@
 #include "System/TimeProfiler.h"
 #include "System/creg/STL_Map.h"
 #include "System/creg/STL_List.h"
+
+// reserve 5% of maxNanoParticles for important stuff such as capture and reclaim other teams' units
+#define NORMAL_NANO_PRIO 0.95f
+#define HIGH_NANO_PRIO 1.0f
+
 
 using namespace std;
 
@@ -313,6 +322,9 @@ void CProjectileHandler::Update()
 
 void CProjectileHandler::AddProjectile(CProjectile* p)
 {
+	// already initialized?
+	assert(p->id < 0);
+	
 	std::list<int>* freeIDs = NULL;
 	std::map<int, ProjectileMapPair>* proIDs = NULL;
 	int* maxUsedID = NULL;
@@ -323,6 +335,9 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 		freeIDs = &freeSyncedIDs;
 		proIDs = &syncedProjectileIDs;
 		maxUsedID = &maxUsedSyncedID;
+
+		ASSERT_SYNCED(*maxUsedID);
+		ASSERT_SYNCED(freeIDs->size());
 	} else {
 		unsyncedProjectiles.push(p);
 #if UNSYNCED_PROJ_NOEVENT
@@ -344,6 +359,10 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 
 	if ((*maxUsedID) > (1 << 24)) {
 		LOG_L(L_WARNING, "Lua %s projectile IDs are now out of range", (p->synced? "synced": "unsynced"));
+	}
+	
+	if (p->synced) {
+		ASSERT_SYNCED(newID);
 	}
 
 	ProjectileMapPair pp(p, p->owner() ? p->owner()->allyteam : -1);
@@ -543,4 +562,72 @@ void CProjectileHandler::AddFlyingPiece(int textureType, int team, float3 pos, f
 
 	FlyingPiece* fp = new FlyingPiece(team, pos, speed, textureType, verts);
 	flyingPiecesS3O.insert(fp);
+}
+
+
+void CProjectileHandler::AddNanoParticle(
+	const float3& startPos,
+	const float3& endPos,
+	const UnitDef* unitDef,
+	int teamNum,
+	bool highPriority)
+{
+	const float priority = highPriority? HIGH_NANO_PRIO: NORMAL_NANO_PRIO;
+
+	if (currentNanoParticles >= (maxNanoParticles * priority))
+		return;
+	if (!unitDef->showNanoSpray)
+		return;
+
+	float3 dif = (endPos - startPos);
+	const float l = fastmath::apxsqrt2(dif.SqLength());
+
+	dif /= l;
+	dif += gu->usRandVector() * 0.15f;
+
+	float3 color = unitDef->nanoColor;
+
+	if (globalRendering->teamNanospray) {
+		const CTeam* team = teamHandler->Team(teamNum);
+		const unsigned char* tcol = team->color;
+		color = float3(tcol[0] / 255.0f, tcol[1] / 255.0f, tcol[2] / 255.0f);
+	}
+
+	new CGfxProjectile(startPos, dif, int(l), color);
+}
+
+void CProjectileHandler::AddNanoParticle(
+	const float3& startPos,
+	const float3& endPos,
+	const UnitDef* unitDef,
+	int teamNum,
+	float radius,
+	bool inverse,
+	bool highPriority)
+{
+	const float priority = highPriority? HIGH_NANO_PRIO: NORMAL_NANO_PRIO;
+
+	if (currentNanoParticles >= (maxNanoParticles * priority))
+		return;
+	if (!unitDef->showNanoSpray)
+		return;
+
+	float3 dif = (endPos - startPos);
+	const float l = fastmath::apxsqrt2(dif.SqLength());
+	dif /= l;
+
+	float3 error = gu->usRandVector() * (radius / l);
+	float3 color = unitDef->nanoColor;
+
+	if (globalRendering->teamNanospray) {
+		const CTeam* team = teamHandler->Team(teamNum);
+		const unsigned char* tcol = team->color;
+		color = float3(tcol[0] / 255.0f, tcol[1] / 255.0f, tcol[2] / 255.0f);
+	}
+
+	if (inverse) {
+		new CGfxProjectile(startPos + (dif + error) * l, -(dif + error) * 3, int(l / 3), color);
+	} else {
+		new CGfxProjectile(startPos, (dif + error) * 3, int(l / 3), color);
+	}
 }

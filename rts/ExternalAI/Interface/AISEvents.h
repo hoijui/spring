@@ -11,13 +11,7 @@
 extern "C" {
 #endif
 
-/**
- * aliases to keep event-names (though not
- * ID's) consistent, without breaking ABI
- * FIXME remove this once Skirmish AI ABI would break anyway
- */
-#define EVENT_CHAT_MESSAGE  EVENT_MESSAGE
-#define SChatMessageEvent   SMessageEvent
+// NOTE structs should not be empty (C90), so add a useless member if needed
 
 #include "SSkirmishAICallback.h"
 
@@ -38,7 +32,7 @@ enum EventTopic {
 	EVENT_INIT                         =  1,
 	EVENT_RELEASE                      =  2,
 	EVENT_UPDATE                       =  3,
-	EVENT_CHAT_MESSAGE                 =  4,
+	EVENT_MESSAGE                      =  4,
 	EVENT_UNIT_CREATED                 =  5,
 	EVENT_UNIT_FINISHED                =  6,
 	EVENT_UNIT_IDLE                    =  7,
@@ -71,8 +65,7 @@ const int NUM_EVENTS = 28;
 		  sizeof(struct SInitEvent) \
 		+ sizeof(struct SReleaseEvent) \
 		+ sizeof(struct SUpdateEvent) \
-		+ sizeof(struct SChatMessageEvent) \
-		+ sizeof(struct SLuaMessageEvent) \
+		+ sizeof(struct SMessageEvent) \
 		+ sizeof(struct SUnitCreatedEvent) \
 		+ sizeof(struct SUnitFinishedEvent) \
 		+ sizeof(struct SUnitIdleEvent) \
@@ -95,6 +88,7 @@ const int NUM_EVENTS = 28;
 		+ sizeof(struct SSaveEvent) \
 		+ sizeof(struct SEnemyCreatedEvent) \
 		+ sizeof(struct SEnemyFinishedEvent) \
+		+ sizeof(struct SLuaMessageEvent) \
 		)
 
 /**
@@ -227,7 +221,7 @@ struct SUnitDestroyedEvent {
 }; //$ EVENT_UNIT_DESTROYED INTERFACES:Unit(unit),UnitLifeState()
 
 /**
- * This AI event is sent when a unit changed from one team to an other,
+ * This AI event is sent when a unit changed from one team to another,
  * either because the old owner gave it to the new one, or because the
  * new one took it from the old one; see the /take command.
  * Both giving and receiving team will get this event.
@@ -380,7 +374,7 @@ struct SLoadEvent {
  * This AI event is sent when the AI should be saving its full state to a file.
  */
 struct SSaveEvent {
-	/// Absolute file path, writeable
+	/// Absolute file path, writable
 	const char* file;
 }; //$ EVENT_SAVE INTERFACES:LoadSave(file)
 

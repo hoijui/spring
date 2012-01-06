@@ -1,7 +1,7 @@
 // -------------------------------------------------------------------------
 // AAI
 //
-// A skirmish AI for the TA Spring engine.
+// A skirmish AI for the Spring engine.
 // Copyright Alexander Seizinger
 //
 // Released under GPL license: see LICENSE.html for more information.
@@ -87,6 +87,7 @@ AAI::~AAI()
 	{
 		delete (*task);
 	}
+	build_tasks.clear();
 
 	// save mod learning data
 	bt->SaveBuildTable(brain->GetGamePeriod(), map->map_type);
@@ -99,17 +100,18 @@ AAI::~AAI()
 			(*group)->attack = 0;
 			delete (*group);
 		}
+		group_list[i].clear();
 	}
 
 
-	delete am; am = NULL;
-	delete brain; brain = NULL;
-	delete execute; execute = NULL;
-	delete ut; ut = NULL;
-	delete af; af = NULL;
-	delete map; map = NULL;
-	delete bt; bt = NULL;
-	delete profiler; profiler = NULL;
+	SafeDelete(am);
+	SafeDelete(brain);
+	SafeDelete(execute);
+	SafeDelete(ut);
+	SafeDelete(af);
+	SafeDelete(map);
+	SafeDelete(bt);
+	SafeDelete(profiler);
 
 	fclose(file);
 }
@@ -129,7 +131,8 @@ void AAI::InitAI(IGlobalAICallback* callback, int team)
 	cb = callback->GetAICallback();
 
 	// open log file
-	char filename[500];
+	// this size equals the one used in "AIAICallback::GetValue(AIVAL_LOCATE_FILE_..."
+	char filename[2048];
 	char buffer[500];
 	char team_number[3];
 
@@ -382,7 +385,7 @@ void AAI::UnitFinished(int unit)
 					ut->units[(*task)->builder_id].cons->ConstructionFinished();
 
 				build_tasks.erase(task);
-				delete build_task;
+				SafeDelete(build_task);
 				break;
 			}
 		}
@@ -539,6 +542,7 @@ void AAI::UnitDestroyed(int unit, int attacker)
 		ut->ActiveUnitKilled(category);
 
 		bt->units_dynamic[def->id].active -= 1;
+		assert(bt->units_dynamic[def->id].active >= 0);
 
 		// update buildtable
 		if (attacker)

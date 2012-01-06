@@ -95,7 +95,7 @@ CSmokeTrailProjectile::CSmokeTrailProjectile(
 		middir = (dir1 + dir2).ANormalize();
 		drawSegmented = true;
 	}
-	SetRadius(pos1.distance(pos2));
+	SetRadiusAndHeight(pos1.distance(pos2), 0.0f);
 
 	if ((pos.y - ground->GetApproximateHeight(pos.x, pos.z)) > 10) {
 		useAirLos = true;
@@ -114,21 +114,17 @@ void CSmokeTrailProjectile::Draw()
 	va->EnlargeArrays(8 * 4, 0, VA_SIZE_TC);
 
 	if (drawTrail) {
-		float3 dif(pos1-camera->pos2);
-		dif.ANormalize();
-		float3 odir1(dif.cross(dir1));
-		odir1.ANormalize();
-		float3 dif2(pos2-camera->pos2);
-		dif2.ANormalize();
-		float3 odir2(dif2.cross(dir2));
-		odir2.ANormalize();
+		const float3 dif1  = (pos1 - camera->pos).ANormalize();
+		const float3 dif2  = (pos2 - camera->pos).ANormalize();
+		const float3 odir1 = (dif1.cross(dir1)).ANormalize();
+		const float3 odir2 = (dif2.cross(dir2)).ANormalize();
 
 		unsigned char col[4];
-		float a1=(1 - (float) age / lifeTime) * 255;
+		float a1 = (1 - (float) age / lifeTime) * 255;
 		if (lastSegment) {
 			a1 = 0;
 		}
-		a1 *= 0.7f + fabs(dif.dot(dir1));
+		a1 *= 0.7f + fabs(dif1.dot(dir1));
 		float alpha = std::min(255.f, std::max(0.f, a1));
 		col[0] = (unsigned char) (color * alpha);
 		col[1] = (unsigned char) (color * alpha);
@@ -151,10 +147,8 @@ void CSmokeTrailProjectile::Draw()
 		float size2 = 1 + ((age + 8) * (1.0f / lifeTime)) * orgSize;
 
 		if (drawSegmented) {
-			float3 dif3(midpos-camera->pos2);
-			dif3.ANormalize();
-			float3 odir3(dif3.cross(middir));
-			odir3.ANormalize();
+			const float3 dif3 = (midpos - camera->pos).ANormalize();
+			const float3 odir3 = (dif3.cross(middir)).ANormalize();
 			float size3 = 0.2f + ((age + 4) * (1.0f / lifeTime)) * orgSize;
 
 			unsigned char col3[4];
@@ -204,16 +198,10 @@ void CSmokeTrailProjectile::Draw()
 			#undef st
 		}
 	}
-#if defined(USE_GML) && GML_ENABLE_SIM
-	CProjectile * callbacker = *(CProjectile * volatile *)&drawCallbacker;
+	CProjectile* callbacker = GML::SimEnabled() ? *(CProjectile * volatile *)&drawCallbacker : drawCallbacker;
 	if (callbacker) {
 		callbacker->DrawCallback();
 	}
-#else
-	if (drawCallbacker) {
-		drawCallbacker->DrawCallback();
-	}
-#endif
 }
 
 void CSmokeTrailProjectile::Update()

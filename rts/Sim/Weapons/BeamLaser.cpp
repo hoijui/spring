@@ -9,7 +9,7 @@
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/InterceptHandler.h"
 #include "Sim/Misc/TeamHandler.h"
-#include "Sim/MoveTypes/AirMoveType.h"
+#include "Sim/MoveTypes/StrafeAirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/BeamLaserProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/LargeBeamLaserProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/LaserProjectile.h"
@@ -101,15 +101,8 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	if (!CWeapon::TryTarget(pos, userTarget, unit))
 		return false;
 
-	if (!weaponDef->waterweapon) {
-		if (unit) {
-			if (unit->isUnderWater)
-				return false;
-		} else {
-			if (pos.y < 0)
-				return false;
-		}
-	}
+	if (!weaponDef->waterweapon && TargetUnitOrPositionInWater(pos, unit))
+		return false;
 
 	float3 dir = pos - weaponMuzzlePos;
 	float length = dir.Length();
@@ -132,10 +125,10 @@ bool CBeamLaser::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	if (avoidFeature && TraceRay::LineFeatureCol(weaponMuzzlePos, dir, length)) {
 		return false;
 	}
-	if (avoidFriendly && TraceRay::TestAllyCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, owner)) {
+	if (avoidFriendly && TraceRay::TestCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, true, false, false, owner)) {
 		return false;
 	}
-	if (avoidNeutral && TraceRay::TestNeutralCone(weaponMuzzlePos, dir, length, spread, owner)) {
+	if (avoidNeutral && TraceRay::TestCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, false, true, false, owner)) {
 		return false;
 	}
 
@@ -164,8 +157,8 @@ void CBeamLaser::Init(void)
 void CBeamLaser::FireImpl(void)
 {
 	float3 dir;
-	if (onlyForward && dynamic_cast<CAirMoveType*>(owner->moveType)) {
-		// the taairmovetype can't align itself properly, change back when that is fixed
+	if (onlyForward && dynamic_cast<CStrafeAirMoveType*>(owner->moveType)) {
+		// HoverAirMoveType cannot align itself properly, change back when that is fixed
 		dir = owner->frontdir;
 	} else {
 		if (salvoLeft == salvoSize - 1) {
@@ -216,17 +209,17 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 
 	// increase range if targets are searched for in a cylinder
 	if (cylinderTargetting > 0.01f) {
-		// const float3 up(0, owner->radius*cylinderTargetting, 0);
-		// const float uplen = up.dot(dir);
-		const float uplen = owner->radius * cylinderTargetting * dir.y;
-		maxLength = math::sqrt(maxLength * maxLength + uplen * uplen);
+		const float verticalDist = owner->radius * cylinderTargetting * dir.y;
+		const float maxLengthModSq = maxLength * maxLength + verticalDist * verticalDist;
+
+		maxLength = math::sqrt(maxLengthModSq);
 	}
+
 
 	// increase range if targetting edge of hitsphere
 	if (targetType == Target_Unit && targetUnit && targetBorder != 0) {
-		maxLength += targetUnit->radius * targetBorder;
+		maxLength += (targetUnit->radius * targetBorder);
 	}
-
 
 
 	// unit at the end of the beam
@@ -315,7 +308,8 @@ void CBeamLaser::FireInternal(float3 dir, bool sweepFire)
 			owner,
 			hitUnit,
 			hitFeature,
-			areaOfEffect,
+			craterAreaOfEffect,
+			damageAreaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
 			1.0f,                                             // gfxMod

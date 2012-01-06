@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __EXTRACTOR_BUILDING_H__
-#define __EXTRACTOR_BUILDING_H__
+#ifndef _EXTRACTOR_BUILDING_H
+#define _EXTRACTOR_BUILDING_H
 
 #include "Building.h"
 
@@ -24,7 +24,7 @@ public:
 	float GetExtractionRange() const { return extractionRange; }
 	float GetExtractionDepth() const { return extractionDepth; }
 
-	virtual void FinishedBuilding();
+	void FinishedBuilding(bool postInit);
 
 protected:
 	struct MetalSquareOfControl {
@@ -41,4 +41,4 @@ protected:
 	static float maxExtractionRange;
 };
 
-#endif // __EXTRACTOR_BUILDING_H__
+#endif // _EXTRACTOR_BUILDING_H

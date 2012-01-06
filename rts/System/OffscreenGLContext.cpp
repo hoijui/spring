@@ -33,7 +33,6 @@ COffscreenGLContext::COffscreenGLContext()
 	hdc = wglGetCurrentDC();
 	if (!hdc || !mainRC) {
 		throw opengl_error("Couldn't create an offscreen GL context: wglGetCurrentDC failed!");
-		return;
 	}
 
 
@@ -41,7 +40,6 @@ COffscreenGLContext::COffscreenGLContext()
 	offscreenRC = wglCreateContext(hdc);
 	if (!offscreenRC) {
 		throw opengl_error("Couldn't create an offscreen GL context: wglCreateContext failed!");
-		return;
 	}
 
 
@@ -83,46 +81,44 @@ void COffscreenGLContext::WorkerThreadFree()
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //! APPLE
 
+#include <OpenGL/CGLCurrent.h>
+#include <OpenGL/OpenGL.h>
+
 COffscreenGLContext::COffscreenGLContext()
 {
-	//FIXME: couldn't test this code myself! (coded from online documentations)
+	// Get Current OnScreen Context
+	CGLContextObj currentCglCtx = CGLGetCurrentContext();
+	if (!currentCglCtx)
+		throw opengl_error("Couldn't create an offscreen GL context: CGLGetCurrentContext failed!");
 
-	AGLContext currentCtx = aglGetCurrentContext();
-	if (!currentCtx)
-		throw opengl_error("Couldn't create an offscreen GL context: aglGetCurrentContext/aglGetCurrentDrawable failed!");
-	
-
-	//! Get PixelFormat
-	int attributeList[] = {
-		AGL_ACCELERATED,
-		AGL_RGBA,
-		//AGL_OFFSCREEN,
-		//AGL_DISPLAY_MASK, 1 //FIXME: detect SDL Window's CGOpenGLDisplayMask
-		AGL_NONE
+	// Get PixelFormat
+	CGLPixelFormatAttribute attribs[] = {
+		(CGLPixelFormatAttribute)0
 	};
-	pxlfmt = aglChoosePixelFormat(NULL, 0, attributeList);
-	if (!pxlfmt)
-		throw opengl_error("Couldn't create an offscreen GL context: aglChoosePixelFmt failed!");
+	GLint numPixelFormats = 0;
+	CGLPixelFormatObj cglPxlfmt = NULL;
+	CGLChoosePixelFormat(attribs, &cglPxlfmt, &numPixelFormats);
+	if (!cglPxlfmt)
+		throw opengl_error("Couldn't create an offscreen GL context: CGLChoosePixelFmt failed!");
 
-
-	//! Create Shared Context
-	workerCtx = aglCreateContext(pxlfmt, currentCtx);
-	if (!workerCtx)
-		throw opengl_error("Couldn't create an offscreen GL context: aglCreateContext failed!");
+	// Create Shared Context
+	CGLCreateContext(cglPxlfmt, currentCglCtx, &cglWorkerCtx);
+	CGLDestroyPixelFormat(cglPxlfmt);
+	if (!cglWorkerCtx)
+		throw opengl_error("Couldn't create an offscreen GL context: CGLCreateContext failed!");
 }
 
 
 void COffscreenGLContext::WorkerThreadPost()
 {
-	aglSetCurrentContext(workerCtx);
+	CGLSetCurrentContext(cglWorkerCtx);
 }
 
 
 void COffscreenGLContext::WorkerThreadFree()
 {
-	aglSetCurrentContext(NULL);
-	aglDestroyContext(workerCtx);
-	aglDestroyPixelFormat(pxlfmt);
+	CGLSetCurrentContext(NULL);
+	CGLDestroyContext(cglWorkerCtx);
 }
 
 #else
@@ -158,8 +154,9 @@ COffscreenGLContext::COffscreenGLContext()
 	const int fbattrib[] = {
 		GLX_RENDER_TYPE, GLX_RGBA_BIT,
 		GLX_DRAWABLE_TYPE, GLX_PBUFFER_BIT,
-		GLX_BUFFER_SIZE, 24,
+		GLX_BUFFER_SIZE, 32,
 		GLX_DEPTH_SIZE, 24,
+		GLX_STENCIL_SIZE, 8,
 		None
 	};
 	GLXFBConfig* fbcfg = glXChooseFBConfig(display, scrnum, (const int*)fbattrib, &nelements);
@@ -242,20 +239,16 @@ void COffscreenGLThread::WrapFunc(boost::function<void()> f)
 	glOffscreenCtx.WorkerThreadPost();
 
 #ifdef STREFLOP_H
-	//! init streflop to make it available for synced computations, too
+	// init streflop to make it available for synced computations, too
+	// redundant? threads copy the FPU state of their parent.
 	streflop_init<streflop::Simple>();
 #endif
 
 	try {
-		try {
-			f();
-		} CATCH_SPRING_ERRORS
+		f();
 	} catch(boost::thread_interrupted const&) {
-		//! CATCH_SPRING_ERRORS may retrow a thread_interrupted,
-		//! so it needs an own try..catch block
-
-		//! do nothing
-	}
+		// do nothing
+	} CATCH_SPRING_ERRORS
 
 
 	glOffscreenCtx.WorkerThreadFree();

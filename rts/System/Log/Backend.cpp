@@ -11,13 +11,17 @@
 extern "C" {
 #endif
 
-extern void log_formatter_format(char* record, size_t recordSize,
-		const char* section, int level, const char* fmt, va_list arguments);
+extern char* log_formatter_format(const char* section, int level, const char* fmt, va_list arguments);
 
 namespace {
 	std::vector<log_sink_ptr>& log_formatter_getSinks() {
 		static std::vector<log_sink_ptr> sinks;
 		return sinks;
+	}
+
+	std::vector<log_cleanup_ptr>& log_formatter_getCleanupFuncs() {
+		static std::vector<log_cleanup_ptr> cleanupFuncs;
+		return cleanupFuncs;
 	}
 }
 
@@ -33,6 +37,23 @@ void log_backend_unregisterSink(log_sink_ptr sink) {
 	for (si = sinks.begin(); si != sinks.end(); ++si) {
 		if (*si == sink) {
 			sinks.erase(si);
+			break;
+		}
+	}
+}
+
+
+void log_backend_registerCleanup(log_cleanup_ptr cleanupFunc) {
+	log_formatter_getCleanupFuncs().push_back(cleanupFunc);
+}
+
+void log_backend_unregisterCleanup(log_cleanup_ptr cleanupFunc) {
+
+	std::vector<log_cleanup_ptr>& cleanupFuncs = log_formatter_getCleanupFuncs();
+	std::vector<log_cleanup_ptr>::iterator si;
+	for (si = cleanupFuncs.begin(); si != cleanupFuncs.end(); ++si) {
+		if (*si == cleanupFunc) {
+			cleanupFuncs.erase(si);
 			break;
 		}
 	}
@@ -60,15 +81,25 @@ void log_backend_record(const char* section, int level, const char* fmt,
 		}
 	} else {
 		// format the record
-		char record[1024 + 64];
-		log_formatter_format(record, sizeof(record), section, level, fmt,
-				arguments);
+		char* record = log_formatter_format(section, level, fmt, arguments);
 
 		// sink the record
 		std::vector<log_sink_ptr>::const_iterator si;
 		for (si = sinks.begin(); si != sinks.end(); ++si) {
 			(*si)(section, level, record);
 		}
+
+		delete[] record;
+	}
+}
+
+/// Passes on a cleanup request to all sinks
+void log_backend_cleanup() {
+
+	const std::vector<log_cleanup_ptr>& cleanupFuncs = log_formatter_getCleanupFuncs();
+	std::vector<log_cleanup_ptr>::const_iterator si;
+	for (si = cleanupFuncs.begin(); si != cleanupFuncs.end(); ++si) {
+		(*si)();
 	}
 }
 

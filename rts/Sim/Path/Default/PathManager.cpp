@@ -100,6 +100,8 @@ unsigned int CPathManager::RequestPath(
 
 	// choose the PF or the PE depending on the projected 2D goal-distance
 	// NOTE: this distance can be far smaller than the actual path length!
+	// FIXME: Why are we taking the height difference into consideration?
+	// It seems more logical to subtract goalRadius / SQUARE_SIZE here
 	const float goalDist2D = pfDef->Heuristic(startPos.x / SQUARE_SIZE, startPos.z / SQUARE_SIZE) + fabs(goalPos.y - startPos.y) / SQUARE_SIZE;
 
 	if (goalDist2D < DETAILED_DISTANCE) {
@@ -123,6 +125,10 @@ unsigned int CPathManager::RequestPath(
 	} else if (goalDist2D < ESTIMATE_DISTANCE) {
 		result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
 
+		// CantGetCloser may be a false positive due to PE approximations and large goalRadius
+		if (result == IPath::CantGetCloser && (startPos - goalPos).SqLength2D() > pfDef->sqGoalRadius)
+			result = maxResPF->GetPath(*moveData, startPos, *pfDef, newPath->maxResPath, true, false, MAX_SEARCHED_NODES_PF >> 3, true, ownerId, synced);
+
 		#if (PM_UNCONSTRAINED_MEDRES_FALLBACK_SEARCH == 1)
 		pfDef->DisableConstraint(true);
 		#endif
@@ -133,6 +139,13 @@ unsigned int CPathManager::RequestPath(
 		}
 	} else {
 		result = lowResPE->GetPath(*moveData, startPos, *pfDef, newPath->lowResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
+
+		// CantGetCloser may be a false positive due to PE approximations and large goalRadius
+		if (result == IPath::CantGetCloser && (startPos - goalPos).SqLength2D() > pfDef->sqGoalRadius) {
+			result = medResPE->GetPath(*moveData, startPos, *pfDef, newPath->medResPath, MAX_SEARCHED_NODES_PE >> 3, synced);
+			if (result == IPath::CantGetCloser) // Same thing again
+				result = maxResPF->GetPath(*moveData, startPos, *pfDef, newPath->maxResPath, true, false, MAX_SEARCHED_NODES_PF >> 3, true, ownerId, synced);
+		}
 
 		#if (PM_UNCONSTRAINED_LOWRES_FALLBACK_SEARCH == 1)
 		pfDef->DisableConstraint(true);
@@ -269,15 +282,15 @@ void CPathManager::LowRes2MedRes(MultiPath& multiPath, const float3& startPos, i
 /*
 Removes and return the next waypoint in the multipath corresponding to given id.
 */
-float3 CPathManager::NextWaypoint(
+float3 CPathManager::NextWayPoint(
 	unsigned int pathId,
 	float3 callerPos,
 	float minDistance,
 	int numRetries,
 	int ownerId,
 	bool synced
-) const {
-	SCOPED_TIMER("PathManager::NextWaypoint");
+) {
+	SCOPED_TIMER("PathManager::NextWayPoint");
 
 	// 0 indicates a no-path id
 	if (pathId == 0)
@@ -337,7 +350,7 @@ float3 CPathManager::NextWaypoint(
 					return float3(-1.0f, -1.0f, -1.0f);
 				}
 			} else {
-				return NextWaypoint(pathId, callerPos, minDistance, numRetries + 1, ownerId, synced);
+				return NextWayPoint(pathId, callerPos, minDistance, numRetries + 1, ownerId, synced);
 			}
 		} else {
 			waypoint = multiPath->maxResPath.path.back();
@@ -459,7 +472,7 @@ void CPathManager::GetDetailedPathSquares(unsigned pathId, std::vector<int2>& po
 
 
 
-void CPathManager::GetEstimatedPath(
+void CPathManager::GetPathWayPoints(
 	unsigned int pathId,
 	std::vector<float3>& points,
 	std::vector<int>& starts

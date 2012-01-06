@@ -1,12 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _SKIRMISH_AI_BASE_H
-#define _SKIRMISH_AI_BASE_H
+#ifndef SKIRMISH_AI_BASE_H
+#define SKIRMISH_AI_BASE_H
 
 #include "Game/TeamController.h"
 
 #include <string>
 #include <map>
+
 
 /**
  * Possible live-cycle stati of a Skirmish AI instance.
@@ -34,8 +35,8 @@ public:
 	/**
 	 * @brief Constructor assigning default values.
 	 */
-	SkirmishAIBase() :
-		  TeamController()
+	SkirmishAIBase()
+		: TeamController()
 		, hostPlayer(-1)
 		, status(SKIRMAISTATE_CONSTRUCTED)
 		{}
@@ -53,8 +54,8 @@ public:
 	/**
 	 * @brief Constructor assigning default values.
 	 */
-	SkirmishAIStatistics() :
-		  TeamControllerStatistics()
+	SkirmishAIStatistics()
+		: TeamControllerStatistics()
 		, cpuTime(0)
 		{}
 
@@ -65,4 +66,4 @@ public:
 	void swab();
 };
 
-#endif // _SKIRMISH_AI_BASE_H
+#endif // SKIRMISH_AI_BASE_H

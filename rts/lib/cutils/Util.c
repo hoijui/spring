@@ -15,21 +15,12 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Util.h"
-
-#include "System/maindefines.h"
-#if defined USING_STREFLOP
-#include "lib/streflop/streflopC.h" // for streflop_init_Simple()
-#else
-#include <assert.h>
-#endif
-
+#include <stdio.h>       // fgets()
 #include <string.h>      // strcpy(), str...()
 #include <stdlib.h>      // malloc(), calloc(), free()
-#include <stdio.h>       // fgets()
 #include <stdarg.h>      // var-args
 #include <sys/stat.h>    // used for check if a file exists
-#ifdef    WIN32
+#ifdef WIN32
 #include <io.h>          // needed for dir listing
 #include <direct.h>      // mkdir()
 #include <shlobj.h>      // for HMODULE, TCHAR
@@ -46,6 +37,15 @@
 #include <dlfcn.h>       // for dladdr(), dlopen(), dlerror()
 #endif // WIN32
 
+#include "Util.h"
+
+#include "System/maindefines.h"
+#include "System/SafeCStrings.h"
+#if defined USING_STREFLOP
+#include "lib/streflop/streflopC.h" // for streflop_init_Simple()
+#else
+#include <assert.h>
+#endif
 
 // BEGINN: Error handling related functions
 
@@ -69,8 +69,7 @@ bool util_getError(char* error, const unsigned int error_sizeMax) {
 
 	if ((error != NULL) && (error_sizeMax > 0)) {
 		if (hasError && (error_sizeMax > 1)) {
-			error[error_sizeMax-1] = '\0';
-			STRNCPY(error, i_error, error_sizeMax-1);
+			STRCPY_T(error, error_sizeMax, i_error);
 			util_clearError();
 		} else {
 			error[0] = '\0';
@@ -103,8 +102,7 @@ char* util_allocStrCpy(const char* toCopy) {
 
 	const size_t copy_sizeMax = strlen(toCopy) + 1;
 	char* copy = (char*) calloc(copy_sizeMax, sizeof(char));
-	copy[copy_sizeMax-1] = '\0';
-	STRNCPY(copy, toCopy, copy_sizeMax-1);
+	STRCPY_T(copy, copy_sizeMax, toCopy);
 	return copy;
 }
 
@@ -796,7 +794,7 @@ bool util_findDir(const char* dirs[], unsigned int numDirs,
 
 	// not found -> create it
 	if (!found && create && numDirs >= 1) {
-		// use dirs[0], as it is assumed this is the writeable dir
+		// use dirs[0], as it is assumed this is the writable dir
 		char* tmpPath = util_allocStrCatFSPath(2, dirs[0], relativeDirPath);
 		STRCPY(absoluteDirPath, tmpPath);
 		free(tmpPath);
@@ -962,6 +960,7 @@ int util_parsePropertiesFile(const char* propertiesFile,
  * BSD with procfs: readlink /proc/curproc/file
  * Windows:         GetModuleFileName() with hModule = NULL
  */
+
 bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) {
 
 	// will only be used if path stays empty
@@ -978,8 +977,7 @@ bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) 
 		char file[path_sizeMax];
 		const int ret = readlink("/proc/self/exe", file, sizeof(file)-1);
 		if (ret >= 0) {
-			file[ret] = '\0';
-			STRNCPY(path, file, path_sizeMax-1);
+			STRCPY_T(path, path_sizeMax, file);
 			if (strlen(path) == (path_sizeMax-1)) {
 				error = "Path is too long for supplied buffer";
 				path  = NULL;
@@ -1000,7 +998,7 @@ bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) 
 
 		if (ret != 0) {
 			if (ret != sizeof(procExeFile)) {
-				STRNCPY(path, procExeFile, path_sizeMax-1);
+				STRCPY_T(path, path_sizeMax, procExeFile);
 			} else {
 				error = "Path is too long for used buffer";
 				path  = NULL;
@@ -1017,8 +1015,8 @@ bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) 
 		if (err == 0) {
 			char pathReal[PATH_MAX];
 			realpath(path, pathReal);
-			STRNCPY(path, pathReal, path_sizeMax-1);
-			if (strlen(path) == (path_sizeMax-1)) {
+			STRCPY_T(path, path_sizeMax, pathReal);
+			if (strlen(path) == (path_sizeMax - 1)) {
 				error = "Path is too long for supplied buffer";
 				path  = NULL;
 			}
@@ -1036,9 +1034,8 @@ bool util_getProcessExecutableFile(char* path, const unsigned int path_sizeMax) 
 	if (path == NULL) {
 		const size_t errorMsg_sizeMax = 2048;
 		char errorMsg[errorMsg_sizeMax];
-		errorMsg[errorMsg_sizeMax-1] = '\0';
-		STRNCPY(errorMsg, "WARNING: Failed to get file path of the process executable, reason: ", errorMsg_sizeMax-1);
-		STRNCAT(errorMsg, error, errorMsg_sizeMax-1);
+		STRCPY_T(errorMsg, errorMsg_sizeMax, "WARNING: Failed to get file path of the process executable, reason: ");
+		STRCAT_T(errorMsg, errorMsg_sizeMax, error);
 		util_setError(errorMsg);
 		return false;
 	} else {
@@ -1102,10 +1099,10 @@ bool util_getModuleFile(const char* moduleName, char* path, const unsigned int p
 			Dl_info moduleInfo;
 			const int ret = dladdr(moduleAddress, &moduleInfo);
 			if ((ret != 0) && (moduleInfo.dli_fname != NULL)) {
-				STRNCPY(path, moduleInfo.dli_fname, path_sizeMax - 1);
+				STRCPY_T(path, path_sizeMax, moduleInfo.dli_fname);
 				char pathReal[PATH_MAX];
 				realpath(path, pathReal);
-				STRNCPY(path, pathReal, path_sizeMax - 1);
+				STRCPY_T(path, path_sizeMax, pathReal);
 				if (strlen(path) == (path_sizeMax - 1)) {
 					error = "Path is too long for supplied buffer";
 					path  = NULL;
@@ -1154,7 +1151,7 @@ bool util_getModuleFile(const char* moduleName, char* path, const unsigned int p
 			const int ret = GetModuleFileName(hModule, moduleFile, sizeof(moduleFile));
 
 			if ((ret != 0) && (ret != sizeof(moduleFile))) {
-				STRNCPY(path, moduleFile, path_sizeMax-1);
+				STRCPY_T(path, path_sizeMax, moduleFile);
 			} else {
 				error = "Unknown";
 				path  = NULL;
@@ -1174,18 +1171,18 @@ bool util_getModuleFile(const char* moduleName, char* path, const unsigned int p
 		char moduleNameStr[2048];
 		moduleNameStr[sizeof(moduleNameStr)-1] = '\0';
 		if ((moduleName == NULL) || (strlen(moduleName) == 0)) {
-			STRNCPY(moduleNameStr, "<current>", sizeof(moduleNameStr)-1);
+			STRCPY_T(moduleNameStr, sizeof(moduleNameStr), "<current>");
 		} else {
-			STRNCPY(moduleNameStr, moduleName, sizeof(moduleNameStr)-1);
+			STRCPY_T(moduleNameStr, sizeof(moduleNameStr), moduleName);
 		}
 
 		const size_t errorMsg_sizeMax = 2048;
 		char errorMsg[errorMsg_sizeMax];
 		errorMsg[errorMsg_sizeMax-1] = '\0';
-		STRNCPY(errorMsg, "WARNING: Failed to get file path of the module \"", errorMsg_sizeMax-1);
-		STRNCPY(errorMsg, moduleNameStr, errorMsg_sizeMax-1);
-		STRNCPY(errorMsg, "\", reason: ", errorMsg_sizeMax-1);
-		STRNCAT(errorMsg, error, errorMsg_sizeMax-1);
+		STRCPY_T(errorMsg, errorMsg_sizeMax, "WARNING: Failed to get file path of the module \"");
+		STRCAT_T(errorMsg, errorMsg_sizeMax, moduleNameStr);
+		STRCAT_T(errorMsg, errorMsg_sizeMax, "\", reason: ");
+		STRCAT_T(errorMsg, errorMsg_sizeMax, error);
 		util_setError(errorMsg);
 		return false;
 	} else {
@@ -1222,3 +1219,5 @@ void util_resetEngineEnv() {
 	assert(0);
 #endif
 }
+
+void util_finalize() {}

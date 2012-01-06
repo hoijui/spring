@@ -16,7 +16,7 @@ class AMoveType : public CObject
 
 public:
 	AMoveType(CUnit* owner);
-	virtual ~AMoveType(void);
+	virtual ~AMoveType() {}
 
 	virtual void StartMoving(float3 pos, float goalRadius) = 0;
 	virtual void StartMoving(float3 pos, float goalRadius, float speed) = 0;
@@ -24,12 +24,11 @@ public:
 	virtual void KeepPointingTo(CUnit* unit, float distance, bool aggressive);
 	virtual void StopMoving() = 0;
 	virtual void ImpulseAdded(const float3&) {}
-	virtual void ReservePad(CAirBaseHandler::LandingPad* lp);
 
-	virtual void SetGoal(const float3& pos);
+	virtual void SetGoal(const float3& pos) { goalPos = pos; }
 	virtual void SetMaxSpeed(float speed);
 	virtual void SetWantedMaxSpeed(float speed);
-	virtual void LeaveTransport(void);
+	virtual void LeaveTransport() {}
 
 	virtual bool Update() = 0;
 	virtual void SlowUpdate();
@@ -38,23 +37,26 @@ public:
 	virtual bool IsFlying() const { return false; }
 	virtual bool IsReversing() const { return false; }
 
+	virtual void ReservePad(CAirBaseHandler::LandingPad* lp) { /* AAirMoveType only */ }
+	virtual void UnreservePad(CAirBaseHandler::LandingPad* lp) { /* AAirMoveType only */ }
+	virtual CAirBaseHandler::LandingPad* GetReservedPad() { return NULL; }
+
 	bool WantsRepair() const;
 	bool WantsRefuel() const;
 
+	void SetRepairBelowHealth(float rbHealth) { repairBelowHealth = rbHealth; }
+
+	float GetMaxSpeed() const { return maxSpeed; }
+	float GetMaxSpeedDef() const { return maxSpeedDef; }
+	float GetMaxWantedSpeed() const { return maxWantedSpeed; }
+	float GetRepairBelowHealth() const { return repairBelowHealth; }
+
+public:
 	CUnit* owner;
 
 	float3 goalPos;
 	float3 oldPos;             // owner position at last Update()
 	float3 oldSlowUpdatePos;   // owner position at last SlowUpdate()
-
-	float maxSpeed;
-	float maxWantedSpeed;
-
-	CAirBaseHandler::LandingPad* reservedPad;
-
-	/// 0: moving toward, 1: landing at, 2: arrived
-	int padStatus;
-	float repairBelowHealth;
 
 	/// TODO: probably should move the code in CUnit that reads this into the movement classes
 	bool useHeading;
@@ -67,7 +69,11 @@ public:
 	ProgressState progressState;
 
 protected:
-	void DependentDied(CObject* o);
+	float maxSpeed;            // current maximum speed owner is allowed to reach (changes with eg. guard orders)
+	float maxSpeedDef;         // default maximum speed owner can reach (as defined by its UnitDef, never changes)
+	float maxWantedSpeed;      // FIXME: largely redundant / unused except by StrafeAirMoveType
+
+	float repairBelowHealth;
 };
 
 #endif // MOVETYPE_H

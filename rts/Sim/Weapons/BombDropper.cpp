@@ -5,7 +5,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/Team.h"
 #include "Map/MapInfo.h"
-#include "Sim/MoveTypes/TAAirMoveType.h"
+#include "Sim/MoveTypes/HoverAirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/ExplosiveProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/TorpedoProjectile.h"
 #include "Sim/Projectiles/WeaponProjectiles/WeaponProjectile.h"
@@ -100,7 +100,7 @@ void CBombDropper::FireImpl()
 
 	if (dropTorpedoes) {
 		float3 speed = owner->speed;
-		if (dynamic_cast<CTAAirMoveType*>(owner->moveType)) {
+		if (dynamic_cast<CHoverAirMoveType*>(owner->moveType)) {
 			speed = targetPos - weaponPos;
 			speed.Normalize();
 			speed *= 5;
@@ -111,7 +111,7 @@ void CBombDropper::FireImpl()
 		} else {
 			ttl = weaponDef->flighttime;
 		}
-		new CTorpedoProjectile(weaponPos, speed, owner, areaOfEffect,
+		new CTorpedoProjectile(weaponPos, speed, owner, damageAreaOfEffect,
 				projectileSpeed, tracking, ttl, targetUnit, weaponDef);
 	} else {
 		// fudge a bit better lateral aim to compensate for imprecise aircraft steering
@@ -130,7 +130,7 @@ void CBombDropper::FireImpl()
 			dif /= size * 1.0f;
 		}
 		new CExplosiveProjectile(weaponPos, owner->speed + dif, owner,
-				weaponDef, 1000, areaOfEffect,
+				weaponDef, 1000, damageAreaOfEffect,
 				((weaponDef->myGravity == 0) ? mapInfo->map.gravity : -(weaponDef->myGravity)));
 	}
 }

@@ -3,7 +3,7 @@
 #ifndef PROJECTILE_H
 #define PROJECTILE_H
 
-#include "lib/gml/gml.h" // for GML_ENABLE_SIM
+#include "lib/gml/gml.h"
 
 #ifdef _MSC_VER
 #pragma warning(disable:4291)
@@ -42,13 +42,15 @@ public:
 	virtual void DrawCallback() {}
 
 	inline CUnit* owner() const {
-		return
-#if defined(USE_GML) && GML_ENABLE_SIM
-		*(CUnit * volatile *)&
-#endif
-		uh->units[ownerId]; // Note: this death dependency optimization using "ownerId" is logically flawed, since ids are being reused it could return a unit that is not the original owner
+		// Note: this death dependency optimization using "ownerId" is logically flawed,
+		//  since ids are being reused it could return a unit that is not the original owner
+		CUnit* unit = uh->GetUnit(ownerId);
+		return GML::SimEnabled() ? *(CUnit* volatile*)&unit : unit; // make volatile
 	}
 
+	int GetOwnerID() const {
+		return ownerId;
+	}
 
 	void SetQuadFieldCellCoors(const int2& cell) { quadFieldCellCoors = cell; }
 	int2 GetQuadFieldCellCoors() const { return quadFieldCellCoors; }
@@ -74,9 +76,7 @@ public:
 	bool deleteMe;
 	bool castShadow;
 
-#if defined(USE_GML) && GML_ENABLE_SIM
 	unsigned lastProjUpdate;
-#endif
 
 	float3 dir;
 	float3 speed;
@@ -84,9 +84,9 @@ public:
 
 	float mygravity;
 	float tempdist; ///< temp distance used for sorting when rendering
-	
+
 protected:
-	unsigned int ownerId;
+	int ownerId;
 	unsigned int projectileType;
 	unsigned int collisionFlags;
 

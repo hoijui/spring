@@ -37,7 +37,7 @@ static CVertexArray* currentVertexArray = NULL;
 CVertexArray* GetVertexArray()
 {
 #ifdef USE_GML // each thread gets its own array to avoid conflicts
-	int thread=gmlThreadNumber;
+	int thread = GML::ThreadNumber();
 	if (currentVertexArrays[thread] == &vertexArrays1[thread]) {
 		currentVertexArrays[thread] = &vertexArrays2[thread];
 	} else {
@@ -158,27 +158,62 @@ void _APIENTRY OpenGLDebugMessageCallback(GLenum source, GLenum type, GLuint id,
 }
 #endif // GL_ARB_debug_output
 
+
+static bool GetAvailableVideoRAM(GLint* memory)
+{
+#if defined(HEADLESS) || !defined(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX) || !defined(GL_TEXTURE_FREE_MEMORY_ATI)
+	return false;
+#else
+	// check free video ram (all values in kB)
+	if (GLEW_NVX_gpu_memory_info) {
+		glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &memory[0]);
+		glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &memory[1]);
+	}
+	if (GLEW_ATI_meminfo) {
+		GLint texMemInfo[4];
+		glGetIntegerv(GL_TEXTURE_FREE_MEMORY_ATI, texMemInfo);
+
+		memory[0] = texMemInfo[1];
+		memory[1] = texMemInfo[0];
+	}
+
+	return true;
+#endif
+}
+
+
+
 void LoadExtensions()
 {
 	glewInit();
 
+	const SDL_version* sdlVersion = SDL_Linked_Version();
 	const char* glVersion = (const char*) glGetString(GL_VERSION);
 	const char* glVendor = (const char*) glGetString(GL_VENDOR);
 	const char* glRenderer = (const char*) glGetString(GL_RENDERER);
 	const char* glslVersion = (const char*) glGetString(GL_SHADING_LANGUAGE_VERSION);
 	const char* glewVersion = (const char*) glewGetString(GLEW_VERSION);
-	const char* glExtensions = (const char*) glGetString(GL_EXTENSIONS);
 
+	char glVidMemStr[64] = "unknown";
+	GLint vidMemBuffer[2] = {0, 0};
+
+	if (GetAvailableVideoRAM(vidMemBuffer)) {
+		const char* memFmtStr = "total %iMB, available %iMB";
+		const GLint totalMemMB = vidMemBuffer[0] / 1024;
+		const GLint availMemMB = vidMemBuffer[1] / 1024;
+
+		if (totalMemMB > 0 && availMemMB > 0)
+			SNPRINTF(glVidMemStr, sizeof(glVidMemStr), memFmtStr, totalMemMB, availMemMB);
+	}
+	
 	// log some useful version info
-	LOG("SDL:  %d.%d.%d",
-		SDL_Linked_Version()->major,
-		SDL_Linked_Version()->minor,
-		SDL_Linked_Version()->patch);
+	LOG("SDL version:  %d.%d.%d", sdlVersion->major, sdlVersion->minor, sdlVersion->patch);
 	LOG("GL version:   %s", glVersion);
 	LOG("GL vendor:    %s", glVendor);
 	LOG("GL renderer:  %s", glRenderer);
-	LOG("GLSL version: %s", glslVersion); // only non-NULL as of OpenGL 2.0
+	LOG("GLSL version: %s", glslVersion);
 	LOG("GLEW version: %s", glewVersion);
+	LOG("Video RAM:    %s", glVidMemStr);
 
 #if       !defined DEBUG
 	{
@@ -214,9 +249,15 @@ void LoadExtensions()
 	}
 #endif // !defined DEBUG
 
-	std::string s = (glExtensions != NULL)? glExtensions: "";
-	for (unsigned int i = 0; i < s.length(); i++)
-		if (s[i] == ' ') s[i] = '\n';
+	/*{
+		std::string s = (char*)glGetString(GL_EXTENSIONS);
+		for (unsigned int i=0; i<s.length(); i++)
+			if (s[i]==' ') s[i]='\n';
+
+		std::ofstream ofs("ext.txt");
+		if (!ofs.bad() && ofs.is_open())
+			ofs.write(s.c_str(), s.length());
+	}*/
 
 	std::string missingExts = "";
 	if (!GLEW_ARB_multitexture) {
@@ -368,30 +409,66 @@ bool ProgramStringIsNative(GLenum target, const char* filename)
  */
 static bool CheckParseErrors(GLenum target, const char* filename, const char* program)
 {
-	if (glGetError() != GL_INVALID_OPERATION) {
-		return false;
-	}
-
-	// Find the error position
 	GLint errorPos = -1;
 	GLint isNative =  0;
 
 	glGetIntegerv(GL_PROGRAM_ERROR_POSITION_ARB, &errorPos);
 	glGetProgramivARB(target, GL_PROGRAM_UNDER_NATIVE_LIMITS_ARB, &isNative);
 
-	// Print implementation-dependent program
-	// errors and warnings string.
-	const GLubyte* errString = glGetString(GL_PROGRAM_ERROR_STRING_ARB);
+	if (errorPos != -1) {
+		const char* fmtString =
+			"[%s] shader compilation error at index %d (near "
+			"\"%.30s\") when loading %s-program file %s:\n%s";
+		const char* tgtString = (target == GL_VERTEX_PROGRAM_ARB)? "vertex": "fragment";
+		const char* errString = (const char*) glGetString(GL_PROGRAM_ERROR_STRING_ARB);
 
-	LOG_L(L_ERROR,
-		"[myGL::CheckParseErrors] Shader compilation error at index "
-		"%d (near \"%.30s\") when loading %s-program file %s:\n%s",
-		errorPos, program + errorPos,
-		(target == GL_VERTEX_PROGRAM_ARB? "vertex": "fragment"),
-		filename, errString ? (const char*) errString : "(null)"
-	);
+		if (errString != NULL) {
+			LOG_L(L_ERROR, fmtString, __FUNCTION__, errorPos, program + errorPos, tgtString, filename, errString);
+		} else {
+			LOG_L(L_ERROR, fmtString, __FUNCTION__, errorPos, program + errorPos, tgtString, filename, "(null)");
+		}
 
-	return true;
+		return true;
+	}
+
+	if (isNative != 1) {
+		GLint aluInstrs, maxAluInstrs;
+		GLint texInstrs, maxTexInstrs;
+		GLint texIndirs, maxTexIndirs;
+		GLint nativeTexIndirs, maxNativeTexIndirs;
+		GLint nativeAluInstrs, maxNativeAluInstrs;
+
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_ALU_INSTRUCTIONS_ARB,            &aluInstrs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_ALU_INSTRUCTIONS_ARB,        &maxAluInstrs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_TEX_INSTRUCTIONS_ARB,            &texInstrs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_TEX_INSTRUCTIONS_ARB,        &maxTexInstrs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_TEX_INDIRECTIONS_ARB,            &texIndirs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_TEX_INDIRECTIONS_ARB,        &maxTexIndirs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_NATIVE_TEX_INDIRECTIONS_ARB,     &nativeTexIndirs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_NATIVE_TEX_INDIRECTIONS_ARB, &maxNativeTexIndirs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_PROGRAM_NATIVE_ALU_INSTRUCTIONS_ARB,     &nativeAluInstrs);
+		glGetProgramivARB(GL_FRAGMENT_PROGRAM_ARB, GL_MAX_PROGRAM_NATIVE_ALU_INSTRUCTIONS_ARB, &maxNativeAluInstrs);
+
+		if (aluInstrs > maxAluInstrs) {
+			LOG_L(L_ERROR, "[%s] too many ALU instructions in %s (%d, max. %d)\n", __FUNCTION__, filename, aluInstrs, maxAluInstrs);
+		}
+		if (texInstrs > maxTexInstrs) {
+			LOG_L(L_ERROR, "[%s] too many texture instructions in %s (%d, max. %d)\n", __FUNCTION__, filename, texInstrs, maxTexInstrs);
+		}
+		if (texIndirs > maxTexIndirs) {
+			LOG_L(L_ERROR, "[%s] too many texture indirections in %s (%d, max. %d)\n", __FUNCTION__, filename, texIndirs, maxTexIndirs);
+		}
+		if (nativeTexIndirs > maxNativeTexIndirs) {
+			LOG_L(L_ERROR, "[%s] too many native texture indirections in %s (%d, max. %d)\n", __FUNCTION__, filename, nativeTexIndirs, maxNativeTexIndirs);
+		}
+		if (nativeAluInstrs > maxNativeAluInstrs) {
+			LOG_L(L_ERROR, "[%s] too many native ALU instructions in %s (%d, max. %d)\n", __FUNCTION__, filename, nativeAluInstrs, maxNativeAluInstrs);
+		}
+
+		return true;
+	}
+
+	return false;
 }
 
 

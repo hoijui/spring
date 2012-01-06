@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __FEATURE_H__
-#define __FEATURE_H__
+#ifndef _FEATURE_H
+#define _FEATURE_H
 
 #include <vector>
 #include <list>
@@ -45,7 +45,7 @@ public:
 	 */
 	bool AddBuildPower(float amount, CUnit* builder);
 	void DoDamage(const DamageArray& damages, const float3& impulse);
-	void Kill(const float3& impulse);
+	void Kill(const float3& impulse, bool crushKill);
 	void ForcedMove(const float3& newPos, bool snapToGround = true);
 	void ForcedSpin(const float3& newDir);
 	virtual bool Update(void);
@@ -125,4 +125,4 @@ private:
 	void PostLoad();
 };
 
-#endif // __FEATURE_H__
+#endif // _FEATURE_H

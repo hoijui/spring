@@ -1,11 +1,13 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _SYNCHRO_H_
-#define _SYNCHRO_H_
+#ifndef SYNCHRO_H
+#define SYNCHRO_H
+
+#include "Rendering/GL/myGL.h"
 
 #include <boost/version.hpp>
 #include <boost/thread/recursive_mutex.hpp>
-#include "Rendering/GL/myGL.h"
+
 
 namespace Threading {
 
@@ -18,6 +20,8 @@ class RecursiveScopedLock {
 #endif
 public:
 	RecursiveScopedLock(boost::recursive_mutex& m, bool locked = true) {
+	// NOTE the "new (...) ..." syntax is called "placement new", and is
+	// described here: http://en.wikipedia.org/wiki/Placement_syntax
 #if (BOOST_VERSION >= 103500)
 		if (locked) {
 			new (sl_lock) boost::recursive_mutex::scoped_lock(m);
@@ -31,7 +35,7 @@ public:
 		if (locked) {
 			m1 = &m;
 			GML_STDMUTEX_LOCK(lm);
-			std::map<boost::recursive_mutex*, int>& lockmmap = lockmmaps[gmlThreadNumber];
+			std::map<boost::recursive_mutex*, int>& lockmmap = lockmmaps[GML::ThreadNumber()];
 			std::map<boost::recursive_mutex*, int>::iterator locki = lockmmap.find(m1);
 			if (locki == lockmmap.end()) {
 				lockmmap[m1] = 1;
@@ -52,7 +56,7 @@ public:
 #if GML_DEBUG_MUTEX
 		if (m1) {
 			GML_STDMUTEX_LOCK(lm);
-			std::map<boost::recursive_mutex*, int>& lockmmap = lockmmaps[gmlThreadNumber];
+			std::map<boost::recursive_mutex*, int>& lockmmap = lockmmaps[GML::ThreadNumber()];
 			lockmmap[m1] = (*lockmmap.find(m1)).second - 1;
 		}
 #endif
@@ -61,4 +65,4 @@ public:
 
 };
 
-#endif // _SYNCHRO_H_
+#endif // SYNCHRO_H

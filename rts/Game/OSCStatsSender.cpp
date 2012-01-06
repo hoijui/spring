@@ -1,19 +1,22 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include <boost/asio.hpp>
-
-#include "lib/streflop/streflop_cond.h"
+#include <boost/asio.hpp> // must be included before streflop!
 
 #include "OSCStatsSender.h"
-#include "lib/oscpack/OscOutboundPacketStream.h"
-#include "Game/Game.h"
-#include "Game/GameVersion.h"
-#include "Game/GlobalUnsynced.h"
-#include "Game/PlayerHandler.h"
+
+#include "Game.h"
+#include "GameVersion.h"
+#include "GlobalUnsynced.h"
+#include "Player.h"
+#include "PlayerHandler.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/Log/ILog.h"
 #include "System/Net/Socket.h"
+
+#include "lib/streflop/streflop_cond.h"
+#include "lib/oscpack/OscOutboundPacketStream.h"
+
 
 CONFIG(bool, OscStatsSenderEnabled).defaultValue(false);
 CONFIG(std::string, OscStatsSenderDestinationAddress).defaultValue("127.0.0.1");
@@ -142,35 +145,6 @@ void COSCStatsSender::SetDestinationPort(unsigned int port) {
 }
 unsigned int COSCStatsSender::GetDestinationPort() const {
 	return dstPort;
-}
-
-
-bool COSCStatsSender::SendPropertiesInfo(const char* oscAdress, const char* fmt,
-		void* params[]) {
-
-	if (IsEnabled() && (oscAdress != NULL) && (fmt != NULL)) {
-		(*oscPacker) << osc::BeginBundleImmediate
-				<< osc::BeginMessage(oscAdress);
-		int param_size = strlen(fmt);
-		for (int i=0; i < param_size; ++i) {
-			const char type = fmt[i];
-			const void* param_p = params[i];
-			switch (type) {
-				case 'i': { (*oscPacker) << *((const int*) param_p); }
-				case 'f': { (*oscPacker) << *((const float*) param_p); }
-				case 's': { (*oscPacker) << *((const char**) param_p); }
-				case 'b': { (*oscPacker) << *((const unsigned char**) param_p); }
-				default: {
-					throw "Illegal OSC type used, has to be one of: i, f, s, b";
-				}
-			}
-		}
-		(*oscPacker) << osc::EndMessage << osc::EndBundle;
-
-		return SendOscBuffer();
-	} else {
-		return false;
-	}
 }
 
 

@@ -11,7 +11,7 @@
 #include <boost/version.hpp>
 #include <boost/version.hpp>
 
-#include "lib/minizip/zip.h"
+#include "minizip/zip.h"
 #include "System/mmgr.h"
 
 #include "PathAllocator.h"
@@ -36,6 +36,23 @@
 CONFIG(int, MaxPathCostsMemoryFootPrint).defaultValue(512 * 1024 * 1024);
 
 static const std::string PATH_CACHE_DIR = "cache/paths/";
+
+static size_t GetNumThreads() {
+	size_t numThreads = std::max(0, configHandler->GetInt("HardwareThreadCount"));
+
+	if (numThreads == 0) {
+		// auto-detect
+		#if (BOOST_VERSION >= 103500)
+		numThreads = boost::thread::hardware_concurrency();
+		#elif defined(USE_GML)
+		numThreads = gmlCPUCount();
+		#else
+		numThreads = 1;
+		#endif
+	}
+
+	return numThreads;
+}
 
 #if !defined(USE_MMGR)
 void* CPathEstimator::operator new(size_t size) { return PathAllocator::Alloc(size); }
@@ -115,18 +132,7 @@ CPathEstimator::~CPathEstimator()
 
 void CPathEstimator::InitEstimator(const std::string& cacheFileName, const std::string& map)
 {
-	unsigned int numThreads = std::max(0, configHandler->GetInt("HardwareThreadCount"));
-
-	if (numThreads == 0) {
-		// auto-detect
-		#if (BOOST_VERSION >= 103500)
-		numThreads = boost::thread::hardware_concurrency();
-		#elif defined(USE_GML)
-		numThreads = gmlCPUCount();
-		#else
-		numThreads = 1;
-		#endif
-	}
+	const unsigned int numThreads = GetNumThreads();
 
 	if (threads.size() != numThreads) {
 		threads.resize(numThreads);
@@ -245,7 +251,7 @@ void CPathEstimator::EstimatePathCosts(int idx, int thread) {
 		nextCostMessage = idx + blockStates.GetSize() / 16;
 		char calcMsg[128];
 		sprintf(calcMsg, "PathCosts: precached %d of %d", idx, blockStates.GetSize());
-		net->Send(CBaseNetProtocol::Get().SendCPUUsage(0x1 | BLOCK_SIZE | (idx<<8)));
+		net->Send(CBaseNetProtocol::Get().SendCPUUsage(0x1 | BLOCK_SIZE | (idx << 8)));
 		loadscreen->SetLoadMessage(calcMsg, (idx != 0));
 	}
 
@@ -276,24 +282,38 @@ void CPathEstimator::FindOffset(const MoveData& moveData, int blockX, int blockZ
 	float bestCost = std::numeric_limits<float>::max();
 	const CMoveMath& moveMath = *(moveData.moveMath);
 
+	float speedMod = moveMath.GetPosSpeedMod(moveData, lowerX, lowerZ);
+	bool curblock = (speedMod == 0.0f) || moveMath.IsBlockedStructure(moveData, lowerX, lowerZ);
 	// search for an accessible position
-	for (unsigned int z = 1; z < BLOCK_SIZE; z += 2) {
-		for (unsigned int x = 1; x < BLOCK_SIZE; x += 2) {
-			const int dx = x - (BLOCK_SIZE >> 1);
-			const int dz = z - (BLOCK_SIZE >> 1);
+	unsigned int z = 0;
+	while (true) {
+		bool zcurblock = curblock;
+		unsigned int x = 0;
+		while (true) {
+			if (!curblock) {
+				const float dx = x - (float)(BLOCK_SIZE - 1) / 2.0f;
+				const float dz = z - (float)(BLOCK_SIZE - 1) / 2.0f;
 
-			if (moveMath.IsBlocked(moveData, lowerX + x, lowerZ + z) & CMoveMath::BLOCK_STRUCTURE)
-				continue;
+				const float cost = (dx * dx + dz * dz) + (blockArea / (0.001f + speedMod));
 
-			const float speedMod = moveMath.GetPosSpeedMod(moveData, lowerX + x, lowerZ + z);
-			const float cost = (dx * dx + dz * dz) + (blockArea / (0.001f + speedMod));
-
-			if (cost < bestCost) {
-				bestCost = cost;
-				bestPosX = x;
-				bestPosZ = z;
+				if (cost < bestCost) {
+					bestCost = cost;
+					bestPosX = x;
+					bestPosZ = z;
+				}
 			}
+			if (++x >= BLOCK_SIZE)
+				break;
+			// if last position was not blocked, then we do not need to check the entire square
+			speedMod = moveMath.GetPosSpeedMod(moveData, lowerX + x, lowerZ + z);
+			curblock = (speedMod == 0.0f) || (curblock ? moveMath.IsBlockedStructure(moveData, lowerX + x, lowerZ + z) :
+						moveMath.IsBlockedStructureXmax(moveData, lowerX + x, lowerZ + z));
 		}
+		if (++z >= BLOCK_SIZE)
+			break;
+		speedMod = moveMath.GetPosSpeedMod(moveData, lowerX, lowerZ + z);
+		curblock = (speedMod == 0.0f) || (zcurblock ? moveMath.IsBlockedStructure(moveData, lowerX, lowerZ + z) :
+						moveMath.IsBlockedStructureZmax(moveData, lowerX, lowerZ + z));
 	}
 
 	// store the offset found

@@ -3,7 +3,7 @@
 #ifndef WEAPON_H
 #define WEAPON_H
 
-#include <list>
+#include <map>
 
 #include "System/Object.h"
 #include "Sim/Misc/DamageArray.h"
@@ -32,7 +32,9 @@ public:
 
 	void DependentDied(CObject* o);
 
+	bool TargetUnitOrPositionInWater(const float3& targetPos, const CUnit* targetUnit) const;
 	bool HaveFreeLineOfFire(const float3& pos, const float3& dir, float length, const CUnit* target) const;
+	bool AdjustTargetVectorLength(CUnit*, float3&, float3&, float3&) const;
 	virtual bool TryTarget(const float3& pos, bool userTarget,CUnit* unit);
 	bool TryTarget(CUnit* unit, bool userTarget);
 	bool TryTargetRotate(CUnit* unit, bool userTarget);
@@ -44,6 +46,7 @@ public:
 	virtual void SlowUpdate();
 	virtual void Update();
 	virtual float GetRange2D(float yDiff) const;
+	virtual void UpdateRange(float val) { range = val; }
 
 	void HoldFire();
 	virtual bool AttackUnit(CUnit* unit, bool userTarget);
@@ -64,7 +67,8 @@ public:
 	int weaponNum;							// the weapons order among the owner weapons
 	bool haveUserTarget;
 
-	float areaOfEffect;
+	float craterAreaOfEffect;
+	float damageAreaOfEffect;
 
 	float3 relWeaponPos;					// weaponpos relative to the unit
 	float3 weaponPos;						// absolute weapon pos
@@ -103,7 +107,7 @@ public:
 	float predictSpeedMod;					// how the weapon predicts the speed of the units goes -> 1 when experience increases
 
 	float metalFireCost;
-	float energyFireCost;					// part of unit supply used to fire a salvo (transformed by unitloader)
+	float energyFireCost;
 
 	int fireSoundId;
 	float fireSoundVolume;
@@ -123,8 +127,11 @@ public:
 	unsigned int badTargetCategory;			// targets in this category get a lot lower targetting priority
 	unsigned int onlyTargetCategory;		// only targets in this category can be targeted (default 0xffffffff)
 
-	std::list<CWeaponProjectile*> incoming;	// nukes that are on the way to our area
-	CWeaponProjectile* interceptTarget;		// nuke that we currently targets
+	// projectiles that are on the way to our interception zone
+	// (eg. nuke toward a repulsor, or missile toward a shield)
+	std::map<int, CWeaponProjectile*> incomingProjectiles;
+	// projectile that we currently target for interception
+	CWeaponProjectile* interceptTarget;
 
 	int stockpileTime;						// how long it takes to stockpile 1 missile
 	float buildPercent;						// how far we have come on building current missile if stockpiling

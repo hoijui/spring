@@ -38,7 +38,7 @@ public:
 	 * Attempts to locate a file.
 	 *
 	 * If the FileSystem::WRITE flag is set, the path is assembled in the
-	 * writeable data-dir.
+	 * writable data-dir.
 	 * If FileSystem::CREATE_DIRS is set it tries to create the subdirectory
 	 * the file should live in.
 	 *
@@ -90,7 +90,6 @@ private:
 
 	/**
 	 * @brief internal find-files-in-a-single-datadir-function
-	 * @param absolute paths to the dirs found will be added to this
 	 * @param datadir root of the VFS data directory. This part of the path IS NOT included in returned matches.
 	 * @param dir path in which to start looking. This part of path IS included in returned matches.
 	 * @param pattern pattern to search for

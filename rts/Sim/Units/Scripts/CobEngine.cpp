@@ -6,7 +6,7 @@
 #include "CobThread.h"
 #include "CobInstance.h"
 #include "CobFile.h"
-#include "System/LogOutput.h"
+#include "UnitScriptLog.h"
 #include "System/FileSystem/FileHandler.h"
 
 #ifndef _CONSOLE
@@ -73,17 +73,17 @@ void CCobEngine::AddThread(CCobThread *thread)
 			sleeping.push(thread);
 			break;
 		default:
-			logOutput.Print("CobError: thread added to scheduler with unknown state (%d)", thread->state);
+			LOG_L(L_ERROR, "thread added to scheduler with unknown state (%d)", thread->state);
 			break;
 	}
 }
 
 
-void CCobEngine::TickThread(int deltaTime, CCobThread* thread)
+void CCobEngine::TickThread(CCobThread* thread)
 {
 	curThread = thread; // for error messages originating in CUnitScript
 
-	if (!thread->Tick(deltaTime))
+	if (!thread->Tick())
 		delete thread;
 
 	curThread = NULL;
@@ -96,17 +96,15 @@ void CCobEngine::Tick(int deltaTime)
 
 	GCurrentTime += deltaTime;
 
-#if COB_DEBUG > 0
-	logOutput.Print("----");
-#endif
+	LOG_L(L_DEBUG, "----");
 
 	// Advance all running threads
 	for (std::list<CCobThread*>::iterator i = running.begin(); i != running.end(); ++i) {
-		//logOutput.Print("Now 1running %d: %s", GCurrentTime, (*i)->GetName().c_str());
+		//LOG_L(L_DEBUG, "Now 1running %d: %s", GCurrentTime, (*i)->GetName().c_str());
 #ifdef _CONSOLE
 		printf("----\n");
 #endif
-		TickThread(deltaTime, *i);
+		TickThread(*i);
 	}
 
 	// A thread can never go from running->running, so clear the list
@@ -132,17 +130,17 @@ void CCobEngine::Tick(int deltaTime)
 
 			//Run forward again. This can quite possibly readd the thread to the sleeping array again
 			//But it will not interfere since it is guaranteed to sleep > 0 ms
-			//logOutput.Print("Now 2running %d: %s", GCurrentTime, cur->GetName().c_str());
+			//LOG_L(L_DEBUG, "Now 2running %d: %s", GCurrentTime, cur->GetName().c_str());
 #ifdef _CONSOLE
 			printf("+++\n");
 #endif
 			if (cur->state == CCobThread::Sleep) {
 				cur->state = CCobThread::Run;
-				TickThread(deltaTime, cur);
+				TickThread(cur);
 			} else if (cur->state == CCobThread::Dead) {
 				delete cur;
 			} else {
-				logOutput.Print("CobError: Sleeping thread strange state %d", cur->state);
+				LOG_L(L_ERROR, "Sleeping thread strange state %d", cur->state);
 			}
 
 			if (!sleeping.empty())
@@ -159,7 +157,7 @@ void CCobEngine::ShowScriptError(const string& msg)
 	if (curThread)
 		curThread->ShowError(msg);
 	else
-		logOutput.Print("ScriptError: %s outside script execution", msg.c_str());
+		LOG_L(L_ERROR, "%s outside script execution", msg.c_str());
 }
 
 

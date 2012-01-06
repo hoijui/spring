@@ -19,13 +19,11 @@
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Units/BuildInfo.h"
 #include "Sim/Units/UnitDef.h"
-#include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/Groups/Group.h"
-#include "Sim/Units/UnitTypes/Factory.h"
-#include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
+#include "Sim/Weapons/WeaponDef.h"
 #include "System/EventHandler.h"
 #include "System/LoadSave/LoadSaveInterface.h"
 #include "System/myMath.h"
@@ -34,7 +32,16 @@
 #include "System/creg/STL_Deque.h"
 #include <assert.h>
 
-static const int TARGET_LOST_TIMER = 120; // in calls to SlowUpdate() (approx. twice every second)
+// number of SlowUpdate calls that a target (unit) must
+// be out of radar (and hence LOS) contact before it is
+// considered 'lost' and invalid (for attack orders etc)
+//
+// historically this value was 120, which meant that it
+// took (120 * UNIT_SLOWUPDATE_RATE) / GAME_SPEED == 64
+// seconds (!) before eg. aircraft would stop tracking a
+// target that cloaked after flying over it --> obviously
+// unreasonable
+static const int TARGET_LOST_TIMER = 15;
 
 CR_BIND(CCommandQueue, );
 CR_REG_METADATA(CCommandQueue, (
@@ -241,7 +248,7 @@ CCommandAI::CCommandAI(CUnit* owner):
 		c.params.push_back("0");
 		c.params.push_back("Repeat off");
 		c.params.push_back("Repeat on");
-		c.tooltip = "Repeat: If on the unit will continously\n push finished orders to the end of its\n order queue";
+		c.tooltip = "Repeat: If on the unit will continuously\n push finished orders to the end of its\n order queue";
 		possibleCommands.push_back(c);
 		nonQueingCommands.insert(CMD_REPEAT);
 	}
@@ -308,9 +315,24 @@ CCommandAI::CCommandAI(CUnit* owner):
 
 CCommandAI::~CCommandAI()
 {
-	if (orderTarget) {
-		DeleteDeathDependence(orderTarget);
-		orderTarget = 0;
+	SetOrderTarget(NULL);
+	ClearCommandDependencies();
+}
+
+void CCommandAI::ClearCommandDependencies() {
+	while (!commandDeathDependences.empty()) {
+		DeleteDeathDependence(*commandDeathDependences.begin(), DEPENDENCE_COMMANDQUE);
+	}
+}
+
+void CCommandAI::AddCommandDependency(const Command &c) {
+	int cpos;
+	if (c.IsObjectCommand(cpos)) {
+		int refid = c.params[cpos];
+		CObject* ref = (refid < uh->MaxUnits()) ? (CObject*)uh->GetUnit(refid) :
+						(CObject*)featureHandler->GetFeature(refid - uh->MaxUnits());
+		if (ref)
+			AddDeathDependence(ref, DEPENDENCE_COMMANDQUE);
 	}
 }
 
@@ -393,11 +415,12 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 	const CSkirmishAIHandler::ids_t& saids = skirmishAIHandler.GetSkirmishAIsInTeam(owner->team);
 	const bool aiOrder = (!saids.empty());
 	const int& cmd_id = c.GetID();
-	
+
 	switch (cmd_id) {
 		case CMD_MANUALFIRE:
 			if (!ud->canManualFire)
 				return false;
+			// fall through
 
 		case CMD_ATTACK: {
 			if (!IsAttackCapable())
@@ -406,18 +429,41 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 			if (c.params.size() == 1) {
 				const CUnit* attackee = GetCommandUnit(c, 0);
 
-				if (attackee && !attackee->pos.IsInBounds()) {
+				if (attackee == NULL)
 					return false;
-				}
+				if (!attackee->pos.IsInBounds())
+					return false;
 			} else {
-				if (c.params.size() == 3) {
+				if (c.params.size() >= 3) {
 					const float3 cPos(c.params[0], c.params[1], c.params[2]);
+					//FIXME is fromSynced really sync-safe??? const float gHeight = ground->GetHeightReal(cPos.x, cPos.z, fromSynced);
+					const float gHeight = ground->GetHeightReal(cPos.x, cPos.z, true);
 
-					// check if attack ground is really attack ground
-					if (!aiOrder && !fromSynced &&
-						fabs(cPos.y - ground->GetHeightReal(cPos.x, cPos.z)) > SQUARE_SIZE) {
+					#if 0
+					// check if attack-ground is really attack-ground
+					//
+					// NOTE:
+					//     problematic if command contains value from UHM
+					//     but is evaluated in synced context against SHM
+					//     after roundtrip (when UHM and SHM differ a lot)
+					//
+					//     instead just clamp the elevation, which creates
+					//     fewer issues overall (eg. artillery force-firing
+					//     at positions outside LOS where UHM and SHM do not
+					//     match will not be broken)
+					//
+
+					if (!aiOrder && math::fabs(cPos.y - gHeight) > SQUARE_SIZE) {
 						return false;
 					}
+					#else
+					if (!aiOrder) {
+						Command& cc = const_cast<Command&>(c);
+						cc.params[1] = gHeight;
+					}
+
+					return true;
+					#endif
 				}
 			}
 			break;
@@ -698,14 +744,14 @@ void CCommandAI::GiveAllowedCommand(const Command& c, bool fromSynced)
 				owner->AttackUnit(0,true);
 			}
 			waitCommandsAI.ClearUnitQueue(owner, commandQue);
+			ClearCommandDependencies();
 			commandQue.clear();
 		}
 		inCommand=false;
-		if(orderTarget){
-			DeleteDeathDependence(orderTarget);
-			orderTarget=0;
-		}
+		SetOrderTarget(NULL);
 	}
+
+	AddCommandDependency(c);
 
 	if (c.GetID() == CMD_PATROL) {
 		CCommandQueue::iterator ci = commandQue.begin();
@@ -908,7 +954,7 @@ void CCommandAI::ExecuteInsert(const Command& c, bool fromSynced)
 		inCommand = false;
 		targetDied = false;
 		unimportantMove = false;
-		orderTarget = NULL;
+		SetOrderTarget(NULL);
 		const Command& cmd = queue->front();
 		eoh->CommandFinished(*owner, cmd);
 		eventHandler.UnitCmdDone(owner, cmd.GetID(), cmd.tag);
@@ -1156,13 +1202,17 @@ std::vector<Command> CCommandAI::GetOverlapQueued(const Command& c, CCommandQueu
 
 int CCommandAI::UpdateTargetLostTimer(int unitID)
 {
-	if (targetLostTimer)
-		--targetLostTimer;
-
 	const CUnit* unit = uh->GetUnit(unitID);
 
-	if (unit && (unit->losStatus[owner->allyteam] & LOS_INRADAR))
-		targetLostTimer = TARGET_LOST_TIMER;
+	if (targetLostTimer > 0)
+		--targetLostTimer;
+
+	if (unit == NULL) {
+		targetLostTimer = 0;
+	} else {
+		if ((unit->losStatus[owner->allyteam] & LOS_INRADAR) || unit->unitDef->IsImmobileUnit())
+			targetLostTimer = TARGET_LOST_TIMER;
+	}
 
 	return targetLostTimer;
 }
@@ -1185,26 +1235,20 @@ void CCommandAI::ExecuteAttack(Command& c)
 			FinishCommand();
 			return;
 		}
-	}
-	else {
+	} else {
 		owner->commandShotCount = -1;
 
 		if (c.params.size() == 1) {
 			CUnit* targetUnit = uh->GetUnit(c.params[0]);
 
-			if (targetUnit != NULL && targetUnit != owner) {
-				owner->AttackUnit(targetUnit, c.GetID() == CMD_MANUALFIRE);
+			if (targetUnit == NULL) { FinishCommand(); return; }
+			if (targetUnit == owner) { FinishCommand(); return; }
+			if (targetUnit->GetTransporter() != NULL) { FinishCommand(); return; }
 
-				if (orderTarget)
-					DeleteDeathDependence(orderTarget);
+			SetOrderTarget(targetUnit);
+			owner->AttackUnit(targetUnit, c.GetID() == CMD_MANUALFIRE);
 
-				orderTarget = targetUnit;
-				AddDeathDependence(orderTarget);
-				inCommand = true;
-			} else {
-				FinishCommand();
-				return;
-			}
+			inCommand = true;
 		} else {
 			float3 pos(c.params[0], c.params[1], c.params[2]);
 			owner->AttackGround(pos, c.GetID() == CMD_MANUALFIRE);
@@ -1287,11 +1331,53 @@ int CCommandAI::GetDefaultCmd(const CUnit* pointed, const CFeature* feature)
 	return CMD_STOP;
 }
 
+
+void CCommandAI::AddDeathDependence(CObject* o, DependenceType dep) {
+	if (dep == DEPENDENCE_COMMANDQUE) {
+		if (commandDeathDependences.insert(o).second) // prevent multiple dependencies for the same object
+			CObject::AddDeathDependence(o, dep);
+		return;
+	}
+	CObject::AddDeathDependence(o, dep);
+}
+
+
+void CCommandAI::DeleteDeathDependence(CObject* o, DependenceType dep) {
+	if (dep == DEPENDENCE_COMMANDQUE) {
+		if (commandDeathDependences.erase(o))
+			CObject::DeleteDeathDependence(o, dep);
+		return;
+	}
+	CObject::DeleteDeathDependence(o,dep);
+}
+
+
 void CCommandAI::DependentDied(CObject* o)
 {
 	if (o == orderTarget) {
 		targetDied = true;
 		orderTarget = NULL;
+	}
+
+	if (commandDeathDependences.erase(o) && o != owner) {
+		CFactoryCAI* facCAI = dynamic_cast<CFactoryCAI*>(this);
+		CCommandQueue& dq = facCAI ? facCAI->newUnitCommands : commandQue;
+		int lastTag;
+		int curTag = -1;
+		do {
+			lastTag = curTag;
+			for (CCommandQueue::iterator qit = dq.begin(); qit != dq.end(); ++qit) {
+				Command &c = *qit;
+				int cpos;
+				if (c.IsObjectCommand(cpos) && (c.params[cpos] == CSolidObject::GetDeletingRefID())) {
+					Command removeCmd(CMD_REMOVE, 0);
+					curTag = c.tag;
+					removeCmd.params.push_back(curTag);
+					ExecuteRemove(removeCmd);
+					break;
+				}
+			}
+		} while(curTag != lastTag);
 	}
 }
 
@@ -1317,7 +1403,7 @@ void CCommandAI::FinishCommand()
 	inCommand = false;
 	targetDied = false;
 	unimportantMove = false;
-	orderTarget = 0;
+	SetOrderTarget(NULL);
 	eoh->CommandFinished(*owner, cmd);
 	eventHandler.UnitCmdDone(owner, cmdID, cmdTag);
 
@@ -1382,10 +1468,6 @@ void CCommandAI::WeaponFired(CWeapon* weapon)
 	}
 }
 
-void CCommandAI::BuggerOff(const float3& pos, float radius)
-{
-}
-
 void CCommandAI::LoadSave(CLoadSaveInterface* file, bool loading)
 {
 	int queSize = commandQue.size();
@@ -1442,17 +1524,34 @@ bool CCommandAI::HasMoreMoveCommands()
 			// build commands are no different from reclaim or repair commands
 			// in that they can require a unit to move, so return true when we
 			// have one
-			if (id == CMD_FIGHT || id == CMD_AREA_ATTACK || id == CMD_ATTACK || id == CMD_CAPTURE
-			 || id == CMD_MANUALFIRE || id == CMD_GUARD || id == CMD_LOAD_UNITS || id == CMD_MOVE
-			 || id == CMD_PATROL || id == CMD_RECLAIM || id == CMD_REPAIR || id == CMD_RESTORE
-			 || id == CMD_RESURRECT || id == CMD_UNLOAD_UNIT || id == CMD_UNLOAD_UNITS || id < 0)
-			{
-				return true;
-			}
-			else if (id == CMD_DEATHWAIT || id == CMD_GATHERWAIT || id == CMD_SELFD
-				    || id == CMD_SQUADWAIT || id == CMD_STOP || id == CMD_TIMEWAIT || id == CMD_WAIT)
-			{
-				return false;
+			switch(id) {
+				case CMD_AREA_ATTACK:
+				case CMD_ATTACK:
+				case CMD_CAPTURE:
+				case CMD_FIGHT:
+				case CMD_GUARD:
+				case CMD_LOAD_UNITS:
+				case CMD_MANUALFIRE:
+				case CMD_MOVE:
+				case CMD_PATROL:
+				case CMD_RECLAIM:
+				case CMD_REPAIR:
+				case CMD_RESTORE:
+				case CMD_RESURRECT:
+				case CMD_UNLOAD_UNIT:
+				case CMD_UNLOAD_UNITS:
+					return true;
+				case CMD_DEATHWAIT:
+				case CMD_GATHERWAIT:
+				case CMD_SELFD:
+				case CMD_SQUADWAIT:
+				case CMD_STOP:
+				case CMD_TIMEWAIT:
+				case CMD_WAIT:
+					return false;
+				default:
+					if (id < 0)
+						return true;
 			}
 		}
 	}
@@ -1509,3 +1608,48 @@ void CCommandAI::StopAttackingAllyTeam(int ally)
 		commandQue.erase(commandQue.begin() + *it);
 	}
 }
+
+
+
+void CCommandAI::SetScriptMaxSpeed(float speed) {
+	// find the first CMD_SET_WANTED_MAX_SPEED and modify it if need be
+	CCommandQueue::iterator it;
+
+	for (it = commandQue.begin(); it != commandQue.end(); ++it) {
+		Command& c = *it;
+
+		if (c.GetID() != CMD_SET_WANTED_MAX_SPEED)
+			continue;
+		if (c.params[0] != owner->moveType->GetMaxSpeed())
+			continue;
+
+		c.params[0] = speed;
+		break;
+	}
+
+	owner->moveType->SetMaxSpeed(speed);
+}
+
+void CCommandAI::SlowUpdateMaxSpeed() {
+	if (commandQue.size() < 2)
+		return;
+
+	// grab the second command
+	CCommandQueue::const_iterator it = commandQue.begin(); ++it;
+	const Command& c = *it;
+
+	// treat any following CMD_SET_WANTED_MAX_SPEED commands as options
+	// to the current command (and ignore them when it's their turn)
+	if (c.GetID() != CMD_SET_WANTED_MAX_SPEED)
+		return;
+	if (c.params.empty())
+		return;
+
+	const float defMaxSpeed = owner->moveType->GetMaxSpeed();
+	const float newMaxSpeed = std::min(c.params[0], defMaxSpeed);
+
+	if (newMaxSpeed > 0.0f) {
+		owner->moveType->SetMaxSpeed(newMaxSpeed);
+	}
+}
+

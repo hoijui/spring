@@ -9,10 +9,12 @@
 #include "System/Platform/CrashHandler.h"
 #include "System/Platform/errorhandler.h"
 #include "System/Log/ILog.h"
+#include "System/Log/LogSinkHandler.h"
 #include "System/LogOutput.h"
 #include "System/NetProtocol.h"
 #include "seh.h"
 #include "System/Util.h"
+#include "System/SafeCStrings.h"
 #include "Game/GameVersion.h"
 
 
@@ -31,11 +33,6 @@ static void SigAbrtHandler(int signal)
 	// TODO FIXME do a proper stacktrace dump here
 	*((int*)(0)) = 0;
 }
-
-// Set this to the desired printf style output function.
-// Currently we write through the ILog.h frontend to logOutput to infolog.txt
-#define PRINT(fmt, ...) \
-		LOG_L(L_ERROR, fmt, ##__VA_ARGS__)
 
 /** Convert exception code to human readable string. */
 static const char* ExceptionName(DWORD exceptionCode)
@@ -71,7 +68,7 @@ static const char* ExceptionName(DWORD exceptionCode)
 static bool InitImageHlpDll()
 {
 	char userSearchPath[8];
-	STRCPY(userSearchPath, ".");
+	STRCPY_T(userSearchPath, 8, ".");
 	// Initialize IMAGEHLP.DLL
 	// Note: For some strange reason it doesn't work ~4 times after it was loaded&unloaded the first time.
 	int i = 0;
@@ -89,13 +86,13 @@ static bool InitImageHlpDll()
 #if _MSC_VER >= 1500
 	static BOOL CALLBACK EnumModules(PCSTR moduleName, ULONG baseOfDll, PVOID userContext)
 	{
-		PRINT("0x%08lx\t%s", baseOfDll, moduleName);
+		LOG_L(L_ERROR, "0x%08lx\t%s", baseOfDll, moduleName);
 		return TRUE;
 	}
 #else // _MSC_VER >= 1500
 	static BOOL CALLBACK EnumModules(LPSTR moduleName, DWORD baseOfDll, PVOID userContext)
 	{
-		PRINT("0x%08lx\t%s", baseOfDll, moduleName);
+		LOG_L(L_ERROR, "0x%08lx\t%s", baseOfDll, moduleName);
 		return TRUE;
 	}
 #endif // _MSC_VER >= 1500
@@ -119,9 +116,9 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 	process = GetCurrentProcess();
 
 	if(threadName)
-		PRINT("Stacktrace (%s):", threadName);
+		LOG_L(L_ERROR, "Stacktrace (%s):", threadName);
 	else
-		PRINT("Stacktrace:");
+		LOG_L(L_ERROR, "Stacktrace:");
 
 	bool suspended = false;
 	CONTEXT c;
@@ -143,7 +140,7 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 			CloseHandle(allocThread);
 			if (allocIter < 10)
 				continue;
-			PRINT("Error: Stacktrace failed, allocator deadlock");
+			LOG_L(L_ERROR, "Stacktrace failed, allocator deadlock");
 			return;
 		}
 
@@ -153,7 +150,7 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 
 		if (!GetThreadContext(hThread, &c)) {
 			ResumeThread(hThread);
-			PRINT("Error: Stacktrace failed, failed to get context");
+			LOG_L(L_ERROR, "Stacktrace failed, failed to get context");
 			return;
 		}
 		thread = hThread;
@@ -272,14 +269,14 @@ static void Stacktrace(const char *threadName, LPEXCEPTION_POINTERS e, HANDLE hT
 	}
 
 	if (containsOglDll) {
-		PRINT("This stack trace indicates a problem with your graphic card driver. "
+		LOG_L(L_ERROR, "This stack trace indicates a problem with your graphic card driver. "
 		      "Please try upgrading or downgrading it. "
 		      "Specifically recommended is the latest driver, and one that is as old as your graphic card. "
 		      "Make sure to use a driver removal utility, before installing other drivers.");
 	}
 
 	for (int i = 0; i < count; ++i) {
-		PRINT("%s", printstrings + i * BUFFER_SIZE);
+		LOG_L(L_ERROR, "%s", printstrings + i * BUFFER_SIZE);
 	}
 
 	GlobalFree(printstrings);
@@ -298,7 +295,7 @@ void PrepareStacktrace() {
 	InitImageHlpDll();
 
 	// Record list of loaded DLLs.
-	PRINT("DLL information:");
+	LOG_L(L_ERROR, "DLL information:");
 	SymEnumerateModules(GetCurrentProcess(), EnumModules, NULL);
 }
 
@@ -311,34 +308,29 @@ void CleanupStacktrace() {
 }
 
 void OutputStacktrace() {
-	PRINT("Error handler invoked for Spring %s.", SpringVersion::GetFull().c_str());
+	LOG_L(L_ERROR, "Error handler invoked for Spring %s.", SpringVersion::GetFull().c_str());
 #ifdef USE_GML
-	PRINT("MT with %d threads.", gmlThreadCount);
+	LOG_L(L_ERROR, "MT with %d threads.", GML::ThreadCount());
 #endif
 
-	InitImageHlpDll();
+	PrepareStacktrace();
 
-	// Record list of loaded DLLs.
-	PRINT("DLL information:");
-	SymEnumerateModules(GetCurrentProcess(), EnumModules, NULL);
+	LOG_L(L_ERROR, "Stacktrace:");
+	Stacktrace(NULL, NULL);
 
-	PRINT("Stacktrace:");
-	Stacktrace(NULL,NULL);
+	CleanupStacktrace();
 
-	// Unintialize IMAGEHLP.DLL
-	SymCleanup(GetCurrentProcess());
-
-	logOutput.Flush();
+	LOG_CLEANUP();
 }
 
 /** Called by windows if an exception happens. */
 LONG CALLBACK ExceptionHandler(LPEXCEPTION_POINTERS e)
 {
 	// Prologue.
-	logOutput.SetSubscribersEnabled(false);
-	PRINT("Spring %s has crashed.", SpringVersion::GetFull().c_str());
+	logSinkHandler.SetSinking(false);
+	LOG_L(L_ERROR, "Spring %s has crashed.", SpringVersion::GetFull().c_str());
 #ifdef USE_GML
-	PRINT("MT with %d threads.", gmlThreadCount);
+	LOG_L(L_ERROR, "MT with %d threads.", GML::ThreadCount());
 #endif
 
 	PrepareStacktrace();
@@ -346,8 +338,8 @@ LONG CALLBACK ExceptionHandler(LPEXCEPTION_POINTERS e)
 	const std::string error(ExceptionName(e->ExceptionRecord->ExceptionCode));
 
 	// Print exception info.
-	PRINT("Exception: %s (0x%08lx)", error.c_str(), e->ExceptionRecord->ExceptionCode);
-	PRINT("Exception Address: 0x%08lx", (unsigned long int) (PVOID) e->ExceptionRecord->ExceptionAddress);
+	LOG_L(L_ERROR, "Exception: %s (0x%08lx)", error.c_str(), e->ExceptionRecord->ExceptionCode);
+	LOG_L(L_ERROR, "Exception Address: 0x%08lx", (unsigned long int) (PVOID) e->ExceptionRecord->ExceptionAddress);
 
 	// Print stacktrace.
 	Stacktrace(NULL, e);

@@ -11,7 +11,6 @@
 #include "CommandAI/Command.h"
 #include "Game/GameSetup.h"
 #include "Game/GlobalUnsynced.h"
-#include "Lua/LuaUnsyncedCtrl.h"
 #include "Map/Ground.h"
 #include "Map/ReadMap.h"
 #include "Sim/Features/Feature.h"
@@ -125,10 +124,10 @@ bool CUnitHandler::AddUnit(CUnit *unit)
 	}
 
 	unit->id = freeUnitIDs.front();
+	freeUnitIDs.pop_front();
 	units[unit->id] = unit;
 
 	std::list<CUnit*>::iterator ui = activeUnits.begin();
-
 	if (ui != activeUnits.end()) {
 		// randomize this to make the slow-update order random (good if one
 		// builds say many buildings at once and then many mobile ones etc)
@@ -138,9 +137,7 @@ bool CUnitHandler::AddUnit(CUnit *unit)
 			++ui;
 		}
 	}
-
 	activeUnits.insert(ui, unit);
-	freeUnitIDs.pop_front();
 
 	teamHandler->Team(unit->team)->AddUnit(unit, CTeam::AddBuilt);
 	unitsByDefs[unit->team][unit->unitDef->id].insert(unit);
@@ -158,16 +155,9 @@ void CUnitHandler::DeleteUnit(CUnit* unit)
 
 void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 {
-#if defined(USE_GML) && GML_ENABLE_SIM
-	{
-		GML_STDMUTEX_LOCK(dque); // DeleteUnitNow
-
-		LuaUnsyncedCtrl::drawCmdQueueUnits.erase(delUnit);
-	}
-#endif
-	
 	int delTeam = 0;
 	int delType = 0;
+
 	std::list<CUnit*>::iterator usi;
 	for (usi = activeUnits.begin(); usi != activeUnits.end(); ++usi) {
 		if (*usi == delUnit) {
@@ -177,13 +167,19 @@ void CUnitHandler::DeleteUnitNow(CUnit* delUnit)
 			delTeam = delUnit->team;
 			delType = delUnit->unitDef->id;
 
+			GML_STDMUTEX_LOCK(dque); // DeleteUnitNow
+
+			int delID = delUnit->id;
 			activeUnits.erase(usi);
-			units[delUnit->id] = 0;
-			freeUnitIDs.push_back(delUnit->id);
+			units[delID] = 0;
+			freeUnitIDs.push_back(delID);
 			teamHandler->Team(delTeam)->RemoveUnit(delUnit, CTeam::RemoveDied);
 
 			unitsByDefs[delTeam][delType].erase(delUnit);
+
+			CSolidObject::SetDeletingRefID(delID);
 			delete delUnit;
+			CSolidObject::SetDeletingRefID(-1);
 			break;
 		}
 	}
@@ -517,9 +513,9 @@ int CUnitHandler::TestBuildSquare(const float3& pos, const UnitDef* unitdef, CFe
 
 	const float groundHeight = ground->GetHeightReal(pos.x, pos.z, synced);
 
-	if (!unitdef->floater || groundHeight > 0.0f) {
+	if (!unitdef->floatOnWater || groundHeight > 0.0f) {
 		// if we are capable of floating, only test local
-		// height difference if terrain is above sea-level
+		// height difference IF terrain is above sea-level
 		const float* orgHeightMap = readmap->GetOriginalHeightMapSynced();
 		const float* curHeightMap = readmap->GetCornerHeightMapSynced();
 
@@ -552,14 +548,14 @@ void CUnitHandler::AddBuilderCAI(CBuilderCAI* b)
 {
 	GML_STDMUTEX_LOCK(cai); // AddBuilderCAI
 
-	builderCAIs.insert(builderCAIs.end(), b);
+	builderCAIs.push_back(b);
 }
 
 void CUnitHandler::RemoveBuilderCAI(CBuilderCAI* b)
 {
 	GML_STDMUTEX_LOCK(cai); // RemoveBuilderCAI
 
-	ListErase<CBuilderCAI*>(builderCAIs, b);
+	builderCAIs.remove(b);
 }
 
 

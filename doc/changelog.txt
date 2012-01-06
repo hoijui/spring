@@ -1,10 +1,140 @@
-Spring change log
+Spring changelog
+(since 85.0: "!" prefix indicate backward compability broke)
 
--- 0.83 ---------------------------------------------------------
-Big Items:
- - EFX/EAX support (reverb)
+-- 85.0 ---------------------------------------------------------
+Major Changes:
+ - ROAM \o/
+ - QTPFS (disabled by default)
+
+CommandLine:
+ - updated man-pages
+ - added new argument `--sync-version` (i.e. prints "85" for a 85.0 build or "84.0.1-567-g69ef7a3 develop" for a dev build)
+ - allow to build proper release builds without being on branch master
+ - added a full set of new arguments to spring-dedicated (see `spring-dedicated --help`)
+ - added --isolation & --isolation-dir arguments
+ - optionally, you may supply a path with SPRING_ISOLATED=<isolation-mode-dir>
+
+Rendering:
+ - added ROAM. Kudos go to B. Turner (the original author of the code) and Beherith (for integrating it into Spring).
+ - set SmoothLines & SmoothPoints by default on DONT_CARE (so your gfx driver settings decide if it is enabled or not)
+ - dynamic viewrange handling, so even a 32x32 map can be rendered w/o clipping in low camera angles
+ - log available video memory on NVidia/ATi gfx drivers
+ - disable GLSL shaders on Mesa/Intel drivers
+
+Internal/Bugfixes:
+ - re-added forced log file flushing when handling crashes
+ - made the (new) C++ AI Wrapper VS compatible
+ - name threads so you can identify them in `htop` (Linux only)
+ - some additional time-profilers in rendering code
+ ! hide "(Headless)" in dedicated's returned version name
+ - fixed stacktrace translation with some Linux setups
+ - fix crash when specs are cheating in via /team
+ - fix transport loading failure
+
+(G)UI:
+ - fix keyshortcuts (handle F3 OR any+F3 but not both at once!)
+ - fix EndGameBox
+ - make F2 colors less ambiguous
+ - the ManualFire action now expects a cursor "cursormanfire"
+
+Sim:
+ - make units crushable like features
+ - implement avoidFeature for Cannons and MissileLaunchers
+ - fix extremely fast unit rotations after being hit
+ - fix FPS-mode range exploit
+ - fix teleport-to-smooth-mesh after unloading
+
+Pathing/MoveType:
+ - fix units sometimes moving onto impassable squares
+ - fix the mass-clumping unit movement bug
+ - properly restore MoveType::maxSpeed after a guard-order
+ - prevent units getting stuck when turning around the corner of other units
+
+CEG:
+ - give warning when textures used in SimpleParticles don't exists
+ - really fix default projectile colors
+
+MultiThreaded (GML):
+ - fix hang/runtime error during pathing
+ - fix Creating unit in gadget:Initialize()
+ - lots of other fixes
+
+Sound:
+ - limit UnitReplies to max one concurrent playback
+ - play most unit sounds (activate, ...) only if unit is in LOS
+
+UnitDef:
+ ! removed "commander" tag (The Commander selectkeys filter is now defunct (ctrl+c hotkey). Lua it, or add a new one that looks for any canManualFire units.)
+ - added new "blocking" bool tag
+ ! "canDGun" is now a synonym for "canManualFire"
+ - added new tag "crushResistance" (defaults to unit's mass)
+ ! make the default cloakCost* values 0 instead of -1,
+ ! added new "canCloak" bool tag (If an unit can receive user cloak commands. Before, canCloak was auto set to true if cloakCost >= 0.)
+
+FeatureDef
+ - added new tag "crushResistance" (defaults to feature's mass)
+
+WeaponDef:
+ - added new "craterAreaOfEffect" float tag (defaults to the value of areaOfEffect)
+
+modrules.lua:
+ - added "movement.allowCrushingAlliedUnits" (default false)
+ - added "movement.allowUnitCollisionDamage" (default false)
+ - added "system.pathFinderSystem" (defaults to 0, 1 is QTPFS)
+
+Lua:
+ ! UnitDef[].isCommander returns now false
+ - fixed Spring.GetTimer/DiffTimers
+ - fixed Spring.SetMouseCursor when using hw cursor
+ - handle Lua code crashes in some events correctly, so they don't crash the whole Lua enviroment (fixes: "LuaRules::CheckStack top = -1")
+ ! call UnitMoveFailed event only for via Script.SetWatchUnit registered UnitDefs
+ ! added new WeaponDefs[].craterAreaOfEffect
+ - extend Spring.SetUnitBlocking with an optional 4th "crashable" bool argument
+ - added new Spring.GetUnitBlocking(unitid) -> blocking, crushable
+
+demo widgets:
+ - minimap_startbox.lua: play sound when start-positions are placed
+
+Buildbot:
+ - create spring_${VERSION}_minimal-portable+dedicated.zip
+
+UnitSync:
+ - if Init() is called, but we are already initialzied, do a re-initialization
+
+
+
+-- 84.0 ---------------------------------------------------------
+Bugfixes & Improvements:
+ - reduced 'Got invalid Select' message spam
+ - hide framNums from chat console
+ - fixed command queue bug (zombie builders)
+ - always flush stdout/stderr
+ - workaround a SDL bug with X11 & fullscreen that broke MiddleClickScrolling
+ - changed target behavior of enemies outside of LOS
+ - fixed BumpWater with DepthBufferBits=16
+ - fixed aircraft landing on repairpads
+ - reset aircraft state after starting from repairpad (`ground hover bug`)
+ - make UHM available before the gamestart (fixes Spring.GetGroundHeight in :Initialize() etc.)
+ - workaround 'Bertha' issue (UHM related)
+ - make C++ AI Wrapper compile with VS
+ - fixed fog in some shaders
+ - fixed F2 view
+ - improve weapon interceptors (anti nukes can now intercept nukes that fly over them)
+ - fixed free resources by NanoFrameDecay
+ - handle resigned players (:= /spectator) in game_end.lua gadget
+ - Lua Spring.KillTeam: disallow killing of Gaia (engine doesn't support so atm)
+ - fixed lasers not hitting targets at edge of range
+ - fixed stutter with low-reloadtime weapons
+ - Lua: removed WeaponDefs[i].graphicsType & renamed WeaponDefs[i].hardStop -> WeaponDefs[i].laserHardStop
+
+
+-- 83.0 ---------------------------------------------------------
+Major Changes:
+ - EFX/EAX support (sound reverb)
  - ASSIMP support (not 100% finished yet)
+ - AI Interface pure-ification
  - many speedups and double as much slowdowns
+ - use a new engine versioning scheme (RC12)
 
 Engine:
  - use more smooth algorithm for wind updates
@@ -13,30 +143,74 @@ Engine:
  - made ShadowSpace linear
  - multithreaded loadingscreen
  - hide out-of-LOS heightmap changes
+ - replace engine start point marker with lua-widget
+ - use "game" instead of "mod" in many places
+ - add "isolation" mode (do not use global data-dirs)
+ - change lobbyserver main address to "lobby.springrts.com"
+ - use http://springrts.com/ everywhere (deprecate clan-sy links)
+ - ArchiveMover uses unitsync to detect the writable data dir
+ - improve version logging on non-Windows OSs
+ - include player-name in log message when resingning
+ - add `../` as data-dir if it contains `maps/`, `games/` and `engines/`
+ - allow to define the default config- nad data-dir on windows, using env var PROGRAMDATA
+ - refuse to load too heavily compressed archives (see 0.82.3-1043-g2c15040 commit message for details)
+ - better IP v6 and v4/v6 mixed mode support
+ - lots of error messages improved and new ones added
+ - add the first few unit-tests
+ - add a validation-test
+ - add network bandwidth limits per player to prevent malicious command spam
+ - add optional high-loss network modes to make spring playable on very lossy connections (NetworkLossFactor = 0|1|2)
 
 Engine / bugfixes:
- - too many to list, see springrts.com/mantis/changelog_page.php (incomplete!)
+ - too many to list, see http://springrts.com/mantis/changelog_page.php (incomplete!)
  - calculate the team unit-limit without ancient hacks
  - stop the maxunits team restriction from applying to Gaia (#2435)
  - fix ray-ground intersections when camera is outside map
+ - fix spring on MacOSX
+ - CMake configure and make build are much more stable now (no more failure due to wrong order of actions)
+ - fix DamageArray related sync error
+ - fix a lot of memory-leaks
+ - fix unit does sometimes not reach target position when given a restore command
+ - prevent build time-out when builder or other units are blocking the build pos
+ - fix "cheat" status disparity between server and client after watching demo
+ - fix captured unit still getting shot at
+ - fix repeat commands remain even if the target object is destroyed
+ - fix unwanted error spam when disconnecting from server
+ - fix reconnect failure (incorrect password)
+ - fix rare desync and keyframe mismatch after reconnect
+ - fix two crashes related to audio channels
+ - eliminate some false hang detections on load
+ - fix multithreaded crash in lua material rendering
+ - fix hang after crash
+ - fix memory corruption in bitmap handling
+ - fix desync in PieceProjectile (#2591)
+ - fix a certain /take exploit
+ - fix hover aircraft may become unresponsive in conjunction with command chains and repeat enabled
 
 Engine / misc defs:
  - replace UnitDef::pieceTrailCEG* by a Lua subtable of sfxTypes
- - deprecate several *Def tags and their Lua*Defs copies (type/maxSlope/isBuilder/canDGun/transportableBuilding/dropped/...)
+ - deprecate several *Def tags and their Lua*Defs copies (type/maxSlope/isBuilder/canDGun/transportableBuilding/dropped/canCrash/...)
  - make a missing UnitDef::humanName non-fatal
  - UnitDef: remove hardcoded: if ((waterline >= 5.0f) && canmove) { waterline += 10.0f; }
  - make UnitDef::losHeight configurable instead of an unused hardcoded value
  - add collide{Enemy, Ground} as weapondef tags
+ - use a more reasonable default for FeatureDef.autoreclaimable (== reclaimable)
+ - scan in 'effects/' as well as 'gamedata/explosions' for CEG definitions
 
 Engine / misc commands:
  - add a /clearmapmarks command 
  - rename /advshading to /advmodelshading; add an /advmapshading analogue
  - add '/reloadCEGs [cegtag]'; reloads all CEGs or one specific CEG by tag
  - add '/dumpstate <minFrame> <maxFrame> [frameInt]'
+ - add '/CommandList'
+ - add '/CommandHelp <commandName>'
+ - more complete word completion for game-commands
+ - make auto-host command `paused` use a parameter (0|1)
+ - add scrollbars for player list in "quit" and "share" dialogs
 
 Engine / Userconfigs:
  - removed the "FSAA" config tag (FSAALevel is enough)
- - removed default 1024x768res and use desktop one now instead (done when X/YResolution <= 0)
+ - removed default 1024x768 res and use desktop one now instead (done when X/YResolution <= 0)
  - added a new 3rd state for AtiHacks: -1 (autodetect each run, so you can switch GPUs)
 
 Engine / Simulation:
@@ -45,9 +219,16 @@ Engine / Simulation:
  - close down another out-of-map attack exploit route
  - rewrite collision detection/resolution between ground units
  - skip path-estimating for unused MoveDefs
+ - use the full resolution of the blocking object map in pathestimator
+ - invoke higher resolution pathfinder if needed
  - always add the "geovent" FeatureDef (#2402)
  - only send UnitLoaded events for units that were not already being transported (when Attach'ing them)
  - fix bizarre skidding behavior for ground units with non-zero slideTolerance
+ - higher priority for nano particles when capturing and reclaiming other teams units
+ - print error message for select commands referencing invalid object IDs
+ - make TorpedoLauncher weapons able to target any in-water unit
+ - make pushing of enemy units during collisions a ModInfo option ("allowPushingEnemyUnits")
+ - remove hardcoded enter-crashing-state-on-death behavior for aircraft (now delegated to Lua or COB)
 
 Engine / Map:
  - merged both mapinfo.lua's! before there were two, one in the base-dir (-> ArchiveScanner) and one in "maphelper/mapinfo.lua" (-> MapParser/MapInfo)
@@ -57,6 +238,7 @@ Engine / Map:
   - "fogEnd"
   - "bladeColor"
  - check for the smt _next to_ the smf (which can already freely placed in the archive!)
+ - allow resources_map.lua to specify GroundFX textures for CEGs (that use CSimpleGroundFlash)
 
 Engine / Rendering:
  - Lua-scriptable dynamic lighting of models and terrain (www.youtube.com/watch?v=H5je8TKDfNA)
@@ -64,9 +246,20 @@ Engine / Rendering:
  - add optional SSMF normal-mapping and self-illumination stages
  - fix holes in shadows cast by non-closed S3O/OBJ models icw. face culling
  - always cull (non-3DO) model backfaces for the shadow pass
- - allow weapons to not leave any explosion scars
+ - squeeze some extra precision out of the shadow-map
+ - make map/model/tree/projectile shadows individually configurable
+ - allow weapons to not leave any explosion scars (add "explosionScar=true|false" to a WeaponDef)
  - render all SMF maps through GLSL if it is available
  - make depth-testing and -masking configurable for CSimpleGroundFlash
+ - fix mixed up textures in the multithreaded version
+ - fix awkward performance with multithreaded engine in games using custom model formats
+ - add peak display for time profiler
+ - don't display /mtinfo if the value is near zero
+ - properly fade out features
+ - make underwater shadows darker in deeper water
+ - significantly reduced performance impact for Lua rendering widgets in the multithreaded version
+ - enable creation of OpenGL objects such as display lists in the sim thread in the multithreaded version
+ - fix BumpWater on ATI cards when atiHacks=false
 
 Engine / Sound:
  - added EFX/EAX support (reverb)
@@ -92,19 +285,55 @@ Engine / Lua:
     "userinterface", "ui", 3
     anything else defaults to "general"
  - removed teamcolors.lua (redundant since Spring.SetTeamColor)
- - add optional flattenGround parameter to Spring.CreateUnit 
+ - add optional flattenGround parameter to Spring.CreateUnit
  - remove the "n" field from array-like tables returned by API functions
  - added Spring.GetProjectilesInRectangle
  - linked Projectile{Created, Destroyed} to the Spring.SetWatchWeapon state
+ - added Spring.SetWatchUnit(unitDefID) and Spring.SetWatchFeature(featureDefID) analogues of SetWatchWeapon
  - extend LuaPathFinder with support for setting node cost overlays
+ - extend SyncedRead::Pos2BuildPos: add support for additional param "facing"
  - added Spring.{Get, Set}MapSquareTexture (these allow complete dynamic run-time retexturing of SMF maps)
+ - added Spring.GetMetalMapSize (returns size in metal map coordinates)
+ - added Spring.GetMetalExtraction (note: uses metal map coordinates)
+ - added Spring.{Get, Set}MetalAmount (note: uses metal map coordinates)
+ - added Spring.GetFeaturesInCylinder
+ - added Spring.GetFeaturesInSphere
  - added Spring.GetFeatureCollisionVolumeData
+ - added Spring.SetWMIcon
+ - added Spring.SetWMCaption
+ - added Spring.ClearWatchDogTimer
+ - added widget call-in GamePaused
+ - added widget call-in PlayerAdded
+ - added widget call-in PlayerRemoved
+ - added callins for collision events
+     UnitUnitCollision(colliderID, collideeID) -- needs SetWatchUnit enabled for both parties
+     UnitFeatureCollision(colliderID, collideeID, crushKilled) -- needs SetWatchFeature enabled for both parties
+ - added Spring.SetUnitCrashing
+ - add All/None buttons for widget selector
+ - fix multithreaded crashes in Spring.Get{Full,Real}BuildQueue
+ - fix Immobilebuilder fails near the map edge
+ - fix Spring.SetUnitWeaponState "range" for cannon weapons
+ - add control over airStrafe via MoveCtrl.SetGunshipMoveTypeData
+ - migrate MoveCtrl.SetLeaveTracks to (LuaUnsynced) Spring.SetUnitLeaveTracks
+ - removed all widgets (moved to examples/Widgets)
 
 Engine / Internal:
  - added limited OpenMP support
  - added multithreaded OpenGL support via offscreen contexts
  - added LinkingTimeOptimization (currently fails with GCC4.5/6)
  - more/better error reporting
+ - new logging system:
+     frontend is leightweight
+     frontend is C compatible
+     is more modular
+     supports log levels: DEBUG, INFO, WARNING, ERROR, FATAL
+     "sub-systems" renamed to "sections"
+     more section then before
+     is compatible with unit-testing
+     write DEBUG and INFO to stdout, the rest to stderr
+     disable console logging for unitsync
+     disable console output for dedicated server shared library
+     turn off flushing to log-file completely
  - added GL_ARB_debug_output support (callback-based opengl error reporting) 
    NOTE: this doesn't work yet, because most drivers export this ext only for so called debug contexts.
    Creating those is impossible with near all current GL frameworks (SDL, SFML, ...).
@@ -112,10 +341,49 @@ Engine / Internal:
  - promote the CrashHandler hang-detector thread to a WatchDog
  - use a SafeVector for the Command parameter array
  - lots of cleanup and refactoring
+ - get rid of goto
+ - modularized chat-/game-commands (for example /cheat)
+ - no more use of AUX_SOURCE_DIRECTORY in CMake (as recommended by CMake team)
+ - Remove the obsolete SCons build system
+ - reduces constantly allocated memory for drawing stuff for AIs from ~130MB to ~ 2KB
+ - add a new build-target "generateSources"
+ - allow to use a system-supplied minizip library
+ - allow to disable each build type individually at configure stage
+ - generate version from git-describe (git tags), instead of hardcoding them into a source-file
+ - unsynced deletion of synced projectiles
+ - watchdog monitoring for some additional threads
 
-Engine / AI:
+AI:
+ - AI Interface pure-ification, see Forum: Development - AI - <sticky-thread>
  - add full two-way communications between AI's and unsyced Lua
  - let AI's send textual commands (like "/cheat")
+ - allow AI Interface plugins to provide info about available Skirmish AIs
+ - install Java-AIInterface and JavaOO-AIWrapper as maven artifacts into the local repository
+ - Legacy C++ AI: allow fetching the maximum number of units in a game
+ - fix source generation occasionally failing for Java-AIInterface
+ - treat allied units as always in LOS
+ - fetch the correct UnitDef for decoy units, if the unit is allied
+ - Java AI Interface: pack native sources too
+ - Maven-ize NullOOJavaAI
+ - Java AI: allow AIs to support compiling only through Maven
+ - generally improved Maven support
+ - make source generation compatible with BWK and GAWK 4.0.0
+ - E2323AI: bump to latest version
+ - KAIK: mid-game init fix
+ - AAI: prevent stack corruption in the case of file paths longer then 500 chars
+ - RAI: do not use a single/static team-instance callback in a place used by all RAI instances
+
+Unitsync:
+ - implemented GetDataDirectoryCount() and GetDataDirectory(int index)
+ - add support for retrieving non-string info value types (string, integer, float, bool)
+ - introduce GetPrimaryModInfoCount
+ - fix OpenArchiveFile
+
+Installer:
+ - create minimal-portable .7z version of engine and reuse it in installer
+ - ai's are now installed always (removed individual sections)
+ - add registry key to unitsync.dll HKLM\Software\Spring\SpringEngineHelper
+ - replace readme.html with http://springrts.com/wiki/Read_Me_First
 
 
 -- 0.82.7.1 ---------------------------------------------------------
@@ -493,10 +761,10 @@ Engine / Rendering:
  - fixed alpha-masked shadows for S3O models
  - fixed ATI alpha masked shadows (trees, features)
  - fixed far-textures (caused changing teamcolors and disappearing units)
- - support the OBJ model format (springrts.com/phpbb/viewtopic.php?f=9&t=22635)
+ - support the OBJ model format (http://springrts.com/phpbb/viewtopic.php?f=9&t=22635)
  - support specular lighting, multiple blendable detail textures, and sky reflections on SMF maps ("SSMF")
-     springrts.com/phpbb/viewtopic.php?f=13&t=21951
-     springrts.com/phpbb/viewtopic.php?f=13&t=22564 (slightly outdated wrt. the SMD parameters)
+     http://springrts.com/phpbb/viewtopic.php?f=13&t=21951
+     http://springrts.com/phpbb/viewtopic.php?f=13&t=22564 (slightly outdated wrt. the SMD parameters)
  - converted all shadow, tree, grass, model, and map shaders to GLSL
  - vertex-animated grass; maps can specify the grass blade- and shading-textures and the dimensions/angle for blades
  - refactored and abstracted unit/feature/projectile drawing to be format-agnostic
@@ -3070,8 +3338,8 @@ Unitsync:
 - windows users can use [VSync=-1] to use system default
 - allow selection of vsync rate
 
-- [feature] A new group AI, "MexUpgrader AI" has been added. See http://taspring.clan-sy.com/wiki/MexUpgrader_AI for more info.
-- [feature] Custom unit icons are supported. See http://taspring.clan-sy.com/wiki/CustomUnitIcons for more info.
+- [feature] A new group AI, "MexUpgrader AI" has been added. See http://springrts.com/wiki/MexUpgrader_AI for more info.
+- [feature] Custom unit icons are supported. See http://springrts.com/wiki/CustomUnitIcons for more info.
 - [bugfix] 'Quit and Resign' dialog now also appears when you're hosting, and stays hidden when the game is over.
 - [bugfix] Commands on enemy units (attack, reclaim) get canceled automatically when the unit leaves LOS / radar.
 - [change] 'Quit and Resign' dialog now only gives everything to allies (and not enemies) if they are still alive.

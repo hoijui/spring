@@ -25,7 +25,7 @@ fi
 
 # Sanity check.
 if ! which ${EXEC_7Z} > /dev/null; then
-	echo "Error: Could not find 7z." 1>&2
+	echo "Error: Could not find 7z." >&2
 	exit 1
 fi
 CMD_7Z="${EXEC_7Z} u -tzip -r"

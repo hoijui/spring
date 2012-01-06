@@ -4,6 +4,7 @@
 #define _GLOBAL_RENDERING_H
 
 #include "System/creg/creg_cond.h"
+#include "System/Misc/SpringTime.h"
 
 /**
  * @brief Globally accessible unsynced, rendering related data
@@ -23,10 +24,14 @@ public:
 	void UpdateViewPortGeometry();
 	void UpdatePixelGeometry();
 
+
 	/**
-	 * Does the user want team colored nanospray if the mod allows it?
+	 * @brief time offset
+	 *
+	 * Time in number of frames since last update
+	 * (for interpolation)
 	 */
-	bool teamNanospray;
+	float timeOffset;
 
 	/**
 	 * @brief last frame time
@@ -36,7 +41,7 @@ public:
 	float lastFrameTime;
 
 	/// the starting time in tick for last draw frame
-	unsigned lastFrameStart;
+	spring_time lastFrameStart;
 
 	/// 0.001f * GAME_SPEED * gs->speedFactor, used for rendering
 	float weightedSpeedFactor;
@@ -44,13 +49,15 @@ public:
 	/// the draw frame number (never 0)
 	unsigned int drawFrame;
 
+	/// Frames Per Second
+	float FPS;
+
+	/// the window state (0=normal,1=maximized,2=minimized)
+	int winState;
 
 	/// the screen size in pixels
 	int screenSizeX;
 	int screenSizeY;
-
-	/// the window state (0=normal,1=maximized,2=minimized)
-	int winState;
 
 	/// the window position relative to the screen's bottom-left corner
 	int winPosX;
@@ -80,11 +87,13 @@ public:
 	float aspectRatio;
 
 	/**
-	 * @brief Depthbuffer bits
+	 * @brief view range
 	 *
-	 * depthbuffer precision
+	 * Player's view range
 	 */
-	int depthBufferBits;
+	float zNear;
+	float viewRange;
+
 
 	/**
 	 * @brief FSAA
@@ -92,6 +101,20 @@ public:
 	 * Level of full-screen anti-aliasing
 	 */
 	int FSAA;
+
+	/**
+	 * @brief Depthbuffer bits
+	 *
+	 * depthbuffer precision
+	 */
+	int depthBufferBits;
+
+	/**
+	 * @brief maxTextureSize
+	 *
+	 * maximum 2D texture size
+	 */
+	int maxTextureSize;
 
 	bool drawSky;
 	bool drawWater;
@@ -114,26 +137,17 @@ public:
 
 
 	/**
+	 * Does the user want team colored nanospray if the mod allows it?
+	 */
+	bool teamNanospray;
+
+
+	/**
 	 * @brief active video
 	 *
 	 * Whether the graphics need to be drawn
 	 */
 	bool active;
-
-	/**
-	 * @brief view range
-	 *
-	 * Player's view range
-	 */
-	float viewRange;
-
-	/**
-	 * @brief time offset
-	 *
-	 * Time in number of frames since last update
-	 * (for interpolation)
-	 */
-	float timeOffset;
 
 	/**
 	 * @brief compressTextures
@@ -143,11 +157,21 @@ public:
 	bool compressTextures;
 
 	/**
+	 * @brief GPU driver's vendor
+	 *
+	 * These can be used to enable workarounds for bugs in their drivers.
+	 * Note, you should always give the user the possiblity to override such workarounds via config-tags.
+	 */
+	bool haveATI;
+	bool haveMesa;
+	bool haveIntel;
+	bool haveNvidia;
+
+	/**
 	 * @brief collection of some ATI bugfixes
 	 *
 	 * enables some ATI bugfixes
 	 */
-	bool haveATI;
 	bool atiHacks;
 
 	/**
@@ -156,15 +180,20 @@ public:
 	 * Especially some ATI cards report that they support NPOTs, but they don't (or just very limited).
 	 */
 	bool supportNPOTs;
+
+	/**
+	 * @brief support24bitDepthBuffers
+	 *
+	 * if GL_DEPTH_COMPONENT24 is supported (many ATIs don't do so)
+	 */
+	bool support24bitDepthBuffers;
+
+	/**
+	 * Shader capabilities
+	 */
 	bool haveARB;
 	bool haveGLSL;
 
-	/**
-	 * @brief maxTextureSize
-	 *
-	 * maximum 2D texture size
-	 */
-	int maxTextureSize;
 
 	/**
 	 * @brief dual screen mode

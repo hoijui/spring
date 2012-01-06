@@ -36,7 +36,6 @@ CR_REG_METADATA(CScriptMoveType, (
 	CR_MEMBER(shotStop),
 	CR_MEMBER(slopeStop),
 	CR_MEMBER(collideStop),
-	CR_MEMBER(rotOffset),
 	CR_MEMBER(scriptNotify),
 	CR_RESERVED(64)
 ));
@@ -65,7 +64,6 @@ CScriptMoveType::CScriptMoveType(CUnit* owner):
 	shotStop(false),
 	slopeStop(false),
 	collideStop(false),
-	rotOffset(0.0f, 0.0f, 0.0f),
 	scriptNotify(0)
 {
 	useHeading = false; // use the transformation matrix instead of heading
@@ -75,7 +73,7 @@ CScriptMoveType::CScriptMoveType(CUnit* owner):
 }
 
 
-CScriptMoveType::~CScriptMoveType(void)
+CScriptMoveType::~CScriptMoveType()
 {
 	// clean up if noBlocking was made true at
 	// some point during this script's lifetime
@@ -91,23 +89,13 @@ __attribute__ ((force_align_arg_pointer))
 inline void CScriptMoveType::CalcDirections()
 {
 	CMatrix44f matrix;
-	//matrix.Translate(-rotOffset);
 	matrix.RotateY(-rot.y);
 	matrix.RotateX(-rot.x);
 	matrix.RotateZ(-rot.z);
-	//matrix.Translate(rotOffset);
-	owner->rightdir.x = -matrix[ 0];
-	owner->rightdir.y = -matrix[ 1];
-	owner->rightdir.z = -matrix[ 2];
-	owner->updir.x    =  matrix[ 4];
-	owner->updir.y    =  matrix[ 5];
-	owner->updir.z    =  matrix[ 6];
-	owner->frontdir.x =  matrix[ 8];
-	owner->frontdir.y =  matrix[ 9];
-	owner->frontdir.z =  matrix[10];
 
-	const shortint2 HandP = GetHAndPFromVector(owner->frontdir);
-	owner->heading = HandP.x;
+	owner->SetDirVectors(matrix);
+	owner->UpdateMidPos();
+	owner->SetHeadingFromDirection();
 }
 
 
@@ -116,7 +104,7 @@ void CScriptMoveType::CheckNotify()
 {
 	if (scriptNotify) {
 		if (luaRules && luaRules->MoveCtrlNotify(owner, scriptNotify)) {
-			//! deletes \<this\>
+			// NOTE: deletes \<this\>
 			owner->DisableScriptMoveType();
 		} else {
 			scriptNotify = 0;
@@ -132,28 +120,34 @@ bool CScriptMoveType::Update()
 		CalcDirections();
 	}
 
-	owner->speed = vel;
+	float3& speed = vel;
+	speed = vel;
+
 	if (extrapolate) {
 		if (drag != 0.0f) {
 			vel *= (1.0f - drag); // quadratic drag does not work well here
 		}
+
 		if (useRelVel) {
 			const float3 rVel = (owner->frontdir *  relVel.z) +
 			                    (owner->updir    *  relVel.y) +
 			                    (owner->rightdir * -relVel.x); // x is left
-			owner->speed += rVel;
+			speed += rVel;
 		}
-		vel.y        += mapInfo->map.gravity * gravityFactor;
-		owner->speed += (wind.GetCurrentWind() * windFactor);
-		owner->pos   += owner->speed;
+
+		vel.y += (mapInfo->map.gravity * gravityFactor);
+		speed += (wind.GetCurrentWind() * windFactor);
+
+		owner->Move3D(speed, true);
 	}
 
 	if (trackGround) {
 		const float gndMin = ground->GetHeightReal(owner->pos.x, owner->pos.z) + groundOffset;
 
 		if (owner->pos.y <= gndMin) {
-			owner->pos.y = gndMin;
+			owner->Move1D(gndMin, 1, false);
 			owner->speed.y = 0.0f;
+
 			if (gndStop) {
 				vel    = ZeroVector;
 				relVel = ZeroVector;
@@ -167,10 +161,9 @@ bool CScriptMoveType::Update()
 	CheckLimits();
 
 	if (trackSlope) {
-		TrackSlope();
+		owner->UpdateDirVectors(true);
+		owner->UpdateMidPos();
 	}
-
-	owner->UpdateMidPos();
 
 	// don't need the rest if the pos hasn't changed
 	if (oldPos == owner->pos) {
@@ -197,6 +190,8 @@ void CScriptMoveType::CheckLimits()
 	if (owner->pos.y > maxs.y) { owner->pos.y = maxs.y; owner->speed.y = 0.0f; }
 	if (owner->pos.z < mins.z) { owner->pos.z = mins.z; owner->speed.z = 0.0f; }
 	if (owner->pos.z > maxs.z) { owner->pos.z = maxs.z; owner->speed.z = 0.0f; }
+
+	owner->UpdateMidPos();
 }
 
 
@@ -206,30 +201,20 @@ void CScriptMoveType::SetPhysics(const float3& pos,
 {
 	owner->pos = pos;
 	owner->speed = vel;
+
 	SetRotation(rot);
-	return;
 }
 
 
-void CScriptMoveType::SetPosition(const float3& pos)
-{
-	owner->pos = pos;
-	return;
-}
+void CScriptMoveType::SetPosition(const float3& pos) { owner->pos = pos; }
+void CScriptMoveType::SetVelocity(const float3& _vel) { vel = _vel; }
 
-
-void CScriptMoveType::SetVelocity(const float3& _vel)
-{
-	vel = _vel;
-	return;
-}
 
 
 void CScriptMoveType::SetRelativeVelocity(const float3& _relVel)
 {
 	relVel = _relVel;
 	useRelVel = ((relVel.x != 0.0f) || (relVel.y != 0.0f) || (relVel.z != 0.0f));
-	return;
 }
 
 
@@ -244,23 +229,16 @@ void CScriptMoveType::SetRotationVelocity(const float3& rvel)
 {
 	rotVel = rvel;
 	useRotVel = ((rotVel.x != 0.0f) || (rotVel.y != 0.0f) || (rotVel.z != 0.0f));
-	return;
-}
-
-
-void CScriptMoveType::SetRotationOffset(const float3& rotOff)
-{
-	rotOffset = rotOff;
 }
 
 
 void CScriptMoveType::SetHeading(short heading)
 {
 	owner->heading = heading;
+
 	if (!trackSlope) {
-		owner->frontdir = GetVectorFromHeading(heading);
-		owner->updir = UpVector;
-		owner->rightdir = owner->frontdir.cross(UpVector);
+		owner->UpdateDirVectors(false);
+		owner->UpdateMidPos();
 	}
 }
 
@@ -275,13 +253,4 @@ void CScriptMoveType::SetNoBlocking(bool state)
 	} else {
 		owner->Block();
 	}
-}
-
-void CScriptMoveType::TrackSlope()
-{
-	owner->frontdir = GetVectorFromHeading(owner->heading);
-	owner->updir = ground->GetSmoothNormal(owner->pos.x, owner->pos.z);
-	owner->rightdir = owner->frontdir.cross(owner->updir);
-	owner->rightdir.Normalize();
-	owner->frontdir = owner->updir.cross(owner->rightdir);
 }

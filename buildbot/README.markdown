@@ -1,27 +1,51 @@
-# Making the chroot
+# Setting up buildmaster
+
+The build master is set up using virtualenv, so that buildbot needs not to be installed as root, and so that buildbot can't conflict with other installed python packages.
+So, first, set up the virtualenv (in the directory virtualenv in this example):
+
+	apt-get install python-dev python-virtualenv
+	virtualenv --no-site-packages virtualenv
+	echo 'source $HOME/virtualenv/bin/activate' >> ~/.profile
+	source virtualenv/bin/activate
+
+Then we check out buildbot sources, switch to the last stable release, and install into the virtual environment.
+
+	git clone git://github.com/buildbot/buildbot.git
+	cd buildbot/master
+	git checkout v0.8.5
+	python setup.py install
+
+After this commands like `buildbot create-master` and `buildbot start` can be used to create/control the master.
+After creating the master, the generated `public_html` can be erased and linked to the `buildbot/master/public_html` in the Spring repository.
+
+# Setting up buildslave (Making the chroot)
 
 At least debootstrap and schroot are required. I didn't compile an exhaustive list of other dependencies on the host system, so YMMV.
 
 ## Configuring schroot
 
-Add to the end of /etc/schroot/schroot.conf:
+Add a file (name does not matter) to `/etc/schroot/chroot.d` with the following contents, after substituting an absolute path for `$DIR`:
 
 	[buildbot-maverick]
 	description=Ubuntu Maverick
-	location=/fast/buildbot/chroots/maverick
+	directory=$DIR
 	type=directory
-	priority=3
 	users=buildbot
+	groups=buildbot
 	root-groups=root
 	personality=linux32
-	run-setup-scripts=true
 	script-config=script-defaults
+	message-verbosity=verbose
+
+Then, remove or comment out the `/home` bind mount in `/etc/schroot/default/fstab`!
+
+This configuration has been tested with schroot 1.4.23. With any other version YMMV.
 
 ## Building and entering the chroot
 
-	debootstrap --variant=buildd --arch i386 maverick /fast/buildbot/chroots/maverick/ http://ftp.cvut.cz/ubuntu/
-	mkdir -p /fast/buildbot/chroots/maverick/home/buildbot/www
-	chown buildbot:buildbot /fast/buildbot/chroots/maverick/home/buildbot
+	debootstrap --variant=buildd --arch i386 maverick $DIR http://ftp.cvut.cz/ubuntu/
+	mkdir -p $DIR/home/buildbot/www
+	chown buildbot:buildbot $DIR/home/buildbot
 	schroot -c buildbot-maverick
 
 # Inside the chroot

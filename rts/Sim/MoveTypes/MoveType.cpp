@@ -17,11 +17,12 @@ CR_REG_METADATA(AMoveType, (
 	CR_MEMBER(goalPos),
 	CR_MEMBER(oldPos),
 	CR_MEMBER(oldSlowUpdatePos),
+
 	CR_MEMBER(maxSpeed),
+	CR_MEMBER(maxSpeedDef),
 	CR_MEMBER(maxWantedSpeed),
-	CR_MEMBER(reservedPad),
-	CR_MEMBER(padStatus),
 	CR_MEMBER(repairBelowHealth),
+
 	CR_MEMBER(useHeading),
 	CR_ENUM_MEMBER(progressState),
 	CR_RESERVED(32)
@@ -29,22 +30,23 @@ CR_REG_METADATA(AMoveType, (
 
 AMoveType::AMoveType(CUnit* owner):
 	owner(owner),
-	goalPos(owner ? owner->pos : float3(0.0f, 0.0f, 0.0f)),
-	oldPos(owner? owner->pos: float3(0.0f, 0.0f, 0.0f)),
+
+	goalPos(owner? owner->pos: ZeroVector),
+	oldPos(owner? owner->pos: ZeroVector),
 	oldSlowUpdatePos(oldPos),
-	maxSpeed(0.2f),
-	maxWantedSpeed(0.2f),
-	reservedPad(0),
-	padStatus(0),
-	repairBelowHealth(0.3f),
+
 	useHeading(true),
-	progressState(Done)
+
+	progressState(Done),
+
+	maxSpeed(owner->unitDef->speed / GAME_SPEED),
+	maxSpeedDef(owner->unitDef->speed / GAME_SPEED),
+	maxWantedSpeed(owner->unitDef->speed / GAME_SPEED),
+
+	repairBelowHealth(0.3f)
 {
 }
 
-AMoveType::~AMoveType(void)
-{
-}
 
 void AMoveType::SetMaxSpeed(float speed)
 {
@@ -95,35 +97,12 @@ void AMoveType::SlowUpdate()
 	}
 }
 
-void AMoveType::LeaveTransport(void)
-{
-}
-
 void AMoveType::KeepPointingTo(CUnit* unit, float distance, bool aggressive)
 {
 	KeepPointingTo(float3(unit->pos), distance, aggressive);
 }
 
-void AMoveType::SetGoal(const float3& pos)
-{
-	goalPos = pos;
-}
 
-void AMoveType::DependentDied(CObject* o)
-{
-	if (o == reservedPad) {
-		reservedPad = NULL;
-	}
-}
-
-void AMoveType::ReservePad(CAirBaseHandler::LandingPad* lp)
-{
-	AddDeathDependence(lp);
-	SetGoal(lp->GetUnit()->pos);
-
-	reservedPad = lp;
-	padStatus = 0;
-}
 
 bool AMoveType::WantsRepair() const { return (owner->health      < (repairBelowHealth * owner->maxHealth)); }
 bool AMoveType::WantsRefuel() const { return (owner->currentFuel < (repairBelowHealth * owner->unitDef->maxFuel)); }

@@ -3,25 +3,49 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
-#include <list>
+#include <map>
+#include <set>
+#include "System/Platform/Threading.h"
 #include "System/creg/creg_cond.h"
 
-template<typename T>
-void ListErase(std::list<T>& list, const T& what)
-{
-	typename std::list<T>::iterator it;
-	for (it = list.begin(); it != list.end(); ++it) {
-		if (*it == what) {
-			list.erase(it);
-			break;
-		}
-	}
-}
 
 class CObject
 {
 public:
 	CR_DECLARE(CObject);
+
+	//FIXME why different depType's (it's not used anywhere currently except as a std::map key?!)
+	enum DependenceType {
+		DEPENDENCE_ATTACKER,
+		DEPENDENCE_BUILD,
+		DEPENDENCE_BUILDER,
+		DEPENDENCE_CAPTURE,
+		DEPENDENCE_COBTHREAD,
+		DEPENDENCE_COMMANDQUE,
+		DEPENDENCE_DECOYTARGET,
+		DEPENDENCE_INCOMING,
+		DEPENDENCE_INTERCEPT,
+		DEPENDENCE_INTERCEPTABLE,
+		DEPENDENCE_INTERCEPTTARGET,
+		DEPENDENCE_LANDINGPAD,
+		DEPENDENCE_LASTCOLWARN,
+		DEPENDENCE_LIGHT,
+		DEPENDENCE_ORDERTARGET,
+		DEPENDENCE_RECLAIM,
+		DEPENDENCE_REPULSE,
+		DEPENDENCE_REPULSED,
+		DEPENDENCE_RESURRECT,
+		DEPENDENCE_SELECTED,
+		DEPENDENCE_SOLIDONTOP,
+		DEPENDENCE_TARGET,
+		DEPENDENCE_TARGETUNIT,
+		DEPENDENCE_TERRAFORM,
+		DEPENDENCE_TRANSPORTEE,
+		DEPENDENCE_TRANSPORTER,
+		DEPENDENCE_WAITCMD,
+		DEPENDENCE_WEAPON,
+		DEPENDENCE_WEAPONTARGET
+	};
 
 	CObject();
 	virtual ~CObject();
@@ -30,11 +54,12 @@ public:
 	virtual void Detach();
 
 	/// Request to not inform this when obj dies
-	void DeleteDeathDependence(CObject* obj);
+	virtual void DeleteDeathDependence(CObject* obj, DependenceType dep);
 	/// Request to inform this when obj dies
-	void AddDeathDependence(CObject* obj);
+	virtual void AddDeathDependence(CObject* obj, DependenceType dep);
 	/// Called when an object died, that this is interested in
 	virtual void DependentDied(CObject* obj);
+
 /*
 	// Possible future replacement for dynamic_cast (10x faster)
 	// Identifier bits for classes that have subclasses
@@ -70,12 +95,41 @@ public:
 #define INSTANCE_OF_SUBCLASS_OF(type,obj) ((obj->objType & kind) == kind) // exact class or any subclass of it
 #define INSTANCE_OF(type,obj) (obj->objType == type) // exact class only, saves one instruction yay :)
 */
-protected:
-	bool detached;
 
 private:
-	std::list<CObject*> listeners;
-	std::list<CObject*> listening;
+	// Note, this has nothing to do with the UnitID, FeatureID, ...
+	// It's only purpose is to make the sorting in TSyncSafeSet syncsafe
+	boost::int64_t sync_id;
+	static Threading::AtomicCounterInt64 cur_sync_id;
+
+	// makes std::set<T*> syncsafe (else iteration order depends on the pointer's address, which is not syncsafe)
+	struct syncsafe_compare
+	{
+		bool operator() (const CObject* const& a1, const CObject* const& a2) const
+		{
+			// I don't think the default less-op is sync-safe
+			//return a1 < a2;
+			return a1->sync_id < a2->sync_id;
+		}
+	};
+
+public:
+	typedef std::set<CObject*, syncsafe_compare> TSyncSafeSet;
+	typedef std::map<DependenceType, TSyncSafeSet> TDependenceMap;
+
+protected:
+	const TSyncSafeSet& GetListeners(const DependenceType dep) { return listeners[dep]; }
+	const TDependenceMap& GetAllListeners() const { return listeners; }
+	const TSyncSafeSet& GetListening(const DependenceType dep)  { return listening[dep]; }
+	const TDependenceMap& GetAllListening() const { return listening; }
+
+protected:
+	bool detached;
+	TDependenceMap listeners;
+	TDependenceMap listening;
 };
+
+
+
 
 #endif /* OBJECT_H */

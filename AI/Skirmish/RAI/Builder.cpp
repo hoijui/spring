@@ -11,6 +11,12 @@ sBuildQuarry::sBuildQuarry(sRAIBuildList *buildlist)
 	builderID=-1;
 	RS=0;
 	tryCount=0;
+	builderUI=0;
+	creationUDID=0;
+	creationUD=0;
+	index=0;
+	type=0;
+	deletionFrame=0;
 };
 
 sBuildQuarry::~sBuildQuarry()
@@ -435,7 +441,7 @@ void cBuilder::UBuilderIdle(const int& unit,UnitInfo *U)
 		{
 			G->ValidateUnitList(&UBuilder);
 			BP->CheckBlockedRList();
-			if( UDR->RBMobile.size() > 0 )
+			if( !UDR->RBMobile.empty() )
 			{
 				float3 position = cb->GetUnitPos(unit);
 				G->CorrectPosition(position);
@@ -474,11 +480,11 @@ void cBuilder::UBuilderIdle(const int& unit,UnitInfo *U)
 						if( !UDR->BL[i]->UDef[iud]->RUD->HasPrerequisite )
 							UDR->BL[i]->UDefSwitch(iud,--UDR->BL[i]->UDefActiveTemp);
 				// Restrict unit types that would require moving too far away
-				if( UDR->RBMobile.size() > 0 )
+				if( !UDR->RBMobile.empty() )
 					for( int iud=UDR->BL[i]->UDefActiveTemp-1; iud>=0; iud-- )
 						if( UDR->BL[i]->UDef[iud]->RUD->mobileType != 0 && UDR->RBMobile.find(UDR->BL[i]->UDef[iud]->RUD->mobileType) != UDR->RBMobile.end() )
 							UDR->BL[i]->UDefSwitch(iud,--UDR->BL[i]->UDefActiveTemp);
-				if( UDR->RBImmobile.size() > 0 )
+				if( !UDR->RBImmobile.empty() )
 					for( int iud=UDR->BL[i]->UDefActiveTemp-1; iud>=0; iud-- )
 						if( UDR->BL[i]->UDef[iud]->RUD->immobileType != 0 )
 							if( UDR->RBImmobile.find(UDR->BL[i]->UDef[iud]->RUD->immobileType) != UDR->RBImmobile.end() ||
@@ -766,7 +772,8 @@ void cBuilder::UBuilderIdle(const int& unit,UnitInfo *U)
 		Demand[1] = 0;
 		Demand[2] = 3;
 		Demand[3] = 3;
-		if( cb->GetEnergy()*(cb->GetEnergyIncome()/cb->GetEnergyUsage()) < cb->GetMetal()*(cb->GetMetalIncome()/cb->GetMetalUsage()) )
+		if( cb->GetEnergy()*(cb->GetEnergyIncome()/std::max(0.1f, cb->GetEnergyUsage())) <
+			cb->GetMetal()*(cb->GetMetalIncome()/std::max(0.1f, cb->GetMetalUsage())) )
 			Demand[2]++;
 		else
 			Demand[3]++;

@@ -3,7 +3,7 @@
 #include "Game/TraceRay.h"
 #include "LaserCannon.h"
 #include "Map/Ground.h"
-#include "Sim/MoveTypes/AirMoveType.h"
+#include "Sim/MoveTypes/StrafeAirMoveType.h"
 #include "Sim/Projectiles/WeaponProjectiles/LaserProjectile.h"
 #include "Sim/Units/Unit.h"
 #include "WeaponDefHandler.h"
@@ -21,9 +21,7 @@ CLaserCannon::CLaserCannon(CUnit* owner)
 {
 }
 
-CLaserCannon::~CLaserCannon(void)
-{
-}
+
 
 void CLaserCannon::Update(void)
 {
@@ -53,13 +51,8 @@ bool CLaserCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	if (!CWeapon::TryTarget(pos, userTarget, unit))
 		return false;
 
-	if (unit) {
-		if (unit->isUnderWater && !weaponDef->waterweapon)
-			return false;
-	} else {
-		if (pos.y < 0 && !weaponDef->waterweapon)
-			return false;
-	}
+	if (!weaponDef->waterweapon && TargetUnitOrPositionInWater(pos, unit))
+		return false;
 
 	float3 dir(pos - weaponMuzzlePos);
 	const float length = dir.Length();
@@ -81,10 +74,10 @@ bool CLaserCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 	if (avoidFeature && TraceRay::LineFeatureCol(weaponMuzzlePos, dir, length)) {
 		return false;
 	}
-	if (avoidFriendly && TraceRay::TestAllyCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, owner)) {
+	if (avoidFriendly && TraceRay::TestCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, true, false, false, owner)) {
 		return false;
 	}
-	if (avoidNeutral && TraceRay::TestNeutralCone(weaponMuzzlePos, dir, length, spread, owner)) {
+	if (avoidNeutral && TraceRay::TestCone(weaponMuzzlePos, dir, length, spread, owner->allyteam, false, true, false, owner)) {
 		return false;
 	}
 
@@ -99,8 +92,8 @@ void CLaserCannon::Init(void)
 void CLaserCannon::FireImpl()
 {
 	float3 dir;
-	if (onlyForward && dynamic_cast<CAirMoveType*>(owner->moveType)) {
-		// the taairmovetype cant align itself properly, change back when that is fixed
+	if (onlyForward && dynamic_cast<CStrafeAirMoveType*>(owner->moveType)) {
+		// HoverAirMovetype cannot align itself properly, change back when that is fixed
 		dir = owner->frontdir;
 	} else {
 		dir = targetPos - weaponMuzzlePos;
@@ -112,16 +105,14 @@ void CLaserCannon::FireImpl()
 		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight);
 	dir.Normalize();
 
-	int fpsSub = 0;
-
-	if (owner->fpsControlPlayer != NULL) {
-		// subtract 24 elmos in FPS mode (?)
-		fpsSub = 24;
-	}
+	// subtract a magic 24 elmos in FPS mode (helps against range-exploits)
+	const int fpsRangeSub = (owner->fpsControlPlayer != NULL)? (SQUARE_SIZE * 3): 0;
+	const float boltLength = weaponDef->duration * (weaponDef->projectilespeed * GAME_SPEED);
+	const int boltTTL = ((weaponDef->range - fpsRangeSub) / weaponDef->projectilespeed) - (fpsRangeSub >> 2);
 
 	new CLaserProjectile(weaponMuzzlePos, dir * projectileSpeed, owner,
-		weaponDef->duration * (weaponDef->projectilespeed * GAME_SPEED),
+		boltLength,
 		weaponDef->visuals.color, weaponDef->visuals.color2,
 		weaponDef->intensity, weaponDef,
-		(int) ((weaponDef->range - fpsSub) / weaponDef->projectilespeed) - 6);
+		boltTTL);
 }

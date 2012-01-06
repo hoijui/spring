@@ -42,7 +42,6 @@ static const float TEX_LEAF_END_X3   = 0.125f;
 
 static const float PART_MAX_TREE_HEIGHT   = MAX_TREE_HEIGHT * 0.4f;
 static const float HALF_MAX_TREE_HEIGHT   = MAX_TREE_HEIGHT * 0.5f;
-static const float DOUBLE_MAX_TREE_HEIGHT = MAX_TREE_HEIGHT * 2.0f;
 
 
 CAdvTreeDrawer::CAdvTreeDrawer()
@@ -180,6 +179,7 @@ void CAdvTreeDrawer::LoadTreeShaders() {
 		treeShaders[TREE_PROGRAM_NEAR_BASIC]->SetUniform3fv(4, &mapInfo->light.groundSunColor[0]);
 		treeShaders[TREE_PROGRAM_NEAR_BASIC]->SetUniform4f(6, 1.0f / (gs->pwr2mapx * SQUARE_SIZE), 1.0f / (gs->pwr2mapy * SQUARE_SIZE), 1.0f / (gs->pwr2mapx * SQUARE_SIZE), 1.0f);
 		treeShaders[TREE_PROGRAM_NEAR_BASIC]->Disable();
+		treeShaders[TREE_PROGRAM_NEAR_BASIC]->Validate();
 
 		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->Enable();
 		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->SetUniform3fv(3, &mapInfo->light.groundAmbientColor[0]);
@@ -188,6 +188,7 @@ void CAdvTreeDrawer::LoadTreeShaders() {
 		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->SetUniform1i(10, 0);
 		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->SetUniform1i(11, 1);
 		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->Disable();
+		treeShaders[TREE_PROGRAM_NEAR_SHADOW]->Validate();
 
 		treeShaders[TREE_PROGRAM_DIST_SHADOW]->Enable();
 		treeShaders[TREE_PROGRAM_DIST_SHADOW]->SetUniform3fv(3, &mapInfo->light.groundAmbientColor[0]);
@@ -195,6 +196,7 @@ void CAdvTreeDrawer::LoadTreeShaders() {
 		treeShaders[TREE_PROGRAM_DIST_SHADOW]->SetUniform1i(10, 0);
 		treeShaders[TREE_PROGRAM_DIST_SHADOW]->SetUniform1i(11, 1);
 		treeShaders[TREE_PROGRAM_DIST_SHADOW]->Disable();
+		treeShaders[TREE_PROGRAM_DIST_SHADOW]->Validate();
 	} else {
 		treeShaders[TREE_PROGRAM_NEAR_BASIC] = shaderHandler->CreateProgramObject("[TreeDrawer]", shaderNames[TREE_PROGRAM_NEAR_BASIC] + "ARB", true);
 		treeShaders[TREE_PROGRAM_NEAR_BASIC]->AttachShaderObject(shaderHandler->CreateShaderObject("ARB/treeNS.vp", "", GL_VERTEX_PROGRAM_ARB));

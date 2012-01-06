@@ -57,6 +57,12 @@ void CCannon::Init(void)
 	}
 	CWeapon::Init();
 
+	UpdateRange(range);
+}
+
+void CCannon::UpdateRange(float val)
+{
+	range = val;
 	// initialize range factor
 	rangeFactor = 1;
 	rangeFactor = (float)range/GetRange2D(0);
@@ -93,23 +99,14 @@ void CCannon::Update()
 	CWeapon::Update();
 }
 
-bool CCannon::TryTarget(const float3 &pos, bool userTarget, CUnit* unit)
+bool CCannon::TryTarget(const float3& pos, bool userTarget, CUnit* unit)
 {
 	if (!CWeapon::TryTarget(pos, userTarget, unit)) {
 		return false;
 	}
 
-	if (!weaponDef->waterweapon) {
-		if (unit) {
-			if (unit->isUnderWater) {
-				return false;
-			}
-		} else {
-			if (pos.y < 0) {
-				return false;
-			}
-		}
-	}
+	if (!weaponDef->waterweapon && TargetUnitOrPositionInWater(pos, unit))
+		return false;
 
 	if (projectileSpeed == 0) {
 		return true;
@@ -122,17 +119,17 @@ bool CCannon::TryTarget(const float3 &pos, bool userTarget, CUnit* unit)
 		return false;
 	}
 
-	float3 flatdir(dif.x, 0, dif.z);
-	float flatlength = flatdir.Length();
-	if (flatlength == 0) {
+	float3 flatDir(dif.x, 0, dif.z);
+	float flatLength = flatDir.Length();
+	if (flatLength == 0) {
 		return true;
 	}
-	flatdir /= flatlength;
+	flatDir /= flatLength;
 
 	const float linear = dir.y;
 	const float quadratic = gravity / (projectileSpeed * projectileSpeed) * 0.5f;
 	const float gc = ((collisionFlags & Collision::NOGROUND) == 0)?
-		ground->TrajectoryGroundCol(weaponMuzzlePos, flatdir, flatlength - 10, linear, quadratic):
+		ground->TrajectoryGroundCol(weaponMuzzlePos, flatDir, flatLength - 10, linear, quadratic):
 		-1.0f;
 
 	if (gc > 0.0f) {
@@ -142,13 +139,18 @@ bool CCannon::TryTarget(const float3 &pos, bool userTarget, CUnit* unit)
 	const float spread =
 		((accuracy + sprayAngle) * 0.6f) *
 		((1.0f - owner->limExperience * weaponDef->ownerExpAccWeight) * 0.9f);
+	const float modFlatLength = flatLength - 30.0f;
 
-	if (avoidFriendly && TraceRay::TestTrajectoryAllyCone(weaponMuzzlePos, flatdir,
-		flatlength - 30, dir.y, quadratic, spread, 3, owner->allyteam, owner)) {
+	if (avoidFriendly && TraceRay::TestTrajectoryCone(weaponMuzzlePos, flatDir, modFlatLength,
+		dir.y, quadratic, spread, 3, owner->allyteam, true, false, false, owner)) {
 		return false;
 	}
-	if (avoidNeutral && TraceRay::TestTrajectoryNeutralCone(weaponMuzzlePos, flatdir,
-		flatlength - 30, dir.y, quadratic, spread, 3, owner)) {
+	if (avoidNeutral && TraceRay::TestTrajectoryCone(weaponMuzzlePos, flatDir, modFlatLength,
+		dir.y, quadratic, spread, 3, owner->allyteam, false, true, false, owner )) {
+		return false;
+	}
+	if (avoidFeature && TraceRay::TestTrajectoryCone(weaponMuzzlePos, flatDir, modFlatLength,
+		dir.y, quadratic, spread, 3, owner->allyteam, false, false, true, owner)) {
 		return false;
 	}
 
@@ -181,7 +183,7 @@ void CCannon::FireImpl(void)
 	}
 
 	new CExplosiveProjectile(weaponMuzzlePos, dir * projectileSpeed, owner,
-		weaponDef, ttl, areaOfEffect, gravity);
+		weaponDef, ttl, damageAreaOfEffect, gravity);
 }
 
 void CCannon::SlowUpdate(void)
@@ -204,7 +206,9 @@ bool CCannon::AttackGround(float3 pos, bool userTarget)
 		// mostly prevents firing longer than max range using fps mode
 		pos.y = ground->GetHeightAboveWater(pos.x, pos.z);
 	}
-	return CWeapon::AttackGround(pos, userTarget);
+
+	// NOTE: this calls back into our derived TryTarget
+	return (CWeapon::AttackGround(pos, userTarget));
 }
 
 float3 CCannon::GetWantedDir(const float3& diff)

@@ -1,16 +1,14 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-
-#include "System/mmgr.h"
-
 #include "SelectedUnitsAI.h"
+
 #include "SelectedUnits.h"
-#include "System/NetProtocol.h"
-#include "Sim/Misc/GlobalSynced.h"
 #include "GlobalUnsynced.h"
+#include "Player.h"
 #include "PlayerHandler.h"
 #include "WaitCommandsAI.h"
 #include "Map/Ground.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/MoveTypes/MoveType.h"
@@ -18,6 +16,8 @@
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
+#include "System/NetProtocol.h"
+#include "System/mmgr.h"
 
 const int CMDPARAM_MOVE_X = 0;
 const int CMDPARAM_MOVE_Y = 1;
@@ -55,7 +55,7 @@ inline void CSelectedUnitsAI::AddUnitSetMaxSpeedCommand(CUnit* unit,
 	CCommandAI* cai = unit->commandAI;
 	if (cai->CanSetMaxSpeed()) {
 		Command c(CMD_SET_WANTED_MAX_SPEED, options);
-		c.AddParam(unit->maxSpeed);
+		c.AddParam(unit->moveType->GetMaxSpeed());
 		cai->GiveCommand(c, false);
 	}
 }
@@ -165,7 +165,7 @@ void CSelectedUnitsAI::GiveCommandNet(Command &c, int player)
 		CalculateGroupData(player, !!(c.options & SHIFT_KEY));
 
 		// use the vector from the middle of group to new pos as forward dir
-		const float3 pos(c.GetParam(0), c.GetParam(1), c.GetParam(3));
+		const float3 pos(c.GetParam(0), c.GetParam(1), c.GetParam(2));
 		float3 frontdir = pos - centerCoor;
 		frontdir.y = 0.0f;
 		frontdir.ANormalize();
@@ -279,11 +279,14 @@ void CSelectedUnitsAI::CalculateGroupData(int player, bool queueing) {
 			else if(unitPos.z > maxCoor.z)
 				maxCoor.z = unitPos.z;
 			sumCoor += unitPos;
-			if(unit->commandAI->CanSetMaxSpeed()) {
+
+			if (unit->commandAI->CanSetMaxSpeed()) {
 				mobileUnits++;
 				mobileSumCoor += unitPos;
-				const float maxSpeed = unit->maxSpeed;
-				if(maxSpeed < minMaxSpeed) {
+
+				const float maxSpeed = unit->moveType->GetMaxSpeed();
+
+				if (maxSpeed < minMaxSpeed) {
 					minMaxSpeed = maxSpeed;
 				}
 			}

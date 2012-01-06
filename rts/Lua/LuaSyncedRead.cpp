@@ -1,19 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include <set>
-#include <list>
-#include <map>
-#include <cctype>
-
-#include "System/mmgr.h"
-
 #include "LuaSyncedRead.h"
 
 #include "LuaInclude.h"
 
 #include "LuaHandle.h"
 #include "LuaHashString.h"
-//FIXME #include "LuaMetalMap.h"
+#include "LuaMetalMap.h"
 #include "LuaPathFinder.h"
 #include "LuaRules.h"
 #include "LuaRulesParams.h"
@@ -23,6 +16,7 @@
 #include "Game/GameSetup.h"
 #include "Game/Camera.h"
 #include "Game/GameHelper.h"
+#include "Game/Player.h"
 #include "Game/PlayerHandler.h"
 #include "Map/Ground.h"
 #include "Map/MapDamage.h"
@@ -40,9 +34,9 @@
 #include "Sim/Misc/QuadField.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/Wind.h"
-#include "Sim/MoveTypes/AirMoveType.h"
+#include "Sim/MoveTypes/StrafeAirMoveType.h"
 #include "Sim/MoveTypes/GroundMoveType.h"
-#include "Sim/MoveTypes/TAAirMoveType.h"
+#include "Sim/MoveTypes/HoverAirMoveType.h"
 #include "Sim/MoveTypes/ScriptMoveType.h"
 #include "Sim/MoveTypes/StaticMoveType.h"
 #include "Sim/Path/IPathManager.h"
@@ -71,6 +65,13 @@
 #include "System/FileSystem/VFSHandler.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/Util.h"
+#include "System/mmgr.h"
+
+#include <set>
+#include <list>
+#include <map>
+#include <cctype>
+
 
 using std::min;
 using std::max;
@@ -176,6 +177,8 @@ bool LuaSyncedRead::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(GetUnitsInCylinder);
 
 	REGISTER_LUA_CFUNC(GetFeaturesInRectangle);
+	REGISTER_LUA_CFUNC(GetFeaturesInSphere);
+	REGISTER_LUA_CFUNC(GetFeaturesInCylinder);
 	REGISTER_LUA_CFUNC(GetProjectilesInRectangle);
 
 	REGISTER_LUA_CFUNC(GetUnitNearestAlly);
@@ -226,6 +229,7 @@ bool LuaSyncedRead::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(GetUnitCollisionVolumeData);
 	REGISTER_LUA_CFUNC(GetUnitPieceCollisionVolumeData);
 
+	REGISTER_LUA_CFUNC(GetUnitBlocking);
 	REGISTER_LUA_CFUNC(GetUnitMoveTypeData);
 
 	REGISTER_LUA_CFUNC(GetUnitCommands);
@@ -298,8 +302,11 @@ bool LuaSyncedRead::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(GetCOBAllyTeamVar);
 	REGISTER_LUA_CFUNC(GetCOBGlobalVar);
 
-//FIXME	LuaMetalMap::PushEntries(L);
-	LuaPathFinder::PushEntries(L);
+	if (!LuaMetalMap::PushReadEntries(L))
+		return false;
+
+	if (!LuaPathFinder::PushEntries(L))
+		return false;
 
 	return true;
 }
@@ -512,35 +519,15 @@ static inline CUnit* ParseTypedUnit(lua_State* L, const char* caller, int index)
 static CProjectile* ParseProjectile(lua_State* L, const char* caller, int index)
 {
 	const int proID = luaL_checkint(L, index);
-	ProjectileMap::iterator it = ph->syncedProjectileIDs.find(proID);
-
-	if (it == ph->syncedProjectileIDs.end()) {
-		// not an assigned synced projectile ID
+	const ProjectileMapPair* pp = ph->GetMapPairBySyncedID(proID);
+	if (!pp) {
 		return NULL;
 	}
-
-	const ProjectileMapPair& pp = it->second;
-	return IsProjectileVisible(pp)? pp.first: NULL;
+	return IsProjectileVisible(*pp)? pp->first: NULL;
 }
 
 
 /******************************************************************************/
-
-static inline CPlayer* ParsePlayer(lua_State* L, const char* caller, int index)
-{
-	if (!lua_isnumber(L, index)) {
-		luaL_error(L, "Bad playerID type in %s()\n", caller);
-	}
-	const int playerID = lua_toint(L, index);
-	if (!playerHandler->IsValidPlayer(playerID)) {
-		luaL_error(L, "Bad playerID in %s\n", caller);
-	}
-	CPlayer* player = playerHandler->Player(playerID);
-	if (player == NULL) {
-		luaL_error(L, "Bad player in %s\n", caller);
-	}
-	return player;
-}
 
 
 static inline CTeam* ParseTeam(lua_State* L, const char* caller, int index)
@@ -553,23 +540,6 @@ static inline CTeam* ParseTeam(lua_State* L, const char* caller, int index)
 		luaL_error(L, "Bad teamID in %s\n", caller);
 	}
 	return teamHandler->Team(teamID);
-}
-
-
-static inline int ParseTeamID(lua_State* L, const char* caller, int index)
-{
-	if (!lua_isnumber(L, index)) {
-		luaL_error(L, "Bad teamID type in %s()\n", caller);
-	}
-	const int teamID = lua_toint(L, index);
-	if (!teamHandler->IsValidTeam(teamID)) {
-		luaL_error(L, "Bad teamID in %s\n", caller);
-	}
-	CTeam* team = teamHandler->Team(teamID);
-	if (team == NULL) {
-		luaL_error(L, "Bad teamID in %s\n", caller);
-	}
-	return teamID;
 }
 
 
@@ -2347,6 +2317,37 @@ int LuaSyncedRead::GetUnitNearestEnemy(lua_State* L)
 
 /******************************************************************************/
 
+inline void ProcessFeatures(lua_State* L, const vector<CFeature*>& features) {
+	const unsigned int featureCount = features.size();
+	unsigned int arrayIndex = 1;
+
+	lua_createtable(L, featureCount, 0);
+
+	if (ActiveReadAllyTeam() < 0) {
+		if (ActiveFullRead()) {
+			for (unsigned int i = 0; i < featureCount; i++) {
+				const CFeature* feature = features[i];
+
+				lua_pushnumber(L, arrayIndex++);
+				lua_pushnumber(L, feature->id);
+				lua_rawset(L, -3);
+			}
+		}
+	} else {
+		for (unsigned int i = 0; i < featureCount; i++) {
+			const CFeature* feature = features[i];
+
+			if (!IsFeatureVisible(feature)) {
+				continue;
+			}
+
+			lua_pushnumber(L, arrayIndex++);
+			lua_pushnumber(L, feature->id);
+			lua_rawset(L, -3);
+		}
+	}
+}
+
 int LuaSyncedRead::GetFeaturesInRectangle(lua_State* L)
 {
 	const float xmin = luaL_checkfloat(L, 1);
@@ -2358,38 +2359,36 @@ int LuaSyncedRead::GetFeaturesInRectangle(lua_State* L)
 	const float3 maxs(xmax, 0.0f, zmax);
 
 	const vector<CFeature*>& rectFeatures = qf->GetFeaturesExact(mins, maxs);
-	const unsigned int rectFeatureCount = rectFeatures.size();
-	unsigned int arrayIndex = 1;
-
-	lua_createtable(L, rectFeatureCount, 0);
-
-	if (ActiveReadAllyTeam() < 0) {
-		if (ActiveFullRead()) {
-			for (unsigned int i = 0; i < rectFeatureCount; i++) {
-				const CFeature* feature = rectFeatures[i];
-
-				lua_pushnumber(L, arrayIndex++);
-				lua_pushnumber(L, feature->id);
-				lua_rawset(L, -3);
-			}
-		}
-	} else {
-		for (unsigned int i = 0; i < rectFeatureCount; i++) {
-			const CFeature* feature = rectFeatures[i];
-
-			if (!IsFeatureVisible(feature)) {
-				continue;
-			}
-
-			lua_pushnumber(L, arrayIndex++);
-			lua_pushnumber(L, feature->id);
-			lua_rawset(L, -3);
-		}
-	}
-
+	ProcessFeatures(L, rectFeatures);
 	return 1;
 }
 
+int LuaSyncedRead::GetFeaturesInSphere(lua_State* L)
+{
+	const float x = luaL_checkfloat(L, 1);
+	const float y = luaL_checkfloat(L, 2);
+	const float z = luaL_checkfloat(L, 3);
+	const float rad = luaL_checkfloat(L, 4);
+
+	const float3 pos(x, y, z);
+
+	const vector<CFeature*>& sphFeatures = qf->GetFeaturesExact(pos, rad, true);
+	ProcessFeatures(L, sphFeatures);
+	return 1;
+}
+
+int LuaSyncedRead::GetFeaturesInCylinder(lua_State* L)
+{
+	const float x = luaL_checkfloat(L, 1);
+	const float z = luaL_checkfloat(L, 2);
+	const float rad = luaL_checkfloat(L, 3);
+
+	const float3 pos(x, 0, z);
+
+	const vector<CFeature*>& cylFeatures = qf->GetFeaturesExact(pos, rad, false);
+	ProcessFeatures(L, cylFeatures);
+	return 1;
+}
 
 int LuaSyncedRead::GetProjectilesInRectangle(lua_State* L)
 {
@@ -2474,17 +2473,16 @@ int LuaSyncedRead::GetUnitStates(lua_State* L)
 
 	const AMoveType* mt = unit->moveType;
 	if (mt) {
-		const CTAAirMoveType* taAirMove = dynamic_cast<const CTAAirMoveType*>(mt);
-		if (taAirMove) {
-			HSTR_PUSH_BOOL  (L, "autoland",        taAirMove->autoLand);
-			HSTR_PUSH_NUMBER(L, "autorepairlevel", taAirMove->repairBelowHealth);
-		}
-		else {
-			const CAirMoveType* airMove = dynamic_cast<const CAirMoveType*>(mt);
-			if (airMove) {
-				HSTR_PUSH_BOOL  (L, "autoland",        airMove->autoLand);
-				HSTR_PUSH_BOOL  (L, "loopbackattack",  airMove->loopbackAttack);
-				HSTR_PUSH_NUMBER(L, "autorepairlevel", airMove->repairBelowHealth);
+		const CHoverAirMoveType* hAMT = dynamic_cast<const CHoverAirMoveType*>(mt);
+		if (hAMT) {
+			HSTR_PUSH_BOOL  (L, "autoland",        hAMT->autoLand);
+			HSTR_PUSH_NUMBER(L, "autorepairlevel", hAMT->GetRepairBelowHealth());
+		} else {
+			const CStrafeAirMoveType* sAMT = dynamic_cast<const CStrafeAirMoveType*>(mt);
+			if (sAMT) {
+				HSTR_PUSH_BOOL  (L, "autoland",        sAMT->autoLand);
+				HSTR_PUSH_BOOL  (L, "loopbackattack",  sAMT->loopbackAttack);
+				HSTR_PUSH_NUMBER(L, "autorepairlevel", sAMT->GetRepairBelowHealth());
 			}
 		}
 	}
@@ -2976,7 +2974,7 @@ int LuaSyncedRead::GetUnitShieldState(lua_State* L)
 	const int idx = luaL_optint(L, 2, -1);
 
 	if (idx < 0 || idx >= unit->weapons.size()) {
-		shield = (CPlasmaRepulser*) unit->shieldWeapon;
+		shield = static_cast<CPlasmaRepulser*>(unit->shieldWeapon);
 	} else {
 		shield = dynamic_cast<CPlasmaRepulser*>(unit->weapons[idx]);
 	}
@@ -3159,44 +3157,13 @@ int LuaSyncedRead::GetUnitEstimatedPath(lua_State* L)
 		return 0;
 	}
 
-	const CGroundMoveType* gndMove =
-		dynamic_cast<const CGroundMoveType*>(unit->moveType);
-	if (gndMove == NULL) {
+	const CGroundMoveType* gmt = dynamic_cast<const CGroundMoveType*>(unit->moveType);
+
+	if (gmt == NULL) {
 		return 0;
 	}
 
-	if (gndMove->pathId == 0) {
-		return 0;
-	}
-
-	vector<float3> points;
-	vector<int>    starts;
-	pathManager->GetEstimatedPath(gndMove->pathId, points, starts);
-
-	const int pointCount = (int)points.size();
-
-	lua_newtable(L);
-	for (int i = 0; i < pointCount; i++) {
-		lua_pushnumber(L, i + 1);
-		lua_newtable(L); {
-			const float3& p = points[i];
-			lua_pushnumber(L, 1); lua_pushnumber(L, p.x); lua_rawset(L, -3);
-			lua_pushnumber(L, 2); lua_pushnumber(L, p.y); lua_rawset(L, -3);
-			lua_pushnumber(L, 3); lua_pushnumber(L, p.z); lua_rawset(L, -3);
-		}
-		lua_rawset(L, -3);
-	}
-
-	const int startCount = (int)starts.size();
-
-	lua_newtable(L);
-	for (int i = 0; i < startCount; i++) {
-		lua_pushnumber(L, i + 1);
-		lua_pushnumber(L, starts[i] + 1);
-		lua_rawset(L, -3);
-	}
-
-	return 2;
+	return (LuaPathFinder::PushPathNodes(L, gmt->pathId));
 }
 
 
@@ -3370,6 +3337,19 @@ int LuaSyncedRead::GetUnitDefDimensions(lua_State* L)
 }
 
 
+int LuaSyncedRead::GetUnitBlocking(lua_State *L)
+{
+	const CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	if (unit == NULL) {
+		return 0;
+	}
+
+	lua_pushboolean(L, unit->blocking);
+	lua_pushboolean(L, unit->crushable);
+	return 2;
+}
+
+
 int LuaSyncedRead::GetUnitMoveTypeData(lua_State *L)
 {
 	const CUnit* unit = ParseAllyUnit(L, __FUNCTION__, 1);
@@ -3380,16 +3360,15 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State *L)
 	AMoveType* amt = unit->moveType;
 
 	lua_newtable(L);
-	HSTR_PUSH_NUMBER(L, "maxSpeed", amt->maxSpeed * GAME_SPEED);
-	HSTR_PUSH_NUMBER(L, "maxWantedSpeed", amt->maxWantedSpeed * GAME_SPEED);
+	HSTR_PUSH_NUMBER(L, "maxSpeed", amt->GetMaxSpeed() * GAME_SPEED);
+	HSTR_PUSH_NUMBER(L, "maxWantedSpeed", amt->GetMaxWantedSpeed() * GAME_SPEED);
 	HSTR_PUSH_NUMBER(L, "goalx", amt->goalPos.x);
 	HSTR_PUSH_NUMBER(L, "goaly", amt->goalPos.y);
 	HSTR_PUSH_NUMBER(L, "goalz", amt->goalPos.z);
-	HSTR_PUSH_NUMBER(L, "padStatus", amt->padStatus);
-	HSTR_PUSH_NUMBER(L, "repairBelowHealth", amt->repairBelowHealth);
 
-	CGroundMoveType* groundmt = dynamic_cast<CGroundMoveType*>(unit->moveType);
-	if (groundmt) {
+	const CGroundMoveType* groundmt = dynamic_cast<CGroundMoveType*>(unit->moveType);
+
+	if (groundmt != NULL) {
 		HSTR_PUSH_STRING(L, "name", "ground");
 
 		HSTR_PUSH_NUMBER(L, "turnRate", groundmt->turnRate);
@@ -3402,30 +3381,37 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State *L)
 
 		HSTR_PUSH_NUMBER(L, "goalRadius", groundmt->goalRadius);
 
-		HSTR_PUSH_NUMBER(L, "waypointx", groundmt->waypoint.x);
-		HSTR_PUSH_NUMBER(L, "waypointy", groundmt->waypoint.y);
-		HSTR_PUSH_NUMBER(L, "waypointz", groundmt->waypoint.z);
-		HSTR_PUSH_NUMBER(L, "nextwaypointx", groundmt->nextWaypoint.x);
-		HSTR_PUSH_NUMBER(L, "nextwaypointy", groundmt->nextWaypoint.y);
-		HSTR_PUSH_NUMBER(L, "nextwaypointz", groundmt->nextWaypoint.z);
+		HSTR_PUSH_NUMBER(L, "currwaypointx", groundmt->currWayPoint.x);
+		HSTR_PUSH_NUMBER(L, "currwaypointy", groundmt->currWayPoint.y);
+		HSTR_PUSH_NUMBER(L, "currwaypointz", groundmt->currWayPoint.z);
+		HSTR_PUSH_NUMBER(L, "nextwaypointx", groundmt->nextWayPoint.x);
+		HSTR_PUSH_NUMBER(L, "nextwaypointy", groundmt->nextWayPoint.y);
+		HSTR_PUSH_NUMBER(L, "nextwaypointz", groundmt->nextWayPoint.z);
 
 		HSTR_PUSH_NUMBER(L, "requestedSpeed", groundmt->requestedSpeed);
 
 		HSTR_PUSH_NUMBER(L, "pathFailures", 0);
-		HSTR_PUSH_NUMBER(L, "floatOnWater", unit->floatOnWater);
 
 		return 1;
 	}
 
-	CTAAirMoveType* gunshipmt = dynamic_cast<CTAAirMoveType*>(unit->moveType);
-	if (gunshipmt) {
+	const AAirMoveType* aamt = dynamic_cast<AAirMoveType*>(unit->moveType);
+
+	if (aamt != NULL) {
+		HSTR_PUSH_NUMBER(L, "padStatus", aamt->GetPadStatus());
+		HSTR_PUSH_NUMBER(L, "repairBelowHealth", aamt->GetRepairBelowHealth());
+	}
+
+	const CHoverAirMoveType* hAMT = dynamic_cast<CHoverAirMoveType*>(unit->moveType);
+
+	if (hAMT != NULL) {
 		HSTR_PUSH_STRING(L, "name", "gunship");
 
-		HSTR_PUSH_NUMBER(L, "wantedHeight", gunshipmt->wantedHeight);
-		HSTR_PUSH_BOOL(L, "collide", gunshipmt->collide);
-		HSTR_PUSH_BOOL(L, "useSmoothMesh", gunshipmt->useSmoothMesh);
+		HSTR_PUSH_NUMBER(L, "wantedHeight", hAMT->wantedHeight);
+		HSTR_PUSH_BOOL(L, "collide", hAMT->collide);
+		HSTR_PUSH_BOOL(L, "useSmoothMesh", hAMT->useSmoothMesh);
 
-		switch (gunshipmt->aircraftState) {
+		switch (hAMT->aircraftState) {
 			case AAirMoveType::AIRCRAFT_LANDED:
 				HSTR_PUSH_STRING(L, "aircraftState", "landed");
 				break;
@@ -3446,44 +3432,45 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State *L)
 				break;
 		};
 
-		switch (gunshipmt->flyState) {
-			case CTAAirMoveType::FLY_CRUISING:
+		switch (hAMT->flyState) {
+			case CHoverAirMoveType::FLY_CRUISING:
 				HSTR_PUSH_STRING(L, "flyState", "cruising");
 				break;
-			case CTAAirMoveType::FLY_CIRCLING:
+			case CHoverAirMoveType::FLY_CIRCLING:
 				HSTR_PUSH_STRING(L, "flyState", "circling");
 				break;
-			case CTAAirMoveType::FLY_ATTACKING:
+			case CHoverAirMoveType::FLY_ATTACKING:
 				HSTR_PUSH_STRING(L, "flyState", "attacking");
 				break;
-			case CTAAirMoveType::FLY_LANDING:
+			case CHoverAirMoveType::FLY_LANDING:
 				HSTR_PUSH_STRING(L, "flyState", "landing");
 				break;
 		}
 
-		HSTR_PUSH_NUMBER(L, "goalDistance", gunshipmt->goalDistance);
+		HSTR_PUSH_NUMBER(L, "goalDistance", hAMT->goalDistance);
 
-		HSTR_PUSH_BOOL(L, "bankingAllowed", gunshipmt->bankingAllowed);
-		HSTR_PUSH_NUMBER(L, "currentBank", gunshipmt->currentBank);
-		HSTR_PUSH_NUMBER(L, "currentPitch", gunshipmt->currentPitch);
+		HSTR_PUSH_BOOL(L, "bankingAllowed", hAMT->bankingAllowed);
+		HSTR_PUSH_NUMBER(L, "currentBank", hAMT->currentBank);
+		HSTR_PUSH_NUMBER(L, "currentPitch", hAMT->currentPitch);
 
-		HSTR_PUSH_NUMBER(L, "turnRate", gunshipmt->turnRate);
-		HSTR_PUSH_NUMBER(L, "accRate", gunshipmt->accRate);
-		HSTR_PUSH_NUMBER(L, "decRate", gunshipmt->decRate);
-		HSTR_PUSH_NUMBER(L, "altitudeRate", gunshipmt->altitudeRate);
+		HSTR_PUSH_NUMBER(L, "turnRate", hAMT->turnRate);
+		HSTR_PUSH_NUMBER(L, "accRate", hAMT->accRate);
+		HSTR_PUSH_NUMBER(L, "decRate", hAMT->decRate);
+		HSTR_PUSH_NUMBER(L, "altitudeRate", hAMT->altitudeRate);
 
-		HSTR_PUSH_NUMBER(L, "brakeDistance", gunshipmt->brakeDistance);
-		HSTR_PUSH_BOOL(L, "dontLand", gunshipmt->dontLand);
-		HSTR_PUSH_NUMBER(L, "maxDrift", gunshipmt->maxDrift);
+		HSTR_PUSH_NUMBER(L, "brakeDistance", hAMT->brakeDistance);
+		HSTR_PUSH_BOOL(L, "dontLand", hAMT->dontLand);
+		HSTR_PUSH_NUMBER(L, "maxDrift", hAMT->maxDrift);
 
 		return 1;
 	}
 
-	CAirMoveType* airmt = dynamic_cast<CAirMoveType*>(unit->moveType);
-	if (airmt) {
+	const CStrafeAirMoveType* sAMT = dynamic_cast<CStrafeAirMoveType*>(unit->moveType);
+
+	if (sAMT != NULL) {
 		HSTR_PUSH_STRING(L, "name", "airplane");
 
-		switch (airmt->aircraftState) {
+		switch (sAMT->aircraftState) {
 			case AAirMoveType::AIRCRAFT_LANDED:
 				HSTR_PUSH_STRING(L, "aircraftState", "landed");
 				break;
@@ -3503,32 +3490,34 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State *L)
 				HSTR_PUSH_STRING(L, "aircraftState", "hovering");
 				break;
 		};
-		HSTR_PUSH_NUMBER(L, "wantedHeight", airmt->wantedHeight);
-		HSTR_PUSH_BOOL(L, "collide", airmt->collide);
-		HSTR_PUSH_BOOL(L, "useSmoothMesh", airmt->useSmoothMesh);
+		HSTR_PUSH_NUMBER(L, "wantedHeight", sAMT->wantedHeight);
+		HSTR_PUSH_BOOL(L, "collide", sAMT->collide);
+		HSTR_PUSH_BOOL(L, "useSmoothMesh", sAMT->useSmoothMesh);
 
-		HSTR_PUSH_NUMBER(L, "myGravity", airmt->myGravity);
+		HSTR_PUSH_NUMBER(L, "myGravity", sAMT->myGravity);
 
-		HSTR_PUSH_NUMBER(L, "maxBank", airmt->maxBank);
-		HSTR_PUSH_NUMBER(L, "maxPitch", airmt->maxBank);
-		HSTR_PUSH_NUMBER(L, "turnRadius", airmt->turnRadius);
+		HSTR_PUSH_NUMBER(L, "maxBank", sAMT->maxBank);
+		HSTR_PUSH_NUMBER(L, "maxPitch", sAMT->maxBank);
+		HSTR_PUSH_NUMBER(L, "turnRadius", sAMT->turnRadius);
 
-		HSTR_PUSH_NUMBER(L, "maxAcc", airmt->maxAcc);
-		HSTR_PUSH_NUMBER(L, "maxAileron", airmt->maxAileron);
-		HSTR_PUSH_NUMBER(L, "maxElevator", airmt->maxElevator);
-		HSTR_PUSH_NUMBER(L, "maxRudder", airmt->maxRudder);
+		HSTR_PUSH_NUMBER(L, "maxAcc", sAMT->maxAcc);
+		HSTR_PUSH_NUMBER(L, "maxAileron", sAMT->maxAileron);
+		HSTR_PUSH_NUMBER(L, "maxElevator", sAMT->maxElevator);
+		HSTR_PUSH_NUMBER(L, "maxRudder", sAMT->maxRudder);
 
 		return 1;
 	}
 
-	CStaticMoveType* staticmt = dynamic_cast<CStaticMoveType*>(unit->moveType);
-	if (staticmt) {
+	const CStaticMoveType* staticmt = dynamic_cast<CStaticMoveType*>(unit->moveType);
+
+	if (staticmt != NULL) {
 		HSTR_PUSH_STRING(L, "name", "static");
 		return 1;
 	}
 
-	CScriptMoveType* scriptmt = dynamic_cast<CScriptMoveType*>(unit->moveType);
-	if (scriptmt) {
+	const CScriptMoveType* scriptmt = dynamic_cast<CScriptMoveType*>(unit->moveType);
+
+	if (scriptmt != NULL) {
 		HSTR_PUSH_STRING(L, "name", "script");
 		return 1;
 	}
@@ -4584,11 +4573,14 @@ int LuaSyncedRead::Pos2BuildPos(lua_State* L)
 	if (ud == NULL) {
 		return 0;
 	}
+
 	const float3 pos(luaL_checkfloat(L, 2),
 	                 luaL_checkfloat(L, 3),
 	                 luaL_checkfloat(L, 4));
+	const int facing = luaL_optint(L, 5, FACING_SOUTH);
 
-	const float3 buildPos = helper->Pos2BuildPos(pos, ud, CLuaHandle::GetSynced(L));
+	const BuildInfo buildInfo(ud, pos, facing);
+	const float3 buildPos = helper->Pos2BuildPos(buildInfo, CLuaHandle::GetSynced(L));
 
 	lua_pushnumber(L, buildPos.x);
 	lua_pushnumber(L, buildPos.y);
@@ -4854,8 +4846,6 @@ int LuaSyncedRead::GetUnitPieceInfo(lua_State* L)
 
 	const S3DModelPiece& op = *localModel->pieces[piece]->original;
 	return ::GetUnitPieceInfo(L, op);
-
-	return 0;
 }
 
 

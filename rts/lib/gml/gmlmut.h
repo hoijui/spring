@@ -40,7 +40,7 @@ extern boost::mutex rflashmutex;
 extern boost::mutex rpiecemutex;
 extern boost::mutex rfeatmutex;
 extern boost::mutex drawmutex;
-extern boost::mutex recvmutex;
+extern boost::mutex scallmutex;
 extern boost::mutex ulbatchmutex;
 extern boost::mutex flbatchmutex;
 extern boost::mutex olbatchmutex;
@@ -55,6 +55,8 @@ extern boost::mutex blockmutex;
 extern boost::mutex tnummutex;
 extern boost::mutex ntexmutex;
 extern boost::mutex lodmutex;
+extern boost::mutex catmutex;
+extern boost::mutex grpchgmutex;
 
 #include <boost/thread/recursive_mutex.hpp>
 extern boost::recursive_mutex unitmutex;

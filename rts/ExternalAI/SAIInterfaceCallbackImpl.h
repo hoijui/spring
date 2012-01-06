@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _SAIINTERFACECALLBACKIMPL_H
-#define _SAIINTERFACECALLBACKIMPL_H
+#ifndef S_AI_INTERFACE_CALLBACK_IMPL_H
+#define S_AI_INTERFACE_CALLBACK_IMPL_H
 
 // Doc-comments for the functions in this header can be found in this file
 #include "Interface/SAIInterfaceCallback.h"
@@ -12,9 +12,14 @@ EXPORT(int              ) aiInterfaceCallback_Engine_AIInterface_ABIVersion_getW
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getMajor(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getMinor(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getPatchset(int UNUSED_interfaceId);
+EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getCommits(int UNUSED_interfaceId);
+EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getHash(int UNUSED_interfaceId);
+EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getBranch(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getAdditional(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getBuildTime(int UNUSED_interfaceId);
+EXPORT(bool             ) aiInterfaceCallback_Engine_Version_isRelease(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getNormal(int UNUSED_interfaceId);
+EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getSync(int UNUSED_interfaceId);
 EXPORT(const char*      ) aiInterfaceCallback_Engine_Version_getFull(int UNUSED_interfaceId);
 
 
@@ -52,4 +57,4 @@ int  aiInterfaceCallback_getInstanceFor(const CAIInterfaceLibraryInfo* info, str
 void aiInterfaceCallback_release(int interfaceId);
 #endif // defined __cplusplus && !defined BUILDING_AI
 
-#endif // _SAIINTERFACECALLBACKIMPL_H
+#endif // S_AI_INTERFACE_CALLBACK_IMPL_H

@@ -5,6 +5,7 @@
 #include "MetalMap.h"
 #include "ReadMap.h"
 #include "System/Config/ConfigHandler.h"
+#include "System/myMath.h"
 
 CONFIG(bool, MetalMapPalette).defaultValue(false);
 
@@ -50,8 +51,6 @@ CMetalMap::CMetalMap(const unsigned char* map, int _sizeX, int _sizeZ, float _me
 
 CMetalMap::~CMetalMap()
 {
-	extractionMap.clear();
-	metalMap.clear();
 }
 
 
@@ -92,6 +91,15 @@ float CMetalMap::GetMetalAmount(int x, int z)
 }
 
 
+void CMetalMap::SetMetalAmount(int x, int z, float m)
+{
+	ClampInt(x, 0, sizeX);
+	ClampInt(z, 0, sizeZ);
+
+	metalMap[(z * sizeX) + x] = (metalScale == 0.0f) ? 0 : Clamp((int)(m / metalScale), 0, 255);
+}
+
+
 float CMetalMap::RequestExtraction(int x, int z, float toDepth)
 {
 	ClampInt(x, 0, sizeX);
@@ -117,4 +125,13 @@ void CMetalMap::RemoveExtraction(int x, int z, float depth)
 	ClampInt(z, 0, sizeZ);
 
 	extractionMap[(z * sizeX) + x] -= depth;
+}
+
+
+int CMetalMap::GetMetalExtraction(int x, int z)
+{
+	ClampInt(x, 0, sizeX);
+	ClampInt(z, 0, sizeZ);
+
+	return extractionMap[(z * sizeX) + x];
 }

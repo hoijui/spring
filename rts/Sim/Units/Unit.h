@@ -9,6 +9,7 @@
 #endif
 
 #include <map>
+#include <list>
 #include <vector>
 #include <string>
 
@@ -41,7 +42,7 @@ class CTransportUnit;
 #define LOS_INLOS      (1 << 0)  // the unit is currently in the los of the allyteam
 #define LOS_INRADAR    (1 << 1)  // the unit is currently in radar from the allyteam
 #define LOS_PREVLOS    (1 << 2)  // the unit has previously been in los from the allyteam
-#define LOS_CONTRADAR  (1 << 3)  // the unit has continously been in radar since it was last inlos by the allyteam
+#define LOS_CONTRADAR  (1 << 3)  // the unit has continuously been in radar since it was last inlos by the allyteam
 
 // LOS mask bits  (masked bits are not automatically updated)
 #define LOS_INLOS_MASK     (1 << 8)   // do not update LOS_INLOS
@@ -51,7 +52,6 @@ class CTransportUnit;
 
 #define LOS_ALL_MASK_BITS \
 	(LOS_INLOS_MASK | LOS_INRADAR_MASK | LOS_PREVLOS_MASK | LOS_CONTRADAR_MASK)
-
 
 enum ScriptCloakBits { // FIXME -- not implemented
 	// always set to 0 if not enabled
@@ -84,9 +84,9 @@ public:
 	virtual void DoDamage(const DamageArray& damages, CUnit* attacker,
 	                      const float3& impulse, int weaponId = -1);
 	virtual void DoWaterDamage();
-	virtual void Kill(const float3& impulse);
+	virtual void Kill(const float3& impulse, bool crushKill);
 	virtual void AddImpulse(const float3&);
-	virtual void FinishedBuilding();
+	virtual void FinishedBuilding(bool postInit);
 
 	bool AttackGround(const float3& pos, bool wantManualFire, bool fpsMode = false);
 	bool AttackUnit(CUnit* unit, bool wantManualFire, bool fpsMode = false);
@@ -104,7 +104,8 @@ public:
 
 	void ForcedMove(const float3& newPos);
 	void ForcedSpin(const float3& newDir);
-	void SetDirectionFromHeading();
+	void SetHeadingFromDirection();
+
 	void EnableScriptMoveType();
 	void DisableScriptMoveType();
 
@@ -118,19 +119,6 @@ public:
 	}
 
 	void DependentDied(CObject* o);
-	enum DependenceType {
-		DEPENDENCE_ATTACKER,
-		DEPENDENCE_BUILD,
-		DEPENDENCE_BUILDER,
-		DEPENDENCE_CAPTURE,
-		DEPENDENCE_RECLAIM, 
-		DEPENDENCE_RESURRECT,
-		DEPENDENCE_TARGET,
-		DEPENDENCE_TERRAFORM,
-		DEPENDENCE_TRANSPORTEE,
-		DEPENDENCE_TRANSPORTER
-	};
-	virtual void DeleteDeathDependence(CObject* o, DependenceType dep);
 
 	void SetUserTarget(CUnit* target);
 	bool SetGroup(CGroup* group);
@@ -152,8 +140,8 @@ public:
 	void CalculateTerrainType();
 	void UpdateTerrainType();
 
-	void UpdateMidPos();
-	void MoveMidPos(const float3&);
+	void SetDirVectors(const CMatrix44f&);
+	void UpdateDirVectors(bool);
 
 	bool IsNeutral() const {
 		return neutral;
@@ -186,10 +174,6 @@ public:
 	LuaRulesParams::Params  modParams;
 	LuaRulesParams::HashMap modParamsMap; ///< name map for mod parameters
 
-	/// the forward direction of the unit
-	SyncedFloat3 frontdir;
-	SyncedFloat3 rightdir;
-	SyncedFloat3 updir;
 	/// if the updir is straight up or align to the ground vector
 	bool upright;
 
@@ -392,12 +376,8 @@ public:
 	bool activated;
 
 	inline CTransportUnit* GetTransporter() const {
-#if defined(USE_GML) && GML_ENABLE_SIM
-		// transporter may suddenly be changed to NULL by sim
-		return *(CTransportUnit * volatile *)&transporter;
-#else
-		return transporter;
-#endif
+		// In MT transporter may suddenly be changed to NULL by sim
+		return GML::SimEnabled() ? *(CTransportUnit * volatile *)&transporter : transporter;
 	}
 
 	bool crashing;
@@ -464,15 +444,10 @@ public:
 
 	UnitTrackStruct* myTrack;
 
-	std::list<CMissileProjectile*> incomingMissiles;
+	std::list<CMissileProjectile*> incomingMissiles; //FIXME make std::set?
 	int lastFlareDrop;
 
 	float currentFuel;
-
-	/// max speed of the unit
-	float maxSpeed;
-	/// max reverse speed (used only by ground units for now)
-	float maxReverseSpeed;
 
 	/// minimum alpha value for a texel to be drawn
 	float alphaThreshold;
@@ -502,10 +477,8 @@ public:
 	int lastDrawFrame;
 	boost::recursive_mutex lodmutex;
 #endif
-#if defined(USE_GML) && GML_ENABLE_SIM
-	unsigned lastUnitUpdate;
-#endif
 
+	unsigned lastUnitUpdate;
 
 protected:
 	void ChangeTeamReset();

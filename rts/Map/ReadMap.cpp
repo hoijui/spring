@@ -121,24 +121,6 @@ CReadMap::CReadMap():
 CReadMap::~CReadMap()
 {
 	delete metalMap;
-
-	typeMap.clear();
-	slopeMap.clear();
-
-	for (unsigned int n = 0; n < mipCenterHeightMaps.size(); n++) {
-		mipCenterHeightMaps[n].clear();
-	}
-
-	mipCenterHeightMaps.clear();
-	mipPointerHeightMaps.clear();
-	centerHeightMap.clear();
-	originalHeightMap.clear();
-	rawVertexNormals.clear();
-	visVertexNormals.clear();
-	faceNormalsSynced.clear();
-	faceNormalsUnsynced.clear();
-	centerNormalsSynced.clear();
-	centerNormalsUnsynced.clear();
 }
 
 
@@ -200,11 +182,12 @@ void CReadMap::Initialize()
 	}
 
 	slopeMap.resize(gs->hmapx * gs->hmapy);
-	rawVertexNormals.resize(gs->mapxp1 * gs->mapyp1);
 	visVertexNormals.resize(gs->mapxp1 * gs->mapyp1);
 
 	CalcHeightmapChecksum();
 	UpdateHeightMapSynced(0, 0, gs->mapx, gs->mapy);
+	//FIXME can't call that yet cause sky & skyLight aren't created yet (crashes in SMFReadMap.cpp)
+	//UpdateDraw(); 
 }
 
 
@@ -253,7 +236,7 @@ void CReadMap::UpdateDraw() {
 	for (ushmuIt = ushmu.begin(); ushmuIt != ushmu.end(); ++ushmuIt) {
 		UpdateHeightMapUnsynced(*ushmuIt);
 
-		const Rectangle rect(ushmuIt->x1, ushmuIt->y1, ushmuIt->x2, ushmuIt->y2);
+		const SRectangle rect(ushmuIt->x1, ushmuIt->y1, ushmuIt->x2, ushmuIt->y2);
 		eventHandler.UnsyncedHeightMapUpdate(rect);
 	}
 }
@@ -267,10 +250,12 @@ void CReadMap::UpdateHeightMapSynced(int x1, int z1, int x2, int z2)
 		return;
 	}
 
+	SCOPED_TIMER("ReadMap::UpdateHeightMapSynced");
+
 	const float* heightmapSynced = GetCornerHeightMapSynced();
 
-	x1 = std::max(           0, x1 - 1);
-	z1 = std::max(           0, z1 - 1);
+	x1 = std::max(         0, x1 - 1);
+	z1 = std::max(         0, z1 - 1);
 	x2 = std::min(gs->mapxm1, x2 + 1);
 	z2 = std::min(gs->mapym1, z2 + 1);
 
@@ -305,9 +290,9 @@ void CReadMap::UpdateHeightMapSynced(int x1, int z1, int x2, int z2)
 		}
 	}
 
-	const int decy = std::max(           0, z1 - 1);
+	const int decy = std::max(         0, z1 - 1);
 	const int incy = std::min(gs->mapym1, z2 + 1);
-	const int decx = std::max(           0, x1 - 1);
+	const int decx = std::max(         0, x1 - 1);
 	const int incx = std::min(gs->mapxm1, x2 + 1);
 
 	//! create the surface normals

@@ -14,6 +14,7 @@
 #include "LuaRules.h" // for MAX_LUA_COB_ARGS
 #include "LuaHandleSynced.h"
 #include "LuaHashString.h"
+#include "LuaMetalMap.h"
 #include "LuaSyncedMoveCtrl.h"
 #include "LuaUtils.h"
 #include "Game/Game.h"
@@ -22,7 +23,6 @@
 #include "Game/GameHelper.h"
 #include "Game/PlayerHandler.h"
 #include "Game/SelectedUnits.h"
-#include "Sim/Misc/Team.h"
 #include "Map/Ground.h"
 #include "Map/MapDamage.h"
 #include "Map/MapInfo.h"
@@ -35,10 +35,10 @@
 #include "Sim/Misc/DamageArray.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/SmoothHeightMesh.h"
+#include "Sim/Misc/Team.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/QuadField.h"
-#include "Sim/MoveTypes/AirMoveType.h"
-#include "Sim/MoveTypes/TAAirMoveType.h"
+#include "Sim/MoveTypes/AAirMoveType.h"
 #include "Sim/Path/IPathManager.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/Projectile.h"
@@ -155,6 +155,7 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(SetUnitMetalExtraction);
 	REGISTER_LUA_CFUNC(SetUnitBuildSpeed);
 	REGISTER_LUA_CFUNC(SetUnitBlocking);
+	REGISTER_LUA_CFUNC(SetUnitCrashing);
 	REGISTER_LUA_CFUNC(SetUnitShieldState);
 	REGISTER_LUA_CFUNC(SetUnitFlanking);
 	REGISTER_LUA_CFUNC(SetUnitTravel);
@@ -246,13 +247,14 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(SetExperienceGrade);
 
 
-	if (!LuaSyncedMoveCtrl::PushMoveCtrl(L)) {
+	if (!LuaSyncedMoveCtrl::PushMoveCtrl(L))
 		return false;
-	}
 
-	if (!CLuaUnitScript::PushEntries(L)) {
+	if (!CLuaUnitScript::PushEntries(L))
 		return false;
-	}
+
+	if (!LuaMetalMap::PushCtrlEntries(L))
+		return false;
 
 	return true;
 }
@@ -359,6 +361,11 @@ int LuaSyncedCtrl::KillTeam(lua_State* L)
 {
 	const int teamID = luaL_checkint(L, 1);
 	if (!teamHandler->IsValidTeam(teamID)) {
+		return 0;
+	}
+	if (teamID == teamHandler->GaiaTeamID()) {
+		//FIXME either we disallow it here or it needs modifications in GameServer.cpp (it creates a `teams` vector w/o gaia)
+		//  possible fix would be to always create the Gaia team (currently it's conditional on gs->useLuaGaia)
 		return 0;
 	}
 	CTeam* team = teamHandler->Team(teamID);
@@ -1134,8 +1141,9 @@ int LuaSyncedCtrl::SetUnitHealth(lua_State* L)
 				}
 				else if (key == "build") {
 					unit->buildProgress = value;
-					if (unit->beingBuilt && (value >= 1.0f)) {
-						unit->FinishedBuilding();
+
+					if (unit->buildProgress >= 1.0f) {
+						unit->FinishedBuilding(false);
 					}
 				}
 			}
@@ -1155,10 +1163,7 @@ int LuaSyncedCtrl::SetUnitMaxHealth(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	unit->maxHealth = luaL_checkfloat(L, 2);
-	if (unit->maxHealth <= 0.0f) {
-		unit->maxHealth = 1.0f;
-	}
+	unit->maxHealth = std::max(0.1f, luaL_checkfloat(L, 2));
 
 	if (unit->health > unit->maxHealth) {
 		unit->health = unit->maxHealth;
@@ -1211,7 +1216,7 @@ static int SetSingleUnitWeaponState(lua_State* L, CWeapon* weapon, int index)
 		weapon->sprayAngle = value;
 	}
 	else if (key == "range") {
-		weapon->range = value;
+		weapon->UpdateRange(value);
 	}
 	else if (key == "projectileSpeed") {
 		weapon->projectileSpeed = value;
@@ -1511,14 +1516,13 @@ int LuaSyncedCtrl::SetUnitBlocking(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	if (!lua_isboolean(L, 2)) {
-		luaL_error(L, "Incorrect arguments to SetUnitBlocking()");
-	}
 
-	if (lua_toboolean(L, 2)) {
-		unit->Block();
-	} else {
-		unit->UnBlock();
+	if (lua_isboolean(L, 2)) {
+		if (lua_toboolean(L, 2)) {
+			unit->Block();
+		} else {
+			unit->UnBlock();
+		}
 	}
 
 	if (lua_isboolean(L, 3)) {
@@ -1532,7 +1536,35 @@ int LuaSyncedCtrl::SetUnitBlocking(lua_State* L)
 		unit->Block();
 	}
 
+	unit->crushable = luaL_optboolean(L, 4, unit->crushable);
 	return 0;
+}
+
+
+int LuaSyncedCtrl::SetUnitCrashing(lua_State* L) {
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+
+	if (unit == NULL) {
+		return 0;
+	}
+
+	AAirMoveType* amt = dynamic_cast<AAirMoveType*>(unit->moveType);
+
+	if (amt != NULL) {
+		const bool crash = (lua_isboolean(L, 2) && lua_toboolean(L, 2));
+		const AAirMoveType::AircraftState state = crash?
+			AAirMoveType::AIRCRAFT_CRASHING:
+			AAirMoveType::AIRCRAFT_FLYING;
+
+		// note: this really only makes sense to call
+		// once, passing true for the second argument
+		amt->SetState(state);
+		lua_pushboolean(L, true);
+	} else {
+		lua_pushboolean(L, false);
+	}
+
+	return 1;
 }
 
 
@@ -1546,7 +1578,7 @@ int LuaSyncedCtrl::SetUnitShieldState(lua_State* L)
 	int args = lua_gettop(L);
 	int arg = 2;
 
-	CPlasmaRepulser* shield = (CPlasmaRepulser*) unit->shieldWeapon;
+	CPlasmaRepulser* shield = static_cast<CPlasmaRepulser*>(unit->shieldWeapon);
 	if (lua_isnumber(L, 2) && args > 2) {
 		arg++;
 		const int idx = luaL_optint(L, 2, -1);
@@ -1688,9 +1720,9 @@ int LuaSyncedCtrl::SetUnitCollisionVolumeData(lua_State* L)
 	const float3 scales(xs, ys, zs);
 	const float3 offsets(xo, yo, zo);
 
-	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES  ) { return 0; }
-	if (tType >= CollisionVolume::COLVOL_NUM_HITTESTS) { return 0; }
-	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES    ) { return 0; }
+	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES)   { luaL_argerror(L,  8, "invalid vType"); }
+	if (tType >= CollisionVolume::COLVOL_NUM_HITTESTS) { luaL_argerror(L,  9, "invalid tType"); }
+	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES  )   { luaL_argerror(L, 10, "invalid pAxis"); }
 
 	unit->collisionVolume->Init(scales, offsets, vType, tType, pAxis);
 	return 0;
@@ -1700,32 +1732,48 @@ int LuaSyncedCtrl::SetUnitPieceCollisionVolumeData(lua_State* L)
 {
 	const int argc = lua_gettop(L);
 
-	if ((argc != 11) && (argc != 14)) {
-		return 0;
+	// before 83 this function had additional arguments (that affect all units with the same unitdef)
+	// those arguments were removed, still the syntax is still supported. Only the values of the additional
+	// arguments are ignored!
+	if ((argc != 3) && (argc != 11) && (argc != 14)) {
+		luaL_error(L, "Incorrect arguments to SetUnitPieceCollisionVolumeData()");
 	}
 
+	// 1st argument: unitid
 	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
 	if (unit == NULL) {
+		//luaL_argerror(L, 1, "invalid unitid");
 		return 0;
 	}
 
 	LocalModel* localModel = unit->localmodel;
 
+	// 2nd argument: piece index
 	const int  pieceIndex = luaL_checkint(L, 2);
-	bool enableLocal      = lua_toboolean(L, 3);
-	int arg = 4;
-	if (argc == 14) {
-		//! old syntax had 3 additional arguments that were dropped now
-		//! so skip 3rd, 4th & 6th argument
-		enableLocal = lua_toboolean(L, 5);
-		arg = 7;
-	}
-
 	if (pieceIndex < 0 || pieceIndex >= localModel->pieces.size()) {
-		return 0;
+		luaL_argerror(L, 2, "invalid piece index");
 	}
 
 	LocalModelPiece* lmp = localModel->pieces[pieceIndex];
+
+	// 3rd/5th argument: enable/disable colvol
+	bool enable = lua_toboolean(L, 3);
+	int arg = 4;
+	if (argc == 14) {
+		// old syntax had 3 additional arguments that were dropped now
+		// so skip 3rd, 4th & 6th argument
+		enable = lua_toboolean(L, 5);
+		arg = 7;
+	}
+	if (!enable) {
+		lmp->GetCollisionVolume()->Disable();
+		return 0;
+	}
+
+	// n-th arguments: colvol data
+	if ((argc != 11) && (argc != 14)) {
+		luaL_error(L, "Incorrect arguments to SetUnitPieceCollisionVolumeData()");
+	}
 
 	const float xs  = luaL_checkfloat(L, arg++);
 	const float ys  = luaL_checkfloat(L, arg++);
@@ -1740,16 +1788,12 @@ int LuaSyncedCtrl::SetUnitPieceCollisionVolumeData(lua_State* L)
 	const float3 scales(xs, ys, zs);
 	const float3 offset(xo, yo, zo);
 
-	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES) { return 0; }
-	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES  ) { return 0; }
+	if (vType >= CollisionVolume::COLVOL_NUM_SHAPES) { luaL_argerror(L, arg - 2, "invalid vType"); }
+	if (pAxis >= CollisionVolume::COLVOL_NUM_AXES  ) { luaL_argerror(L, arg - 1, "invalid pAxis"); }
 
-	//! affects this unit only
-	if (enableLocal) {
-		lmp->GetCollisionVolume()->Init(scales, offset, vType, tType, pAxis);
-		lmp->GetCollisionVolume()->Enable();
-	} else {
-		lmp->GetCollisionVolume()->Disable();
-	}
+	// finish
+	lmp->GetCollisionVolume()->Init(scales, offset, vType, tType, pAxis);
+	lmp->GetCollisionVolume()->Enable();
 
 	return 0;
 }
@@ -1816,7 +1860,7 @@ int LuaSyncedCtrl::SetUnitMoveGoal(lua_State* L)
 									 luaL_checkfloat(L, 3),
 									 luaL_checkfloat(L, 4));
 	const float radius = luaL_optfloat(L, 5, 0.0f);
-	const float speed  = luaL_optfloat(L, 6, unit->maxSpeed * 2.0f);
+	const float speed  = luaL_optfloat(L, 6, unit->moveType->GetMaxSpeed());
 
 	unit->moveType->StartMoving(pos, radius, speed);
 
@@ -1830,15 +1874,19 @@ int LuaSyncedCtrl::SetUnitPhysics(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	float3& pos = unit->pos;
+
+	float3  pos;
+	float3  rot;
+	float3& vel = unit->speed;
+
 	pos.x = luaL_checknumber(L, 2);
 	pos.y = luaL_checknumber(L, 3);
 	pos.z = luaL_checknumber(L, 4);
-	float3& vel = unit->speed;
+
 	vel.x = luaL_checknumber(L, 5);
 	vel.y = luaL_checknumber(L, 6);
 	vel.z = luaL_checknumber(L, 7);
-	float3  rot;
+
 	rot.x = luaL_checknumber(L, 8);
 	rot.y = luaL_checknumber(L, 9);
 	rot.z = luaL_checknumber(L, 10);
@@ -1847,19 +1895,11 @@ int LuaSyncedCtrl::SetUnitPhysics(lua_State* L)
 	matrix.RotateZ(rot.z);
 	matrix.RotateX(rot.x);
 	matrix.RotateY(rot.y);
-	unit->rightdir.x = matrix[ 0];
-	unit->rightdir.y = matrix[ 1];
-	unit->rightdir.z = matrix[ 2];
-	unit->updir.x    = matrix[ 4];
-	unit->updir.y    = matrix[ 5];
-	unit->updir.z    = matrix[ 6];
-	unit->frontdir.x = matrix[ 8];
-	unit->frontdir.y = matrix[ 9];
-	unit->frontdir.z = matrix[10];
 
-	const shortint2 HandP = GetHAndPFromVector(unit->frontdir);
-	unit->heading = HandP.x;
-
+	unit->Move3D(pos, false);
+	unit->SetDirVectors(matrix);
+	unit->UpdateMidPos();
+	unit->SetHeadingFromDirection();
 	unit->ForcedMove(pos);
 	return 0;
 }
@@ -1910,19 +1950,10 @@ int LuaSyncedCtrl::SetUnitRotation(lua_State* L)
 	matrix.RotateX(rot.x);
 	matrix.RotateY(rot.y);
 
-	unit->rightdir.x = -matrix[ 0];
-	unit->rightdir.y = -matrix[ 1];
-	unit->rightdir.z = -matrix[ 2];
-	unit->updir.x    =  matrix[ 4];
-	unit->updir.y    =  matrix[ 5];
-	unit->updir.z    =  matrix[ 6];
-	unit->frontdir.x =  matrix[ 8];
-	unit->frontdir.y =  matrix[ 9];
-	unit->frontdir.z =  matrix[10];
-
-	unit->heading = GetHeadingFromVector(unit->frontdir.x, unit->frontdir.z);
+	unit->SetDirVectors(matrix);
+	unit->UpdateMidPos();
+	unit->SetHeadingFromDirection();
 	unit->ForcedMove(unit->pos);
-
 	return 0;
 }
 

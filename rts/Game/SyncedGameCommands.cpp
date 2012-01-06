@@ -1,11 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-
 #include "SyncedGameCommands.h"
+
 #include "Action.h"
 #include "Game.h"
 #include "GlobalUnsynced.h"
 #include "InMapDraw.h"
+#include "Player.h"
 #include "PlayerHandler.h"
 #include "SelectedUnits.h"
 #include "SyncedActionExecutor.h"
@@ -15,13 +16,14 @@
 
 #include "Lua/LuaGaia.h"
 #include "Lua/LuaRules.h"
+#include "Lua/LuaUI.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Units/UnitLoader.h"
 #include "Sim/Units/Unit.h"
-#include "UI/LuaUI.h"
 #include "System/FileSystem/SimpleParser.h"
 #include "System/Log/ILog.h"
 #include "System/Util.h"
@@ -179,11 +181,11 @@ public:
 
 class ReloadCegsActionExecutor : public ISyncedActionExecutor {
 public:
-	ReloadCegsActionExecutor() : ISyncedActionExecutor("ReloadCegs",
-			"Reloads Ceg scripts", true) {}
+	ReloadCegsActionExecutor() : ISyncedActionExecutor("ReloadCEGs",
+			"Reloads CEG scripts", true) {}
 
 	void Execute(const SyncedAction& action) const {
-		game->ReloadCEGs(action.GetArgs());
+		explGenHandler->ReloadGenerators(action.GetArgs());
 	}
 };
 
@@ -220,7 +222,7 @@ public:
 class LuaRulesActionExecutor : public ISyncedActionExecutor {
 public:
 	LuaRulesActionExecutor() : ISyncedActionExecutor("LuaRules",
-			"Allows to reload or disable Lua-rules, or alternatively to send"
+			"Allows one to reload or disable Lua-rules, or alternatively to send"
 			" a chat message to Lua-rules") {}
 
 	void Execute(const SyncedAction& action) const {
@@ -255,7 +257,7 @@ public:
 class LuaGaiaActionExecutor : public ISyncedActionExecutor {
 public:
 	LuaGaiaActionExecutor() : ISyncedActionExecutor("LuaGaia",
-			"Allows to reload or disable Lua-Gaia, or alternatively to send"
+			"Allows one to reload or disable Lua-Gaia, or alternatively to send"
 			" a chat message to Lua-Gaia") {}
 
 	void Execute(const SyncedAction& action) const {
@@ -295,7 +297,7 @@ public:
 class DesyncActionExecutor : public ISyncedActionExecutor {
 public:
 	DesyncActionExecutor() : ISyncedActionExecutor("Desync",
-			"Allows to create an artificial desync of the local client with"
+			"Allows one to create an artificial desync of the local client with"
 			" the rest of the participating hosts", true) {}
 
 	void Execute(const SyncedAction& action) const {
@@ -341,28 +343,37 @@ public:
 class TakeActionExecutor : public ISyncedActionExecutor {
 public:
 	TakeActionExecutor() : ISyncedActionExecutor("Take",
-			"Transfers all units of allied teams without active controller to"
-			" the issuing players team") {}
+			"Transfers all units of allied teams without any "
+			"active players to the team of the issuing player") {}
 
 	void Execute(const SyncedAction& action) const {
-		if (!playerHandler->Player(action.GetPlayerID())->spectator || gs->cheatEnabled) {
-			const int sendTeam = playerHandler->Player(action.GetPlayerID())->team;
-			for (int a = 0; a < teamHandler->ActiveTeams(); ++a) {
-				if (teamHandler->AlliedTeams(a, sendTeam)) {
-					bool hasPlayer = false;
-					for (int b = 0; b < playerHandler->ActivePlayers(); ++b) {
-						if (playerHandler->Player(b)->active
-								&& (playerHandler->Player(b)->team == a)
-								&& !playerHandler->Player(b)->spectator)
-						{
-							hasPlayer = true;
-							break;
-						}
-					}
-					if (!hasPlayer) {
-						teamHandler->Team(a)->GiveEverythingTo(sendTeam);
-					}
-				}
+		const CPlayer* actionPlayer = playerHandler->Player(action.GetPlayerID());
+		const bool allowAction = (game->playing && (!actionPlayer->spectator || gs->cheatEnabled));
+
+		if (!allowAction) {
+			return;
+		}
+
+		for (int a = 0; a < teamHandler->ActiveTeams(); ++a) {
+			if (!teamHandler->AlliedTeams(a, actionPlayer->team)) {
+				continue;
+			}
+
+			bool hasPlayer = false;
+
+			for (int b = 0; b < playerHandler->ActivePlayers(); ++b) {
+				const CPlayer* teamPlayer = playerHandler->Player(b);
+
+				if (!teamPlayer->active) { continue; }
+				if (teamPlayer->spectator) { continue; }
+				if (teamPlayer->team != a) { continue; }
+
+				hasPlayer = true;
+				break;
+			}
+
+			if (!hasPlayer) {
+				teamHandler->Team(a)->GiveEverythingTo(actionPlayer->team);
 			}
 		}
 	}

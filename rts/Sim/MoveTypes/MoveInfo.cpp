@@ -30,7 +30,9 @@ CR_REG_METADATA(MoveData, (
 	CR_ENUM_MEMBER(terrainClass),
 
 	CR_MEMBER(xsize),
+	CR_MEMBER(xsizeh),
 	CR_MEMBER(zsize),
+	CR_MEMBER(zsizeh),
 	CR_MEMBER(depth),
 	CR_MEMBER(maxSlope),
 	CR_MEMBER(slopeMod),
@@ -66,7 +68,8 @@ CMoveInfo* moveinfo;
 static float DegreesToMaxSlope(float degrees)
 {
 	const float deg = Clamp(degrees, 0.0f, 60.0f) * 1.5f;
-	const float rad = deg * (PI / 180.0f);
+	static const float degToRad = PI / 180.0f; // Prevent MSVC from inlining stuff that would break the PE checksum compatibility between debug and release
+	const float rad = deg * degToRad;
 
 	return (1.0f - cos(rad));
 }
@@ -178,6 +181,23 @@ CMoveInfo::CMoveInfo()
 		md->zsize = zsize * scale;
 		md->xsize -= ((md->xsize & 1)? 0: 1);
 		md->zsize -= ((md->zsize & 1)? 0: 1);
+		// precalculated data for MoveMath
+		md->xsizeh = md->xsize >> 1;
+		md->zsizeh = md->zsize >> 1;
+		assert((md->xsize & 1) == 1);
+		assert((md->zsize & 1) == 1);
+
+		//  <maxSlope> ranges from 0.0 to 60 * 1.5 degrees, ie. from 0.0 to
+		//  0.5 * PI radians, ie. from 1.0 - cos(0.0) to 1.0 - cos(0.5 * PI)
+		//  = [0, 1] --> DEFAULT <slopeMod> values range from (4 / 0.001) to
+		//  (4 / 1.001) = [4000.0, 3.996]
+		//
+		// speedMod values for a terrain-square slope in [0, 1] are given by
+		// (1.0 / (1.0 + slope * slopeMod)) and therefore have a MAXIMUM at
+		// <slope=0, slopeMod=...> and a MINIMUM at <slope=1, slopeMod=4000>
+		// (of 1.0 / (1.0 + 0.0 * ...) = 1.0 and 1.0 / (1.0 + 1.0 * 4000.0)
+		// = 0.00025 respectively)
+		//
 		md->slopeMod = moveTable.GetFloat("slopeMod", 4.0f / (md->maxSlope + 0.001f));
 
 		const unsigned int checksum =

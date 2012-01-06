@@ -7,5 +7,10 @@ IAudioChannel::IAudioChannel()
 	, enabled(true)
 	, emmitsPerFrame(1000)
 	, emmitsThisFrame(0)
+	, maxConcurrentSources(1024)
+{
+}
+
+IAudioChannel::~IAudioChannel()
 {
 }

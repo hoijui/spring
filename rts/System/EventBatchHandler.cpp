@@ -120,9 +120,7 @@ void EventBatchHandler::UpdateObjects() {
 }
 
 void EventBatchHandler::LoadedModelRequested() {
-#if defined(USE_GML) && GML_ENABLE_SIM && GML_SHARE_LISTS 
 	// Make sure the requested model is available to the calling thread
-	if (!Threading::IsSimThread()) 
+	if (GML::SimEnabled() && GML::ShareLists() && !GML::IsSimThread()) 
 		texturehandlerS3O->UpdateDraw();
-#endif
 }

@@ -7,12 +7,10 @@
 
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "Game/GameSetup.h"
-#include "Lua/LuaGaia.h"
-#include "Lua/LuaRules.h"
-#include "Sim/Misc/Team.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Misc/GlobalConstants.h"
 #include "System/Util.h"
+#include "System/Log/FramePrefixer.h"
 
 
 /**
@@ -81,6 +79,8 @@ CGlobalSynced::CGlobalSynced()
 	tempNum = 2;
 	useLuaGaia = true;
 
+	log_framePrefixer_setFrameNumReference(&frameNum);
+
 	teamHandler = new CTeamHandler();
 }
 
@@ -88,6 +88,8 @@ CGlobalSynced::CGlobalSynced()
 CGlobalSynced::~CGlobalSynced()
 {
 	SafeDelete(teamHandler);
+
+	log_framePrefixer_setFrameNumReference(NULL);
 }
 
 

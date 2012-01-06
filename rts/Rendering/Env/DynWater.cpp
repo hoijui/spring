@@ -19,13 +19,23 @@
 #include "Rendering/Env/ISky.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/Bitmap.h"
-#include "Sim/Units/UnitHandler.h"
+#include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
-#include "System/LogOutput.h"
+#include "System/Log/ILog.h"
 #include "System/bitops.h"
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
+
+#define LOG_SECTION_DYN_WATER "DynWater"
+LOG_REGISTER_SECTION_GLOBAL(LOG_SECTION_DYN_WATER)
+
+// use the specific section for all LOG*() calls in this source file
+#ifdef LOG_SECTION_CURRENT
+	#undef LOG_SECTION_CURRENT
+#endif
+#define LOG_SECTION_CURRENT LOG_SECTION_DYN_WATER
+
 
 #define W_SIZE 5
 #define WF_SIZE 5120
@@ -37,7 +47,7 @@
 */
 CDynWater::CDynWater()
 	: dwGroundRefractVP(0)
-	, dwGroundReflectIVP(0) 
+	, dwGroundReflectIVP(0)
 	, camPosX(0)
 	, camPosZ(0)
 {
@@ -46,7 +56,6 @@ CDynWater::CDynWater()
 	}
 
 	lastWaveFrame = 0;
-	noWakeProjectiles = true;
 	firstDraw = true;
 	drawSolid = true;
 	camPosBig = float3(2048, 0, 2048);
@@ -447,7 +456,7 @@ void CDynWater::DrawReflection(CGame* game)
 	camera->forward.y *= -1.0f;
 	camera->pos.y *= -1.0f;
 	camera->pos.y += 0.2f;
-	camera->Update(false);
+	camera->Update();
 	reflectRight = camera->right;
 	reflectUp = camera->up;
 	reflectForward = camera->forward;
@@ -474,12 +483,12 @@ void CDynWater::DrawReflection(CGame* game)
 
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 		gd->SetupReflDrawPass();
-		gd->Draw(true, false);
+		gd->Draw(DrawPass::WaterReflection);
 		gd->SetupBaseDrawPass();
 
 	glClipPlane(GL_CLIP_PLANE2 ,plane);
 
-	gd->Draw(true);
+	gd->Draw(DrawPass::WaterReflection);
 
 	shadowHandler->shadowsLoaded = shadowsLoaded;
 
@@ -504,15 +513,15 @@ void CDynWater::DrawReflection(CGame* game)
 //	delete camera;
 //	camera = realCam;
 	camera->~CCamera();
-	new (camera) CCamera(*(CCamera *)realCam);
+	new (camera) CCamera(*(reinterpret_cast<CCamera*>(realCam)));
 
-	camera->Update(false);
+	camera->Update();
 }
 
 void CDynWater::DrawRefraction(CGame* game)
 {
 	drawRefraction = true;
-	camera->Update(false);
+	camera->Update();
 
 	refractRight = camera->right;
 	refractUp = camera->up;
@@ -534,7 +543,7 @@ void CDynWater::DrawRefraction(CGame* game)
 
 	CBaseGroundDrawer* gd = readmap->GetGroundDrawer();
 		gd->SetupRefrDrawPass();
-		gd->Draw(false, false);
+		gd->Draw(DrawPass::WaterRefraction);
 		gd->SetupBaseDrawPass();
 
 	glEnable(GL_CLIP_PLANE2);
@@ -614,7 +623,7 @@ void CDynWater::DrawWaves()
 
 	status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready2");
+		LOG_L(L_WARNING, "FBO not ready - 2");
 	}
 
 	glActiveTextureARB(GL_TEXTURE0_ARB);
@@ -657,7 +666,7 @@ void CDynWater::DrawWaves()
 
 	status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready1");
+		LOG_L(L_WARNING, "FBO not ready - 1");
 	}
 
 
@@ -713,7 +722,7 @@ void CDynWater::DrawWaves()
 
 	status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready3");
+		LOG_L(L_WARNING, "FBO not ready - 3");
 	}
 
 	glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, waveNormalFP);
@@ -773,7 +782,7 @@ void CDynWater::DrawHeightTex()
 
 	const int status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready4");
+		LOG_L(L_WARNING, "FBO not ready - 4");
 	}
 
 	glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, waveCopyHeightFP);
@@ -814,10 +823,6 @@ void CDynWater::DrawHeightTex()
 #define WSQUARE_SIZE W_SIZE
 
 static CVertexArray* va;
-static inline void DrawVertexA(int x, int y)
-{
-	va->AddVertex0(float3(x*WSQUARE_SIZE, 0, y*WSQUARE_SIZE));
-}
 
 static inline void DrawVertexAQ(int x, int y)
 {
@@ -840,8 +845,8 @@ void CDynWater::DrawWaterSurface()
 	//     2. even if it had been, DynWater::UpdateCamRestraints always used <cam2> to get the sides, not <camera>
 	// UpdateCamRestraints(cam2);
 
-	const std::vector<CCamera::FrustumLine>/*&*/ left /*= cam2->leftFrustumSides*/;
-	const std::vector<CCamera::FrustumLine>/*&*/ right /*= cam2->rightFrustumSides*/;
+	const std::vector<CCamera::FrustumLine>/*&*/ negSides /*= cam2->negFrustumSides*/;
+	const std::vector<CCamera::FrustumLine>/*&*/ posSides /*= cam2->posFrustumSides*/;
 
 	std::vector<CCamera::FrustumLine>::const_iterator fli;
 
@@ -877,8 +882,8 @@ void CDynWater::DrawWaterSurface()
 			int xe = xend;
 			int xtest,xtest2;
 
-			for (fli = left.begin(); fli != left.end(); ++fli) {
-				float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
+			for (fli = negSides.begin(); fli != negSides.end(); ++fli) {
+				const float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
 				xtest = ((int)xtf) / lod * lod - lod;
 				xtest2 = ((int)(xtf + fli->dir * lod)) / lod * lod - lod;
 				if (xtest > xtest2) {
@@ -888,8 +893,8 @@ void CDynWater::DrawWaterSurface()
 					xs = xtest;
 				}
 			}
-			for (fli = right.begin(); fli != right.end(); ++fli) {
-				float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
+			for (fli = posSides.begin(); fli != posSides.end(); ++fli) {
+				const float xtf = fli->base / WSQUARE_SIZE + fli->dir * y;
 				xtest = ((int)xtf) / lod * lod - lod;
 				xtest2 = ((int)(xtf + fli->dir * lod)) / lod * lod - lod;
 				if (xtest < xtest2) {
@@ -1023,7 +1028,7 @@ void CDynWater::DrawDetailNormalTex()
 
 	const int status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready5");
+		LOG_L(L_WARNING, "FBO not ready - 5");
 	}
 
 	glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, dwDetailNormalFP);
@@ -1088,10 +1093,9 @@ void CDynWater::AddShipWakes()
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	GLenum status;
-	status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+	const GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
 	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-		logOutput.Print("FBO not ready6");
+		LOG_L(L_WARNING, "FBO not ready - 6");
 	}
 
 	glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, dwAddSplashFP);
@@ -1118,58 +1122,62 @@ void CDynWater::AddShipWakes()
 		va2->EnlargeArrays(nadd, 0, VA_SIZE_TN);
 
 		for (std::set<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
-			CUnit* unit = *ui;
+			const CUnit* unit = *ui;
+			const UnitDef* unitDef = unit->unitDef;
+			const MoveData* moveData = unitDef->movedata;
 
-			if (unit->moveType && unit->mobility) {
-				if (unit->unitDef->canhover) {
-					// hovercraft
-					const float3& pos = unit->pos;
+			if (moveData == NULL) {
+				continue;
+			}
 
-					if ((fabs(pos.x - camPosBig.x) > (WH_SIZE - 50))
-							|| (fabs(pos.z - camPosBig.z) > (WH_SIZE - 50)))
-					{
-						continue;
-					}
-					if (!(unit->losStatus[gu->myAllyTeam] & LOS_INLOS) && !gu->spectatingFullView) {
-						continue;
-					}
+			if (moveData->moveType == MoveData::Hover_Move) {
+				// hovercraft
+				const float3& pos = unit->pos;
 
-					if ((pos.y > -4.0f) && (pos.y < 4.0f)) {
-						const float3 frontAdd = unit->frontdir * unit->radius * 0.75f;
-						const float3 sideAdd = unit->rightdir * unit->radius * 0.75f;
-						const float depth = sqrt(sqrt(unit->mass)) * 0.4f;
-						const float3 n(depth, 0.05f * depth, depth);
+				if ((fabs(pos.x - camPosBig.x) > (WH_SIZE - 50)) ||
+					(fabs(pos.z - camPosBig.z) > (WH_SIZE - 50)))
+				{
+					continue;
+				}
+				if (!(unit->losStatus[gu->myAllyTeam] & LOS_INLOS) && !gu->spectatingFullView) {
+					continue;
+				}
 
-						va2->AddVertexQTN(pos + frontAdd + sideAdd, 0, 0, n);
-						va2->AddVertexQTN(pos + frontAdd - sideAdd, 1, 0, n);
-						va2->AddVertexQTN(pos - frontAdd - sideAdd, 1, 1, n);
-						va2->AddVertexQTN(pos - frontAdd + sideAdd, 0, 1, n);
-					}
-				} else if (unit->floatOnWater) {
-					// surface ship
-					const float speedf = unit->speed.Length2D();
-					const float3& pos = unit->pos;
+				if ((pos.y > -4.0f) && (pos.y < 4.0f)) {
+					const float3 frontAdd = unit->frontdir * unit->radius * 0.75f;
+					const float3 sideAdd = unit->rightdir * unit->radius * 0.75f;
+					const float depth = sqrt(sqrt(unit->mass)) * 0.4f;
+					const float3 n(depth, 0.05f * depth, depth);
 
-					if ((fabs(pos.x - camPosBig.x) > (WH_SIZE - 50))
-							|| (fabs(pos.z - camPosBig.z) > (WH_SIZE - 50)))
-					{
-						continue;
-					}
-					if (!(unit->losStatus[gu->myAllyTeam] & LOS_INLOS) && !gu->spectatingFullView) {
-						continue;
-					}
+					va2->AddVertexQTN(pos + frontAdd + sideAdd, 0, 0, n);
+					va2->AddVertexQTN(pos + frontAdd - sideAdd, 1, 0, n);
+					va2->AddVertexQTN(pos - frontAdd - sideAdd, 1, 1, n);
+					va2->AddVertexQTN(pos - frontAdd + sideAdd, 0, 1, n);
+				}
+			} else if (moveData->moveType == MoveData::Ship_Move) {
+				// surface ship
+				const float speedf = unit->speed.Length2D();
+				const float3& pos = unit->pos;
 
-					if ((pos.y > -4.0f) && (pos.y < 1.0f)) {
-						const float3 frontAdd = unit->frontdir * unit->radius * 0.75f;
-						const float3 sideAdd = unit->rightdir * unit->radius * 0.18f;
-						const float depth = sqrt(sqrt(unit->mass));
-						const float3 n(depth, 0.04f * speedf * depth, depth);
+				if ((fabs(pos.x - camPosBig.x) > (WH_SIZE - 50)) ||
+					(fabs(pos.z - camPosBig.z) > (WH_SIZE - 50)))
+				{
+					continue;
+				}
+				if (!(unit->losStatus[gu->myAllyTeam] & LOS_INLOS) && !gu->spectatingFullView) {
+					continue;
+				}
 
-						va->AddVertexQTN(pos + frontAdd + sideAdd, 0, 0, n);
-						va->AddVertexQTN(pos + frontAdd - sideAdd, 1, 0, n);
-						va->AddVertexQTN(pos - frontAdd - sideAdd, 1, 1, n);
-						va->AddVertexQTN(pos - frontAdd + sideAdd, 0, 1, n);
-					}
+				if ((pos.y > -4.0f) && (pos.y < 1.0f)) {
+					const float3 frontAdd = unit->frontdir * unit->radius * 0.75f;
+					const float3 sideAdd = unit->rightdir * unit->radius * 0.18f;
+					const float depth = sqrt(sqrt(unit->mass));
+					const float3 n(depth, 0.04f * speedf * depth, depth);
+
+					va->AddVertexQTN(pos + frontAdd + sideAdd, 0, 0, n);
+					va->AddVertexQTN(pos + frontAdd - sideAdd, 1, 0, n);
+					va->AddVertexQTN(pos - frontAdd - sideAdd, 1, 1, n);
+					va->AddVertexQTN(pos - frontAdd + sideAdd, 0, 1, n);
 				}
 			}
 		}
@@ -1220,8 +1228,9 @@ void CDynWater::AddExplosions()
 
 	GLenum status;
 	status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
-	if (status != GL_FRAMEBUFFER_COMPLETE_EXT)
-		logOutput.Print("FBO not ready7");
+	if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
+		LOG_L(L_WARNING, "FBO not ready - 7");
+	}
 
 	glBindProgramARB(GL_FRAGMENT_PROGRAM_ARB, dwAddSplashFP);
 	glEnable(GL_FRAGMENT_PROGRAM_ARB);
@@ -1377,20 +1386,23 @@ void CDynWater::DrawOuterSurface()
 
 
 
+/*
 void CDynWater::UpdateCamRestraints(CCamera* cam) {
-	// add restraints for camera sides
 	cam->GetFrustumSides(-10.0f, 10.0f, 1.0f);
 
-	// add restraint for maximum view distance (use flat z-dir as side)
 	const float3& camDir3D  = cam->forward;
 	      float3  camDir2D  = float3(camDir3D.x, 0.0f, camDir3D.z);
-	const float3  camOffset = camDir2D * globalRendering->viewRange * 1.05f;
+	      float3  camOffset = ZeroVector;
 
 	static const float miny = 0.0f;
 	static const float maxy = 255.0f / 3.5f;
 
-	if (camDir2D.SqLength() > 0.01f) {
-		camDir2D.SafeANormalize();
-		cam->GetFrustumSide(camDir2D, camOffset, miny, maxy, SQUARE_SIZE, (camDir3D.y > 0.0f), false, false);
+	// prevent colinearity in top-down view
+	if (fabs(camDir3D.dot(UpVector)) < 0.95f) {
+		camDir2D  = camDir2D.SafeANormalize();
+		camOffset = camDir2D * globalRendering->viewRange * 1.05f;
+
+		cam->GetFrustumSide(camDir2D, camOffset, miny, maxy, SQUARE_SIZE, (camDir3D.y > 0.0f), false);
 	}
 }
+*/

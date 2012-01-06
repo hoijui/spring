@@ -32,7 +32,7 @@ BEGIN {
 	}
 
 	nativeBridge = "CombinedCallbackBridge";
-	bridgePrefix = "bridged__";
+	bridgePrefix = "bridged_";
 
 	fi = 0;
 }
@@ -90,7 +90,13 @@ function printNativeFP2F() {
 	print("#include \"ExternalAI/Interface/aidefines.h\"") >> outFile_nh;
 	print("") >> outFile_nh;
 	print("#include <stdlib.h>  // size_t") >> outFile_nh;
-	print("#include <stdbool.h> // bool, true, false") >> outFile_nh;
+	print("#if !defined(__cplusplus)") >> outFile_nh;
+	print("\t#if defined(_MSC_VER)") >> outFile_nh;
+	print("\t\t#include \"System/booldefines.h\" // bool, true, false") >> outFile_nh;
+	print("\t#else") >> outFile_nh;
+	print("\t\t#include <stdbool.h> // bool, true, false") >> outFile_nh;
+	print("\t#endif") >> outFile_nh;
+	print("#endif") >> outFile_nh;
 	print("") >> outFile_nh;
 	print("struct SSkirmishAICallback;") >> outFile_nh;
 	print("") >> outFile_nh;

@@ -2,20 +2,35 @@
 
 #include "Misc.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
+#ifdef linux
+#include <unistd.h>
+#include <dlfcn.h> // for dladdr(), dlopen()
 
-#ifdef WIN32
+#elif WIN32
 #include <io.h>
 #include <process.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#ifndef SHGFP_TYPE_CURRENT
+	#define SHGFP_TYPE_CURRENT 0
+#endif
 #include "System/Platform/Win/WinVersion.h"
+
+#elif __APPLE__
+#include <unistd.h>
+#include <mach-o/dyld.h>
+#include <stdlib.h>
+#include <dlfcn.h> // for dladdr(), dlopen()
+#include <climits> // for PATH_MAX
+
+#else
+
 #endif
 
 #if !defined(WIN32)
 #include <sys/utsname.h> // for uname()
+#include <sys/types.h> // for getpw
+#include <pwd.h> // for getpw
 #endif
 
 #include <cstring>
@@ -23,9 +38,9 @@
 
 #include "lib/cutils/Util.h"
 #include "System/Util.h"
+#include "System/SafeCStrings.h"
 #include "System/Log/ILog.h"
 #include "System/FileSystem/FileSystem.h"
-
 
 #if       defined WIN32
 /**
@@ -56,9 +71,54 @@ static HMODULE GetCurrentModule() {
 }
 #endif // defined WIN32
 
+/**
+ * The user might want to define the user dir manually,
+ * to locate spring related data in a non-default location.
+ * @link http://en.wikipedia.org/wiki/Environment_variable#Synopsis
+ */
+static std::string GetUserDirFromEnvVar()
+{
+#ifdef _WIN32
+	#define HOME_ENV_VAR "LOCALAPPDATA"
+#else
+	#define HOME_ENV_VAR "HOME"
+#endif
+	char* home = getenv(HOME_ENV_VAR);
+#undef HOME_ENV_VAR
+
+	return (home == NULL) ? "" : home;
+}
+
+static std::string GetUserDirFromSystemApi()
+{
+#ifdef _WIN32
+	TCHAR strPath[MAX_PATH + 1];
+	SHGetFolderPath(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, strPath);
+	return strPath;
+#else
+	struct passwd* pw = getpwuid(getuid());
+	return pw->pw_dir;
+#endif
+}
+
 
 namespace Platform
 {
+
+std::string GetUserDir()
+{
+	std::string userDir = GetUserDirFromEnvVar();
+
+	if (userDir.empty()) {
+		// In some cases, the env var is not set,
+		// for example for non-human user accounts,
+		// or when starting through the UI on OS X.
+		// It is unset by default on windows.
+		userDir = GetUserDirFromSystemApi();
+	}
+
+	return userDir;
+}
 
 // Mac OS X:        _NSGetExecutablePath() (man 3 dyld)
 // Linux:           readlink /proc/self/exe
@@ -142,11 +202,13 @@ bool Is64Bit()
 	return (sizeof(void*) == 8);
 }
 
-#ifdef    WIN32
+#ifdef WIN32
 typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
 
 LPFN_ISWOW64PROCESS fnIsWow64Process;
 
+/** @brief checks if the current process is running in 32bit emulation mode
+    @return FALSE, TRUE, -1 on error (usually no permissions) */
 bool Is32BitEmulation()
 {
 	BOOL bIsWow64 = FALSE;
@@ -163,13 +225,13 @@ bool Is32BitEmulation()
 	}
 	return bIsWow64;
 }
-#else  // WIN32
-// simply assume other OSs do not need 32bit emulation
+#else
+// simply assume other OS doesn't need 32bit emulation
 bool Is32BitEmulation()
 {
 	return false;
 }
-#endif // WIN32
+#endif
 
 std::string ExecuteProcess(const std::string& file, std::vector<std::string> args)
 {
@@ -185,7 +247,7 @@ std::string ExecuteProcess(const std::string& file, std::vector<std::string> arg
 		const std::string& arg = args.at(a);
 		const size_t arg_size = arg.length() + 1;
 		processArgs[a] = new char[arg_size];
-		STRCPYS(processArgs[a], arg_size, arg.c_str());
+		STRCPY_T(processArgs[a], arg_size, arg.c_str());
 	}
 
 	// "The array of pointers must be terminated by a NULL pointer."

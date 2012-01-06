@@ -32,8 +32,8 @@
 #include "Sim/Units/UnitTypes/TransportUnit.h"
 #include "System/myMath.h"
 #include "System/Util.h"
+#include "System/EventHandler.h"
 #include "System/Exceptions.h"
-#include "System/LogOutput.h"
 #include "System/Log/ILog.h"
 #include "System/creg/STL_Map.h"
 
@@ -276,7 +276,7 @@ void CBuilderCAI::CancelRestrictedUnit(const std::string& buildOption)
 	if (owner->team == gu->myTeam) {
 		LOG_L(L_WARNING, "%s: Build failed, unit type limit reached",
 				owner->unitDef->humanName.c_str());
-		logOutput.SetLastMsgPos(owner->pos);
+		eventHandler.LastMessagePosition(owner->pos);
 	}
 	FinishCommand();
 }
@@ -423,7 +423,7 @@ void CBuilderCAI::SlowUpdate()
 							owner->moveType->KeepPointingTo(build.pos, builder->buildDistance * 0.7f + radius, false);
 
 							bool waitstance = false;
-							if (builder->StartBuild(build, f, waitstance) || (buildRetries > 20)) {
+							if (builder->StartBuild(build, f, waitstance) || (buildRetries > 30)) {
 								building = true;
 							}
 							else if (f) {
@@ -641,7 +641,7 @@ void CBuilderCAI::ExecuteCapture(Command& c)
 		}
 
 		if (unit->unitDef->capturable && unit->team != owner->team && UpdateTargetLostTimer(unit->id)) {
-			if (f3SqDist(unit->pos, builder->pos) < Square(builder->buildDistance + unit->radius - 8)) {
+			if (f3SqDist(unit->pos, builder->pos) < Square(builder->buildDistance + unit->radius - 8.0f)) {
 				StopMove();
 				builder->SetCaptureTarget(unit);
 				owner->moveType->KeepPointingTo(unit->pos, builder->buildDistance * 0.9f + unit->radius, false);
@@ -772,7 +772,7 @@ void CBuilderCAI::ExecuteGuard(Command& c)
 	if (f3SqLen(guardee->pos - curPos) <
 			(builder->buildDistance * 0.9f + guardee->radius) *
 			(builder->buildDistance * 0.9f + guardee->radius)) {
-		StartSlowGuard(guardee->maxSpeed);
+		StartSlowGuard(guardee->moveType->GetMaxSpeed());
 		StopMove();
 
 		owner->moveType->KeepPointingTo(guardee->pos,
@@ -800,7 +800,7 @@ void CBuilderCAI::ExecuteGuard(Command& c)
 		const float da = f3SqLen(goalPos - goal);
 		const float db = f3SqLen(goalPos - owner->pos);
 
-		if (da > 4000.0f || db < Square(owner->maxSpeed * GAME_SPEED + 1 + SQUARE_SIZE * 2)) {
+		if (da > 4000.0f || db < Square(owner->moveType->GetMaxSpeed() * GAME_SPEED + 1 + SQUARE_SIZE * 2)) {
 			SetGoal(goal, curPos);
 		}
 	}
@@ -913,7 +913,7 @@ void CBuilderCAI::ExecuteReclaim(Command& c)
 bool CBuilderCAI::ResurrectObject(CFeature *feature) {
 	CBuilder* builder = (CBuilder*) owner;
 
-	if (f3SqDist(feature->pos, builder->pos) < Square(builder->buildDistance * 0.9f + feature->radius)) {
+	if (f3SqDist(feature->pos, builder->pos) < Square(builder->buildDistance + feature->radius - 1.0f)) {
 		StopMove();
 		owner->moveType->KeepPointingTo(feature->pos, builder->buildDistance * 0.9f + feature->radius, false);
 		builder->SetResurrectTarget(feature);
@@ -1122,11 +1122,10 @@ void CBuilderCAI::ExecuteRestore(Command& c)
 			FinishCommand();
 		}
 	} else if (owner->unitDef->canRestore) {
-		float3 pos(c.params[0], c.params[1], c.params[2]);
-			pos.y = ground->GetHeightReal(pos.x, pos.y);
+		float3 pos(c.params[0], ground->GetHeightReal(c.params[0], c.params[2]), c.params[2]);
 		const float radius = std::min(c.params[3], 200.0f);
 
-		if (f3SqDist(builder->pos, pos) < Square(builder->buildDistance - 1)) {
+		if (f3SqDist(builder->pos, pos) < Square(builder->buildDistance - 1.0f)) {
 			StopMove();
 			builder->StartRestore(pos, radius);
 			owner->moveType->KeepPointingTo(pos, builder->buildDistance * 0.9f, false);
@@ -1302,13 +1301,13 @@ bool CBuilderCAI::IsFeatureBeingResurrected(int featureId, CUnit *friendUnit)
 bool CBuilderCAI::ReclaimObject(CSolidObject* object) {
 	CBuilder* builder = (CBuilder*) owner;
 
-	if (f3SqDist(object->pos, builder->pos) < Square(builder->buildDistance - 1 + object->radius)) {
+	if (f3SqDist(object->pos, builder->pos) < Square(builder->buildDistance + object->radius - 1.0f)) {
 		StopMove();
 		owner->moveType->KeepPointingTo(object->pos, builder->buildDistance * 0.9f + object->radius, false);
 		builder->SetReclaimTarget(object);
 	} else {
 		if (f3SqDist(goalPos, object->pos) > 1) {
-			SetGoal(object->pos, owner->pos);
+			SetGoal(object->pos, owner->pos, builder->buildDistance * 0.8f + object->radius);
 		} else {
 			if (owner->moveType->progressState == AMoveType::Failed) {
 				return false;
@@ -1636,3 +1635,13 @@ bool CBuilderCAI::FindRepairTargetAndRepair(const float3& pos, float radius,
 
 	return true;
 }
+
+
+
+void CBuilderCAI::BuggerOff(const float3& pos, float radius) {
+	if (owner->unitDef->IsStaticBuilderUnit())
+		return;
+
+	CMobileCAI::BuggerOff(pos, radius);
+}
+

@@ -1,6 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-
 #include "Game.h"
 #include "CameraHandler.h"
 #include "GameServer.h"
@@ -8,6 +7,7 @@
 #include "GameSetup.h"
 #include "GlobalUnsynced.h"
 #include "SelectedUnits.h"
+#include "Player.h"
 #include "PlayerHandler.h"
 #include "ChatMessage.h"
 #include "System/TimeProfiler.h"
@@ -20,9 +20,10 @@
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "Lua/LuaRules.h"
+#include "Lua/LuaUI.h"
 #include "UI/GameSetupDrawer.h"
-#include "UI/LuaUI.h"
 #include "UI/MouseHandler.h"
+#include "Rendering/GlobalRendering.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Path/IPathManager.h"
 #include "System/EventHandler.h"
@@ -41,10 +42,14 @@ void CGame::ClientReadNet()
 		lastCpuUsageTime = gu->gameTime;
 
 		if (playing) {
-			net->Send(CBaseNetProtocol::Get().SendCPUUsage(profiler.GetPercent("Game::SimFrame") + profiler.GetPercent("GameController::Draw")));
-#if defined(USE_GML) && GML_ENABLE_SIM
-			net->Send(CBaseNetProtocol::Get().SendLuaDrawTime(gu->myPlayerNum, luaLockTime));
-#endif
+			float simCpuUsage = profiler.GetPercent("Game::SimFrame");
+
+			if (!GML::SimEnabled() || !GML::MultiThreadSim()) // take the minimum drawframes into account, too
+				simCpuUsage += (profiler.GetPercent("GameController::Draw") / std::max(1.0f, globalRendering->FPS)) * gu->minFPS;
+
+			net->Send(CBaseNetProtocol::Get().SendCPUUsage(simCpuUsage));
+			if (GML::SimEnabled())
+				net->Send(CBaseNetProtocol::Get().SendLuaDrawTime(gu->myPlayerNum, luaLockTime));
 		} else {
 			// the CPU-load percentage is undefined prior to SimFrame()
 			net->Send(CBaseNetProtocol::Get().SendCPUUsage(0.0f));
@@ -55,13 +60,16 @@ void CGame::ClientReadNet()
 
 	// compute new timeLeft to "smooth" out SimFrame() calls
 	if (!gameServer) {
-		const unsigned int currentFrame = SDL_GetTicks();
+		const spring_time currentFrame = spring_gettime();
 
-		if (timeLeft > 1.0f)
-			timeLeft -= 1.0f;
-		timeLeft += consumeSpeed * ((float)(currentFrame - lastframe) / 1000.f);
-		if (skipping)
+		if (skipping) {
 			timeLeft = 0.01f;
+		} else {
+			if (timeLeft > 1.0f)
+				timeLeft -= 1.0f;
+			timeLeft += consumeSpeed * (spring_tomsecs(currentFrame - lastframe) / 1000.0f);
+		}
+
 		lastframe = currentFrame;
 
 		// read ahead to calculate the number of NETMSG_NEWFRAMES
@@ -98,9 +106,9 @@ void CGame::ClientReadNet()
 	}
 
 	// always render at least 2FPS (will otherwise be highly unresponsive when catching up after a reconnection)
-	unsigned procstarttime = SDL_GetTicks();
+	const spring_time procstarttime = spring_gettime();
 	// really process the messages
-	while (timeLeft > 0.0f && (SDL_GetTicks() - procstarttime) < 500 && (packet = net->GetData(gs->frameNum)))
+	while (timeLeft > 0.0f && spring_tomsecs(spring_gettime() - procstarttime) < 500 && (packet = net->GetData(gs->frameNum)))
 	{
 		const unsigned char* inbuf = packet->data;
 		const unsigned dataLength = packet->length;
@@ -185,7 +193,7 @@ void CGame::ClientReadNet()
 						playerHandler->Player(player)->name.c_str(),
 						(gs->paused ? "paused" : "unpaused"));
 				eventHandler.GamePaused(player, gs->paused);
-				lastframe = SDL_GetTicks();
+				lastframe = spring_gettime();
 				AddTraffic(player, packetCode, dataLength);
 				break;
 			}
@@ -362,8 +370,10 @@ void CGame::ClientReadNet()
 				SimFrame();
 				// both NETMSG_SYNCRESPONSE and NETMSG_NEWFRAME are used for ping calculation by server
 #ifdef SYNCCHECK
-				net->Send(CBaseNetProtocol::Get().SendSyncResponse(gs->frameNum, CSyncChecker::GetChecksum()));
-				if ((gs->frameNum & 4095) == 0) {// reset checksum every ~2.5 minute gametime
+				net->Send(CBaseNetProtocol::Get().SendSyncResponse(gu->myPlayerNum, gs->frameNum, CSyncChecker::GetChecksum()));
+
+				if ((gs->frameNum & 4095) == 0) {
+					// reset checksum every 4096 frames =~ 2.5 minutes
 					CSyncChecker::NewFrame();
 				}
 #endif
@@ -375,69 +385,107 @@ void CGame::ClientReadNet()
 				break;
 			}
 
+			case NETMSG_SYNCRESPONSE: {
+#if (defined(SYNCCHECK) && !defined(NDEBUG))
+				// NOTE:
+				//     this packet is also sent during live games,
+				//     during which we should just ignore it (the
+				//     server does sync-checking for us)
+				netcode::UnpackPacket pckt(packet, 1);
+
+				unsigned char playerNum; pckt >> playerNum;
+				          int  frameNum; pckt >> frameNum;
+				unsigned  int  checkSum; pckt >> checkSum;
+
+				const unsigned int ourCheckSum = CSyncChecker::GetChecksum();
+				const char* fmtStr =
+					"[DESYNC_WARNING] checksum %x from player %d (%s)"
+					" does not match our checksum %x for frame-number %d";
+				const CPlayer* player = playerHandler->Player(playerNum);
+
+				// check if our checksum for this frame matches what
+				// player <playerNum> sent to the server at the same
+				// frame in the original game (in case of a demo)
+				if (playerNum == gu->myPlayerNum) { return; }
+				if (gs->frameNum != frameNum) { return; }
+				if (checkSum == ourCheckSum) { return; }
+
+				LOG_L(L_ERROR, fmtStr, checkSum, playerNum, player->name.c_str(), ourCheckSum, gs->frameNum);
+#endif
+			} break;
+
+
 			case NETMSG_COMMAND: {
 				try {
 					netcode::UnpackPacket pckt(packet, 1);
-					short int psize;
-					pckt >> psize;
-					unsigned char player;
-					pckt >> player;
-					if (!playerHandler->IsValidPlayer(player))
+
+					unsigned short packetSize; pckt >> packetSize;
+					unsigned char playerNum; pckt >> playerNum;
+					const unsigned int numParams = (packetSize - 9) / sizeof(float);
+
+					if (!playerHandler->IsValidPlayer(playerNum))
 						throw netcode::UnpackPacketException("Invalid player number");
 
-					int cmd_id;
-					unsigned char cmd_opt;
-					pckt >> cmd_id;
-					pckt >> cmd_opt;
+					int cmdID;
+					unsigned char cmdOpt;
+					pckt >> cmdID;
+					pckt >> cmdOpt;
 
-					Command c(cmd_id, cmd_opt);
-					for (int a = 0; a < ((psize-9)/4); ++a) {
-						float param;
-						pckt >> param;
+					Command c(cmdID, cmdOpt);
+					c.params.reserve(numParams);
+
+					for (int a = 0; a < numParams; ++a) {
+						float param; pckt >> param;
 						c.params.push_back(param);
 					}
-					selectedUnits.NetOrder(c,player);
-					AddTraffic(player, packetCode, dataLength);
+
+					selectedUnits.NetOrder(c, playerNum);
+					AddTraffic(playerNum, packetCode, dataLength);
 				} catch (const netcode::UnpackPacketException& ex) {
 					LOG_L(L_ERROR, "Got invalid Command: %s", ex.what());
 				}
+
 				break;
 			}
 
 			case NETMSG_SELECT: {
 				try {
 					netcode::UnpackPacket pckt(packet, 1);
-					short int psize;
-					pckt >> psize;
-					unsigned char player;
-					pckt >> player;
-					if (!playerHandler->IsValidPlayer(player))
+
+					unsigned short packetSize; pckt >> packetSize;
+					unsigned char playerNum; pckt >> playerNum;
+					const unsigned int numUnitIDs = (packetSize - 4) / sizeof(short int);
+
+					if (!playerHandler->IsValidPlayer(playerNum)) {
 						throw netcode::UnpackPacketException("Invalid player number");
+					}
 
-					vector<int> selected;
-					bool firsterr = true;
-					for (int a = 0; a < ((psize-4)/2); ++a) {
-						short int unitid;
-						pckt >> unitid;
+					std::vector<int> selectedUnitIDs;
+					selectedUnitIDs.reserve(numUnitIDs);
 
-						if (uh->GetUnit(unitid) == NULL) {
-							if (firsterr) {
-								LOG_L(L_WARNING, "Got invalid Select: Invalid unit ID (%i)", unitid);
-							}
-							firsterr = false;
+					for (int a = 0; a < numUnitIDs; ++a) {
+						short int unitID; pckt >> unitID;
+						const CUnit* unit = uh->GetUnit(unitID);
+
+						if (unit == NULL) {
+							// unit was destroyed in simulation (without its ID being recycled)
+							// after sending a command but before receiving it back, more likely
+							// to happen in high-latency situations
+							// LOG_L(L_WARNING, "[NETMSG_SELECT] invalid unitID (%i) from player %i", unitID, playerNum);
 							continue;
 						}
 
-						if ((uh->GetUnit(unitid)->team == playerHandler->Player(player)->team) || gs->godMode) {
-							selected.push_back(unitid);
+						if ((unit->team == playerHandler->Player(playerNum)->team) || gs->godMode) {
+							selectedUnitIDs.push_back(unitID);
 						}
 					}
-					selectedUnits.NetSelect(selected, player);
 
-					AddTraffic(player, packetCode, dataLength);
+					selectedUnits.NetSelect(selectedUnitIDs, playerNum);
+					AddTraffic(playerNum, packetCode, dataLength);
 				} catch (const netcode::UnpackPacketException& ex) {
 					LOG_L(L_ERROR, "Got invalid Select: %s", ex.what());
 				}
+
 				break;
 			}
 
@@ -449,6 +497,8 @@ void CGame::ClientReadNet()
 					pckt >> psize;
 					unsigned char player;
 					pckt >> player;
+					unsigned char aiID;
+					pckt >> aiID;
 
 					if (!playerHandler->IsValidPlayer(player))
 						throw netcode::UnpackPacketException("Invalid player number");
@@ -490,7 +540,8 @@ void CGame::ClientReadNet()
 					pckt >> player;
 					if (!playerHandler->IsValidPlayer(player))
 						throw netcode::UnpackPacketException("Invalid player number");
-
+					unsigned char aiID;
+					pckt >> aiID;
 					// parse the unit list
 					vector<int> unitIDs;
 					short int unitCount;
@@ -542,6 +593,8 @@ void CGame::ClientReadNet()
 					pckt >> player;
 					if (!playerHandler->IsValidPlayer(player))
 						throw netcode::UnpackPacketException("Invalid player number");
+					unsigned char aiID;
+					pckt >> aiID;
 
 					// total message length
 					const int fixedLen = (1 + sizeof(short) + 3 + (2 * sizeof(float)));
@@ -754,7 +807,7 @@ void CGame::ClientReadNet()
 							CTeam* team = teamHandler->Team(t);
 							if (team->leader == player) {
 								const std::vector<int> &teamPlayers = playerHandler->ActivePlayersInTeam(t);
-								const std::vector<size_t> &teamAIs  = skirmishAIHandler.GetSkirmishAIsInTeam(t);
+								const std::vector<unsigned char> &teamAIs  = skirmishAIHandler.GetSkirmishAIsInTeam(t);
 								if ((teamPlayers.size() + teamAIs.size()) == 0) {
 									// no controllers left in team
 									//team.active = false;
@@ -810,7 +863,7 @@ void CGame::ClientReadNet()
 					netcode::UnpackPacket pckt(packet, 2);
 					unsigned char playerId;
 					pckt >> playerId;
-					unsigned int skirmishAIId;
+					unsigned char skirmishAIId;
 					pckt >> skirmishAIId;
 					unsigned char aiTeamId;
 					pckt >> aiTeamId;
@@ -864,8 +917,8 @@ void CGame::ClientReadNet()
 					break;
 				}
 
-				const unsigned int skirmishAIId  = *((unsigned int*)&inbuf[2]); // 4 bytes
-				const ESkirmishAIStatus newState = (ESkirmishAIStatus) inbuf[6];
+				const unsigned char skirmishAIId  = inbuf[2];
+				const ESkirmishAIStatus newState = (ESkirmishAIStatus) inbuf[3];
 				SkirmishAIData* aiData           = skirmishAIHandler.GetSkirmishAI(skirmishAIId);
 				const ESkirmishAIStatus oldState = aiData->status;
 				const unsigned aiTeamId          = aiData->team;
@@ -1028,10 +1081,13 @@ void CGame::ClientReadNet()
 					player.team = team;
 					player.playerNum = playerNum;
 					// add the new player
+					// TODO NETMSG_CREATE_NEWPLAYER perhaps add a lua hook; hook should be able to reassign the player to a team and/or create a new team/allyteam
 					playerHandler->AddPlayer(player);
 					eventHandler.PlayerAdded(player.playerNum);
 					LOG("Added new player: %s", name.c_str());
-					// TODO NETMSG_CREATE_NEWPLAYER perhaps add a lua hook; hook should be able to reassign the player to a team and/or create a new team/allyteam
+					if (!player.spectator) {
+						eventHandler.TeamChanged(player.team);
+					}
 					AddTraffic(-1, packetCode, dataLength);
 				} catch (const netcode::UnpackPacketException& ex) {
 					LOG_L(L_ERROR, "Got invalid New player message: %s", ex.what());
@@ -1057,7 +1113,4 @@ void CGame::ClientReadNet()
 			}
 		}
 	}
-
-	return;
 }
-

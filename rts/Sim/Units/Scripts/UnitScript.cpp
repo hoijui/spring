@@ -18,8 +18,9 @@
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/TeamHandler.h"
-#include "Sim/MoveTypes/AirMoveType.h"
+#include "Sim/MoveTypes/AAirMoveType.h"
 #include "Sim/MoveTypes/GroundMoveType.h"
+#include "Sim/MoveTypes/MoveInfo.h"
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/PieceProjectile.h"
@@ -549,8 +550,11 @@ void CUnitScript::EmitSfx(int sfxType, int piece)
 	float alphaFalloff = 0.004f;
 	float fadeupTime = 4;
 
-	// Hovers need special care
-	if (unit->unitDef->canhover) {
+	const UnitDef* ud = unit->unitDef;
+	const MoveData* md = ud->movedata;
+
+	// hovercraft need special care
+	if (md != NULL && md->moveType == MoveData::Hover_Move) {
 		fadeupTime = 8.0f;
 		alpha = 0.15f + gu->usRandFloat() * 0.2f;
 		alphaFalloff = 0.008f;
@@ -681,7 +685,8 @@ void CUnitScript::EmitSfx(int sfxType, int piece)
 					unit,                              // owner
 					NULL,                              // hitUnit
 					NULL,                              // hitFeature
-					weaponDef->areaOfEffect,
+					weaponDef->craterAreaOfEffect,
+					weaponDef->damageAreaOfEffect,
 					weaponDef->edgeEffectiveness,
 					weaponDef->explosionSpeed,
 					1.0f,                              // gfxMod
@@ -768,16 +773,21 @@ void CUnitScript::Explode(int piece, int flags)
 	}
 
 #ifndef _CONSOLE
-	const float3 pos = GetPiecePos(piece) + unit->pos;
+	const float3 relPos = GetPiecePos(piece);
+	const float3 absPos =
+		unit->pos +
+		unit->frontdir * relPos.z +
+		unit->updir    * relPos.y +
+		unit->rightdir * relPos.x;
 
 #ifdef TRACE_SYNC
 	tracefile << "Cob explosion: ";
-	tracefile << pos.x << " " << pos.y << " " << pos.z << " " << piece << " " << flags << "\n";
+	tracefile << absPos.x << " " << absPos.y << " " << absPos.z << " " << piece << " " << flags << "\n";
 #endif
 
 	if (!(flags & PF_NoHeatCloud)) {
 		// Do an explosion at the location first
-		new CHeatCloudProjectile(pos, float3(0, 0, 0), 30, 30, NULL);
+		new CHeatCloudProjectile(absPos, float3(0, 0, 0), 30, 30, NULL);
 	}
 
 	// If this is true, no stuff should fly off
@@ -788,8 +798,8 @@ void CUnitScript::Explode(int piece, int flags)
 	float sql = baseSpeed.SqLength();
 
 	if (sql > 9) {
-		const float l  = sqrt(sql);
-		const float l2 = 3 + sqrt(l - 3);
+		const float l  = math::sqrt(sql);
+		const float l2 = 3 + math::sqrt(l - 3);
 		baseSpeed *= (l2 / l);
 	}
 	float3 speed((0.5f-gs->randFloat()) * 6.0f, 1.2f + gs->randFloat() * 5.0f, (0.5f - gs->randFloat()) * 6.0f);
@@ -798,13 +808,14 @@ void CUnitScript::Explode(int piece, int flags)
 	}
 	speed += baseSpeed;
 	if (speed.SqLength() > 12*12) {
-		speed = speed.Normalize() * 12;
+		speed.Normalize();
+		speed *= 12;
 	}
 
 	/* TODO Push this back. Don't forget to pass the team (color).  */
 
 	if (flags & PF_Shatter) {
-		Shatter(piece, pos, speed);
+		Shatter(piece, absPos, speed);
 	}
 	else {
 		LocalModelPiece* pieceData = pieces[piece];
@@ -818,7 +829,7 @@ void CUnitScript::Explode(int piece, int flags)
 			if (flags & PF_NoCEGTrail) { newflags |= PF_NoCEGTrail; }
 
 			//LOG_L(L_DEBUG, "Exploding %s as %d", script.pieceNames[piece].c_str(), dl);
-			new CPieceProjectile(pos, speed, pieceData, newflags,unit,0.5f);
+			new CPieceProjectile(absPos, speed, pieceData, newflags,unit,0.5f);
 		}
 	}
 #endif
@@ -842,16 +853,16 @@ void CUnitScript::ShowFlare(int piece)
 		return;
 	}
 #ifndef _CONSOLE
-	const float3 relpos = GetPiecePos(piece);
-	const float3 pos =
+	const float3 relPos = GetPiecePos(piece);
+	const float3 absPos =
 		unit->pos +
-		unit->frontdir * relpos.z +
-		unit->updir    * relpos.y +
-		unit->rightdir * relpos.x;
+		unit->frontdir * relPos.z +
+		unit->updir    * relPos.y +
+		unit->rightdir * relPos.x;
 	const float3 dir = unit->lastMuzzleFlameDir;
 	const float size = unit->lastMuzzleFlameSize;
 
-	new CMuzzleFlame(pos, unit->speed, dir, size);
+	new CMuzzleFlame(absPos, unit->speed, dir, size);
 #endif
 }
 
@@ -909,18 +920,18 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 			ShowScriptError("Invalid piecenumber for get piece_xz");
 			break;
 		}
-		float3 relPos = GetPiecePos(p1);
-		float3 pos = unit->pos + unit->frontdir * relPos.z + unit->updir * relPos.y + unit->rightdir * relPos.x;
-		return PACKXZ(pos.x, pos.z);
+		const float3 relPos = GetPiecePos(p1);
+		const float3 absPos = unit->pos + unit->frontdir * relPos.z + unit->updir * relPos.y + unit->rightdir * relPos.x;
+		return PACKXZ(absPos.x, absPos.z);
 	}
 	case PIECE_Y: {
 		if (!PieceExists(p1)) {
 			ShowScriptError("Invalid piecenumber for get piece_y");
 			break;
 		}
-		float3 relPos = GetPiecePos(p1);
-		float3 pos = unit->pos + unit->frontdir * relPos.z + unit->updir * relPos.y + unit->rightdir * relPos.x;
-		return int(pos.y * COBSCALE);
+		const float3 relPos = GetPiecePos(p1);
+		const float3 absPos = unit->pos + unit->frontdir * relPos.z + unit->updir * relPos.y + unit->rightdir * relPos.x;
+		return int(absPos.y * COBSCALE);
 	}
 	case UNIT_XZ: {
 		if (p1 <= 0)
@@ -985,9 +996,7 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 	case VETERAN_LEVEL:
 		return int(100 * unit->experience);
 	case CURRENT_SPEED:
-		if (unit->moveType)
-			return int(unit->speed.Length() * COBSCALE);
-		return 0;
+		return int(unit->speed.Length() * COBSCALE);
 	case ON_ROAD:
 		return 0;
 	case IN_WATER:
@@ -1019,17 +1028,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 
 		return 0;
 	}
-	case MAX_SPEED:
-		if (unit->moveType) {
-			return int(unit->moveType->maxSpeed * COBSCALE);
-		}
-		break;
-	case REVERSING:
-		if (unit->moveType) {
-			CGroundMoveType* gmt = dynamic_cast<CGroundMoveType*>(unit->moveType);
-			return ((gmt != NULL)? int(gmt->IsReversing()): 0);
-		}
-		break;
+	case MAX_SPEED: {
+		return int(unit->moveType->GetMaxSpeed() * COBSCALE);
+	} break;
+	case REVERSING: {
+		CGroundMoveType* gmt = dynamic_cast<CGroundMoveType*>(unit->moveType);
+		return ((gmt != NULL)? int(gmt->IsReversing()): 0);
+	} break;
 	case CLOAKED:
 		return !!unit->isCloaked;
 	case WANT_CLOAK:
@@ -1172,9 +1177,9 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 				break;
 		}
 		if (p4 == 0) {
-			Channels::UnitReply.PlaySample(script->sounds[p1], unit->pos, unit->speed, float(p2) / COBSCALE);
+			Channels::General.PlaySample(script->sounds[p1], unit->pos, unit->speed, float(p2) / COBSCALE);
 		} else {
-			Channels::UnitReply.PlaySample(script->sounds[p1], float(p2) / COBSCALE);
+			Channels::General.PlaySample(script->sounds[p1], float(p2) / COBSCALE);
 		}
 		return 0;
 	}
@@ -1263,12 +1268,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		return 1;
 	}
 	case WEAPON_RELOADSTATE: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
 			return unit->weapons[p1-1]->reloadStatus;
 		}
-		else if (p1 < 0 && p1 >= (0 - unit->weapons.size())) {
-			int old = unit->weapons[-p1-1]->reloadStatus;
-			unit->weapons[-p1-1]->reloadStatus = p2;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->reloadStatus;
+			unit->weapons[np1 - 1]->reloadStatus = p2;
 			return old;
 		}
 		else {
@@ -1276,12 +1282,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 	}
 	case WEAPON_RELOADTIME: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
 			return unit->weapons[p1-1]->reloadTime;
 		}
-		else if (p1 < 0 && p1 >= 0 - unit->weapons.size()) {
-			int old = unit->weapons[-p1-1]->reloadTime;
-			unit->weapons[-p1-1]->reloadTime = p2;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->reloadTime;
+			unit->weapons[np1 - 1]->reloadTime = p2;
 			return old;
 		}
 		else {
@@ -1289,12 +1296,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 	}
 	case WEAPON_ACCURACY: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
 			return int(unit->weapons[p1-1]->accuracy * COBSCALE);
 		}
-		else if (p1 < 0 && p1 >= (0 - unit->weapons.size())) {
-			int old = int(unit->weapons[-p1-1]->accuracy * COBSCALE);
-			unit->weapons[-p1-1]->accuracy = float(p2) / COBSCALE;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->accuracy * COBSCALE;
+			unit->weapons[np1 - 1]->accuracy = float(p2) / COBSCALE;
 			return old;
 		}
 		else {
@@ -1302,12 +1310,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 	}
 	case WEAPON_SPRAY: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
 			return int(unit->weapons[p1-1]->sprayAngle * COBSCALE);
 		}
-		else if (p1 < 0 && p1 >= (0 - unit->weapons.size())) {
-			int old = int(unit->weapons[-p1-1]->sprayAngle * COBSCALE);
-			unit->weapons[-p1-1]->sprayAngle = float(p2) / COBSCALE;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->sprayAngle * COBSCALE;
+			unit->weapons[np1 - 1]->sprayAngle = float(p2) / COBSCALE;
 			return old;
 		}
 		else {
@@ -1315,12 +1324,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 	}
 	case WEAPON_RANGE: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
-			return int(unit->weapons[p1-1]->range * COBSCALE);
+			return int(unit->weapons[p1 - 1]->range * COBSCALE);
 		}
-		else if (p1 < 0 && p1 >= (0 - unit->weapons.size())) {
-			int old = int(unit->weapons[-p1-1]->range * COBSCALE);
-			unit->weapons[-p1-1]->range = float(p2) / COBSCALE;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->range * COBSCALE;
+			unit->weapons[np1 - 1]->range = float(p2) / COBSCALE;
 			return old;
 		}
 		else {
@@ -1328,12 +1338,13 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		}
 	}
 	case WEAPON_PROJECTILE_SPEED: {
+		const int np1 = -p1;
 		if (p1 > 0 && static_cast<size_t>(p1) <= unit->weapons.size()) {
 			return int(unit->weapons[p1-1]->projectileSpeed * COBSCALE);
 		}
-		else if (p1 < 0 && p1 >= (0 - unit->weapons.size())) {
-			int old = int(unit->weapons[-p1-1]->projectileSpeed * COBSCALE);
-			unit->weapons[-p1-1]->projectileSpeed = float(p2) / COBSCALE;
+		else if (np1 > 0 && static_cast<size_t>(np1) <= unit->weapons.size()) {
+			const int old = unit->weapons[np1 - 1]->projectileSpeed * COBSCALE;
+			unit->weapons[np1 - 1]->projectileSpeed = float(p2) / COBSCALE;
 			return old;
 		}
 		else {
@@ -1519,18 +1530,8 @@ void CUnitScript::SetUnitVal(int val, int param)
 			break;
 		}
 		case MAX_SPEED: {
-			if (unit->moveType && param > 0) {
-				// find the first CMD_SET_WANTED_MAX_SPEED and modify it if need be
-				for (CCommandQueue::iterator it = unit->commandAI->commandQue.begin();
-						it != unit->commandAI->commandQue.end(); ++it) {
-					Command &c = *it;
-					if (c.GetID() == CMD_SET_WANTED_MAX_SPEED && c.params[0] == unit->maxSpeed) {
-						c.params[0] = param/(float)COBSCALE;
-						break;
-					}
-				}
-				unit->moveType->SetMaxSpeed(param/(float)COBSCALE);
-				unit->maxSpeed = param/(float)COBSCALE;
+			if (param > 0) {
+				unit->commandAI->SetScriptMaxSpeed(param / (float) COBSCALE);
 			}
 			break;
 		}
@@ -1548,9 +1549,9 @@ void CUnitScript::SetUnitVal(int val, int param)
 		}
 		case HEADING: {
 			unit->heading = param % COBSCALE;
-			unit->SetDirectionFromHeading();
-			break;
-		}
+			unit->UpdateDirVectors(!unit->upright && unit->moveType->GetMaxSpeed() > 0.0f);
+			unit->UpdateMidPos();
+		} break;
 		case LOS_RADIUS: {
 			unit->ChangeLos(param, unit->realAirLosRadius);
 			unit->realLosRadius = param;
@@ -1601,13 +1602,12 @@ void CUnitScript::SetUnitVal(int val, int param)
 			break;
 		}
 		case CRASHING: {
-			if (dynamic_cast<CAirMoveType*>(unit->moveType)) {
+			AAirMoveType* amt = dynamic_cast<AAirMoveType*>(unit->moveType);
+			if (amt != NULL) {
 				if (!!param) {
-					((CAirMoveType*)unit->moveType)->SetState(AAirMoveType::AIRCRAFT_CRASHING);
+					amt->SetState(AAirMoveType::AIRCRAFT_CRASHING);
 				} else {
-					unit->crashing = false;
-					((CAirMoveType*)unit->moveType)->aircraftState = AAirMoveType::AIRCRAFT_TAKEOFF;
-					((CAirMoveType*)unit->moveType)->SetState(AAirMoveType::AIRCRAFT_FLYING);
+					amt->SetState(AAirMoveType::AIRCRAFT_FLYING);
 				}
 			}
 			break;

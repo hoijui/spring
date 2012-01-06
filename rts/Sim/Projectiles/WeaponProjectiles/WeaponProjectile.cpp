@@ -47,12 +47,12 @@ CR_REG_METADATA(CWeaponProjectile,(
 CWeaponProjectile::CWeaponProjectile(): CProjectile()
 {
 	targeted = false;
-	weaponDef = 0;
-	target = 0;
+	weaponDef = NULL;
+	target = NULL;
 	projectileType = WEAPON_BASE_PROJECTILE;
 	ttl = 0;
 	colorTeam = 0;
-	interceptTarget = 0;
+	interceptTarget = NULL;
 	bounces = 0;
 	keepBouncing = true;
 	cegID = -1U;
@@ -84,28 +84,31 @@ CWeaponProjectile::CWeaponProjectile(const float3& pos, const float3& speed,
 	}
 
 	if (target) {
-		AddDeathDependence(target);
+		AddDeathDependence(target, DEPENDENCE_WEAPONTARGET);
 	}
 
 	if (interceptTarget) {
 		interceptTarget->targeted = true;
-		AddDeathDependence(interceptTarget);
+		AddDeathDependence(interceptTarget, DEPENDENCE_INTERCEPTTARGET);
 	}
 
-	if (weaponDef != NULL) {
-		if (weaponDef->interceptedByShieldType) {
-			interceptHandler.AddShieldInterceptableProjectile(this);
-		}
+	assert(weaponDef != NULL);
 
-		alwaysVisible = weaponDef->visuals.alwaysVisible;
-		ignoreWater = weaponDef->waterweapon;
+	alwaysVisible = weaponDef->visuals.alwaysVisible;
+	ignoreWater = weaponDef->waterweapon;
 
-		model = weaponDef->LoadModel();
+	model = weaponDef->LoadModel();
 
-		collisionFlags = weaponDef->collisionFlags;
-	}
+	collisionFlags = weaponDef->collisionFlags;
 
 	ph->AddProjectile(this);
+	ASSERT_SYNCED(id);
+
+	if (weaponDef->interceptedByShieldType) {
+		// this needs a valid projectile id set
+		assert(id >= 0);
+		interceptHandler.AddShieldInterceptableProjectile(this);
+	}
 }
 
 
@@ -150,7 +153,8 @@ void CWeaponProjectile::Collision(CFeature* feature)
 			owner(),
 			NULL,                                             // hitUnit
 			feature,
-			weaponDef->areaOfEffect,
+			weaponDef->craterAreaOfEffect,
+			weaponDef->damageAreaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
 			weaponDef->noExplode? 0.3f: 1.0f,                 // gfxMod
@@ -205,7 +209,8 @@ void CWeaponProjectile::Collision(CUnit* unit)
 			owner(),
 			unit,
 			NULL,                                            // hitFeature
-			weaponDef->areaOfEffect,
+			weaponDef->craterAreaOfEffect,
+			weaponDef->damageAreaOfEffect,
 			weaponDef->edgeEffectiveness,
 			weaponDef->explosionSpeed,
 			weaponDef->noExplode? 0.3f: 1.0f,                 // gfxMod

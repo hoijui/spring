@@ -12,7 +12,6 @@
 #include "Map/Ground.h"
 #include "Map/ReadMap.h"
 #include "Sim/MoveTypes/MoveInfo.h"
-#include "Sim/MoveTypes/MoveMath/MoveMath.h"
 #include "Sim/Misc/GeometricObjects.h"
 
 #define PATHDEBUG 0
@@ -22,7 +21,7 @@ void* CPathFinder::operator new(size_t size) { return PathAllocator::Alloc(size)
 void CPathFinder::operator delete(void* p, size_t size) { PathAllocator::Free(p, size); }
 #endif
 
-
+const CMoveMath::BlockType testSquareBlockBits = (CMoveMath::BLOCK_MOBILE | CMoveMath::BLOCK_MOVING | CMoveMath::BLOCK_MOBILE_BUSY);
 
 CPathFinder::CPathFinder()
 	: heatMapOffset(0)
@@ -104,8 +103,8 @@ IPath::SearchResult CPathFinder::GetPath(
 	this->exactPath = exactPath;
 	this->needPath = needPath;
 	start = startPos;
-	startxSqr = (int(start.x) / SQUARE_SIZE)|1;
-	startzSqr = (int(start.z) / SQUARE_SIZE)|1;
+	startxSqr = (int(start.x) / SQUARE_SIZE);
+	startzSqr = (int(start.z) / SQUARE_SIZE);
 
 	// Clamp the start position
 	if (startxSqr <         0) startxSqr =            0;
@@ -279,7 +278,7 @@ bool CPathFinder::TestSquare(
 		return false;
 	}
 
-	const int blockStatus = moveData.moveMath->IsBlocked(moveData, square.x, square.y);
+	const CMoveMath::BlockType blockStatus = moveData.moveMath->IsBlocked(moveData, square.x, square.y);
 
 	// Check if square are out of constraints or blocked by something.
 	// Doesn't need to be done on open squares, as those are already tested.
@@ -300,9 +299,7 @@ bool CPathFinder::TestSquare(
 		return false;
 	}
 
-	static const int blockBits = (CMoveMath::BLOCK_MOBILE | CMoveMath::BLOCK_MOVING | CMoveMath::BLOCK_MOBILE_BUSY);
-
-	if (testMobile && (blockStatus & blockBits)) {
+	if (testMobile && (blockStatus & testSquareBlockBits)) {
 		if (blockStatus & CMoveMath::BLOCK_MOBILE_BUSY)
 			squareSpeedMod *= 0.10f;
 		else if (blockStatus & CMoveMath::BLOCK_MOBILE)

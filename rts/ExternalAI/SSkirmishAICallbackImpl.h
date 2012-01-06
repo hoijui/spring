@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _SSKIRMISHAICALLBACKIMPL_H
-#define	_SSKIRMISHAICALLBACKIMPL_H
+#ifndef S_SKIRMISH_AI_CALLBACK_IMPL_H
+#define	S_SKIRMISH_AI_CALLBACK_IMPL_H
 
 // Doc-comments for the functions in this header can be found in this file:
 // rts/ExternalAI/Interface/SSkirmishAICallback.h
@@ -14,17 +14,30 @@ extern "C" {
 
 EXPORT(int              ) skirmishAiCallback_Engine_handleCommand(int skirmishAIId, int toId, int commandId, int commandTopic, void* commandData);
 
+
+EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getFull(int skirmishAIId);
+
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getMajor(int skirmishAIId);
 
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getMinor(int skirmishAIId);
 
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getPatchset(int skirmishAIId);
 
+EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getCommits(int skirmishAIId);
+
+EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getHash(int skirmishAIId);
+
+EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getBranch(int skirmishAIId);
+
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getAdditional(int skirmishAIId);
 
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getBuildTime(int skirmishAIId);
 
+EXPORT(bool             ) skirmishAiCallback_Engine_Version_isRelease(int skirmishAIId);
+
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getNormal(int skirmishAIId);
+
+EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getSync(int skirmishAIId);
 
 EXPORT(const char*      ) skirmishAiCallback_Engine_Version_getFull(int skirmishAIId);
 
@@ -1096,8 +1109,6 @@ EXPORT(int              ) skirmishAiCallback_WeaponDef_getFlightTime(int skirmis
 
 EXPORT(float            ) skirmishAiCallback_WeaponDef_getCost(int skirmishAIId, int weaponDefId, int resourceId);
 
-EXPORT(float            ) skirmishAiCallback_WeaponDef_getSupplyCost(int skirmishAIId, int weaponDefId);
-
 EXPORT(int              ) skirmishAiCallback_WeaponDef_getProjectilesPerShot(int skirmishAIId, int weaponDefId);
 
 //EXPORT(int              ) skirmishAiCallback_WeaponDef_getTdfId(int skirmishAIId, int weaponDefId);
@@ -1291,4 +1302,4 @@ void skirmishAiCallback_release(int skirmishAIId);
 
 #endif // defined __cplusplus && !defined BUILDING_AI
 
-#endif // _SSKIRMISHAICALLBACKIMPL_H
+#endif // S_SKIRMISH_AI_CALLBACK_IMPL_H

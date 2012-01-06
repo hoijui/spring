@@ -22,26 +22,26 @@ std::string option_getDefString(const Option& option) {
 	std::string def = "";
 
 	switch (option.typeCode) {
-		case opt_bool: {
+		case opt_bool:
 			def = option.boolDef ? "true" : "false";
 			break;
-		} case opt_list: {
+		case opt_list:
 			def = option.listDef;
 			break;
-		} case opt_number: {
+		case opt_number: {
 			static const size_t fltString_sizeMax = 32;
 			char fltString[fltString_sizeMax];
 			SNPRINTF(fltString, fltString_sizeMax, "%f", option.numberDef);
 			def += fltString;
 			break;
-		} case opt_string: {
+		}
+		case opt_string:
 			def = option.stringDef;
 			break;
-		} case opt_error: {
-		} case opt_section: {
-		} default: {
+		case opt_error:
+		case opt_section:
+		default:
 			break;
-		}
 	}
 
 	return def;
@@ -157,15 +157,12 @@ static void option_parseOption(const LuaTable& root, int index, Option& opt,
 }
 
 
-void option_parseOptions(
+static void option_parseOptionsInternal(
 		std::vector<Option>& options,
-		const std::string& fileName,
-		const std::string& fileModes,
-		const std::string& accessModes,
+		LuaParser& luaParser,
+		const std::string& luaSourceDesc,
 		std::set<std::string>* optionsSet)
 {
-	LuaParser luaParser(fileName, fileModes, accessModes);
-
 	if (!luaParser.Execute()) {
 		throw content_error("luaParser.Execute() failed: "
 				+ luaParser.GetErrorLog());
@@ -189,13 +186,34 @@ void option_parseOptions(
 			options.push_back(opt);
 		} catch (const content_error& err) {
 			LOG_L(L_WARNING, "Failed parsing option %d from %s: %s",
-					index, fileName.c_str(), err.what());
+					index, luaSourceDesc.c_str(), err.what());
 		}
 	}
 	if (optionsSet == NULL) {
 		delete myOptionsSet;
 		myOptionsSet = NULL;
 	}
+}
+
+void option_parseOptions(
+		std::vector<Option>& options,
+		const std::string& fileName,
+		const std::string& fileModes,
+		const std::string& accessModes,
+		std::set<std::string>* optionsSet)
+{
+	LuaParser luaParser(fileName, fileModes, accessModes);
+	option_parseOptionsInternal(options, luaParser, fileName, optionsSet);
+}
+
+void option_parseOptionsLuaString(
+		std::vector<Option>& options,
+		const std::string& optionsLuaString,
+		const std::string& accessModes,
+		std::set<std::string>* optionsSet)
+{
+	LuaParser luaParser(optionsLuaString, accessModes);
+	option_parseOptionsInternal(options, luaParser, "<Lua-Text-Chunk>", optionsSet);
 }
 
 
@@ -219,7 +237,7 @@ void option_parseMapOptions(
 		throw "Could not determine config-file name from the map name '" + mapName + "'!";
 
 	luaParser.GetTable("Map");
-	luaParser.AddString("name",     mapName);	
+	luaParser.AddString("name",     mapName);
 	luaParser.AddString("fileName", FileSystem::GetFilename(mapFile));
 	luaParser.AddString("fullName", mapFile);
 	luaParser.AddString("configFile", configName);

@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef __BASE_GROUND_DRAWER_H__
-#define __BASE_GROUND_DRAWER_H__
+#ifndef _BASE_GROUND_DRAWER_H
+#define _BASE_GROUND_DRAWER_H
 
 #include <map>
 #include "Rendering/GL/myGL.h"
@@ -12,6 +12,17 @@
 class CMetalMap;
 class CHeightLinePalette;
 class CBaseGroundTextures;
+class CCamera;
+
+struct DrawPass {
+	enum e {
+		Normal,
+		Shadow,
+		WaterReflection,
+		WaterRefraction,
+		UnitReflection
+	};
+};
 
 class CBaseGroundDrawer
 {
@@ -32,21 +43,22 @@ public:
 		drawPathCost,
 	};
 
-	CBaseGroundDrawer(void);
-	virtual ~CBaseGroundDrawer(void);
+	CBaseGroundDrawer();
+	virtual ~CBaseGroundDrawer();
 
-	virtual void Draw(bool drawWaterReflection = false, bool drawUnitReflection = false) = 0;
-	virtual void DrawShadowPass(void);
+	virtual void Draw(const DrawPass::e& drawPass) = 0;
+	virtual void DrawShadowPass();
 
-	virtual void SetupBaseDrawPass(void) {}
-	virtual void SetupReflDrawPass(void) {}
-	virtual void SetupRefrDrawPass(void) {}
+	virtual void SetupBaseDrawPass() {}
+	virtual void SetupReflDrawPass() {}
+	virtual void SetupRefrDrawPass() {}
 
 	virtual void Update() = 0;
 	virtual void UpdateSunDir() = 0;
 
 	virtual void IncreaseDetail() = 0;
 	virtual void DecreaseDetail() = 0;
+	virtual int GetGroundDetail(const DrawPass::e& drawPass = DrawPass::Normal) const = 0;
 
 	virtual void SetDrawMode(BaseGroundDrawMode dm) { drawMode = dm; }
 	virtual GL::LightHandler* GetLightHandler() { return NULL; }
@@ -67,6 +79,9 @@ public:
 
 	CBaseGroundTextures* GetGroundTextures() { return groundTextures; }
 
+	void UpdateCamRestraints(CCamera* camera);
+
+public:
 	bool wireframe;
 	bool advShading;
 
@@ -110,4 +125,4 @@ public:
 	CBaseGroundTextures* groundTextures;
 };
 
-#endif // __BASE_GROUND_DRAWER__
+#endif // _BASE_GROUND_DRAWER_H

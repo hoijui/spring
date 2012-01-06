@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef _ENGINEOUTHANDLER_H
-#define _ENGINEOUTHANDLER_H
+#ifndef ENGINE_OUT_HANDLER_H
+#define ENGINE_OUT_HANDLER_H
 
 #include "System/Object.h"
 #include "Sim/Misc/GlobalConstants.h"
@@ -19,10 +19,10 @@ class SkirmishAIKey;
 class CSkirmishAIWrapper;
 struct SSkirmishAICallback;
 
+
 void handleAIException(const char* description);
 
 class CEngineOutHandler : public CObject {
-private:
 	CR_DECLARE(CEngineOutHandler);
 
 	CEngineOutHandler();
@@ -154,8 +154,8 @@ private:
 	static CEngineOutHandler* singleton;
 
 private:
-	typedef std::vector<size_t> ids_t;
-	typedef std::map<size_t, CSkirmishAIWrapper*> id_ai_t;
+	typedef std::vector<unsigned char> ids_t;
+	typedef std::map<unsigned char, CSkirmishAIWrapper*> id_ai_t;
 	typedef std::map<int, ids_t> team_ais_t;
 
 	/// Contains all local Skirmish AIs, indexed by their ID
@@ -170,4 +170,4 @@ private:
 
 #define eoh CEngineOutHandler::GetInstance()
 
-#endif // _ENGINEOUTHANDLER_H
+#endif // ENGINE_OUT_HANDLER_H

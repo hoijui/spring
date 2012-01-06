@@ -169,12 +169,12 @@ void CGameInfo::Draw()
 		values.push_back(FileSystem::GetBasename(gameSetup->demoName));
 	}
 
-	labels.push_back("Game Version:");
+	labels.push_back("Spring Version:");
 	values.push_back(SpringVersion::GetFull());
 
 #ifdef USE_GML
 	labels.push_back("MT Threads:");
-	values.push_back(IntToString(gmlThreadCount));
+	values.push_back(IntToString(GML::ThreadCount()));
 #endif
 
 	labels.push_back("Game Speed:");
@@ -199,7 +199,7 @@ void CGameInfo::Draw()
 	labels.push_back("Map Name:");
 	values.push_back(gameSetup->mapName);
 
-	labels.push_back("Mod Name:");
+	labels.push_back("Game Name:");
 	values.push_back(gameSetup->modName);
 
 	if (gs->cheatEnabled) {

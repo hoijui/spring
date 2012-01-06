@@ -203,12 +203,12 @@ void CubeMapHandler::CreateReflectionFace(unsigned int glType, const float3& cam
 	if (camera->forward.y == -1.0f) { camera->up = float3(0.0f, 0.0f, -1.0f); }
 
 	camera->pos.y = ground->GetHeightAboveWater(camera->pos.x, camera->pos.z, false) + 50.0f;
-	camera->Update(false, false);
+	camera->Update(false);
 
 	sky->Draw();
 
 	if (!skyOnly) {
-		readmap->GetGroundDrawer()->Draw(false, true);
+		readmap->GetGroundDrawer()->Draw(DrawPass::UnitReflection);
 	}
 
 	//! we do this later to save render context switches (this is one of the slowest opengl operations!)
@@ -220,7 +220,7 @@ void CubeMapHandler::CreateReflectionFace(unsigned int glType, const float3& cam
 
 	camera->~CCamera();
 	new (camera) CCamera(*(CCamera*) cameraMemBuf);
-	camera->Update(false);
+	camera->Update();
 }
 
 
