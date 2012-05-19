@@ -24,7 +24,7 @@ public:
 	 *
 	 * Re-instantiates if the configHandler already existed.
 	 */
-	static void Instantiate(std::string configSource = "");
+	static void Instantiate(const std::string configSource = "", const bool safemode = false);
 
 	/**
 	 * @brief Deallocate global configHandler
@@ -95,6 +95,12 @@ public:
 	 * @note If the config variable has a default value then it is always set!
 	 */
 	virtual bool IsSet(const std::string& key) const = 0;
+	/**
+	 * @brief Queries if config variable is readonly
+	 * @param key name of key to query
+	 * @return true if key is read only
+	 */
+	virtual bool IsReadOnly(const std::string& key) const = 0;
 
 	/**
 	 * @brief Delete a config variable from all mutable config sources

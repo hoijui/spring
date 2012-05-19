@@ -681,7 +681,7 @@ int LuaUnsyncedRead::GetVisibleUnits(lua_State* L)
 	// arg 1 - teamID
 	int teamID = luaL_optint(L, 1, -1);
 	if (teamID == MyUnits) {
-		const int scriptTeamID = CLuaHandle::GetReadTeam(L);
+		const int scriptTeamID = CLuaHandle::GetHandleReadTeam(L);
 		if (scriptTeamID >= 0) {
 			teamID = scriptTeamID;
 		} else {
@@ -817,7 +817,7 @@ int LuaUnsyncedRead::GetVisibleFeatures(lua_State* L)
 	if (allyTeamID < 0) {
 		allyTeamID = -1;
 		if (!ActiveFullRead()) {
-			allyTeamID = CLuaHandle::GetReadAllyTeam(L);
+			allyTeamID = CLuaHandle::GetHandleReadAllyTeam(L);
 		}
 	}
 
@@ -1115,7 +1115,7 @@ int LuaUnsyncedRead::GetMapDrawMode(lua_State* L)
 
 int LuaUnsyncedRead::GetMapSquareTexture(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L)) {
+	if (CLuaHandle::GetHandleSynced(L)) {
 		return 0;
 	}
 
@@ -1311,17 +1311,19 @@ int LuaUnsyncedRead::TraceScreenRay(lua_State* L)
 
 	CUnit* unit = NULL;
 	CFeature* feature = NULL;
+
 	const float range = globalRendering->viewRange * 1.4f;
+	const float badRange = range - 300.0f;
+
 	const float3& pos = camera->pos;
 	const float3 dir = camera->CalcPixelDir(wx, wy);
 
 
 // FIXME	const int origAllyTeam = gu->myAllyTeam;
 //	gu->myAllyTeam = readAllyTeam;
-	const float dist = TraceRay::GuiTraceRay(pos, dir, range, true, NULL, unit, feature);
+	const float dist = TraceRay::GuiTraceRay(pos, dir, range, true, NULL, unit, feature, onlyCoords);
 //	gu->myAllyTeam = origAllyTeam;
 
-	const float badRange = range - 300.0f;
 	if ((dist > badRange) && !unit && !feature) {
 		if (includeSky) {
 			lua_pushliteral(L, "sky");

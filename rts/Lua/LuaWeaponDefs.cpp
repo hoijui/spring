@@ -23,6 +23,7 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "System/FileSystem/SimpleParser.h"
+#include "System/Log/ILog.h"
 #include "System/Util.h"
 #include "Sim/Misc/GlobalSynced.h"
 
@@ -50,7 +51,6 @@ static int DamagesArray(lua_State* L, const void* data);
 static int CustomParamsTable(lua_State* L, const void* data);
 static int GuiSoundSetTable(lua_State* L, const void* data);
 static int CategorySetFromBits(lua_State* L, const void* data);
-//static int CategorySetFromString(lua_State* L, const void* data);
 
 
 /******************************************************************************/
@@ -155,10 +155,13 @@ static int WeaponDefIndex(lua_State* L)
 		case FUNCTION_TYPE: {
 			return elem.func(L, p);
 		}
-		case ERROR_TYPE:{
-			luaL_error(L, "ERROR_TYPE in WeaponDefs __index");
+		case ERROR_TYPE: {
+			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in WeaponDefs __index", __FUNCTION__, name);
+			lua_pushnil(L);
+			return 1;
 		}
 	}
+
 	return 0;
 }
 
@@ -215,8 +218,10 @@ static int WeaponDefNewIndex(lua_State* L)
 			*((string*)p) = lua_tostring(L, -1);
 			return 0;
 		}
-		case ERROR_TYPE:{
-			luaL_error(L, "ERROR_TYPE in WeaponDefs __newindex");
+		case ERROR_TYPE: {
+			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in WeaponDefs __newindex", __FUNCTION__, name);
+			lua_pushnil(L);
+			return 1;
 		}
 	}
 
@@ -407,7 +412,7 @@ static int GuiSoundSetTable(lua_State* L, const void* data)
 		const GuiSoundSet::Data& sound = soundSet.sounds[i];
 		HSTR_PUSH_STRING(L, "name",   sound.name);
 		HSTR_PUSH_NUMBER(L, "volume", sound.volume);
-		if (!CLuaHandle::GetSynced(L)) {
+		if (!CLuaHandle::GetHandleSynced(L)) {
 			HSTR_PUSH_NUMBER(L, "id", sound.id);
 		}
 		lua_rawset(L, -3);
@@ -415,13 +420,6 @@ static int GuiSoundSetTable(lua_State* L, const void* data)
 	return 1;
 }
 
-
-static int DeprecatedMaxVelocity(lua_State* L, const void* data)
-{
-	const float projspeed = *((const float*) data);
-	lua_pushnumber(L, projspeed * GAME_SPEED);
-	return 1;
-}
 
 
 /******************************************************************************/
@@ -436,10 +434,11 @@ static bool InitParamMap()
 	const WeaponDef wd;
 	const char* start = ADDRESS(wd);
 
-	ADD_FUNCTION("damages",   wd.damages,   DamagesArray);
-	ADD_FUNCTION("visuals",   wd.visuals,   VisualsTable);
-	ADD_FUNCTION("hitSound",  wd.soundhit,  GuiSoundSetTable);
-	ADD_FUNCTION("fireSound", wd.firesound, GuiSoundSetTable);
+	ADD_FUNCTION("damages",      wd.damages,   DamagesArray);
+	ADD_FUNCTION("visuals",      wd.visuals,   VisualsTable);
+
+	ADD_FUNCTION("hitSound",     wd.hitSound,  GuiSoundSetTable);
+	ADD_FUNCTION("fireSound",    wd.fireSound, GuiSoundSetTable);
 
 	ADD_FUNCTION("customParams",         wd.customParams,   CustomParamsTable);
 	ADD_FUNCTION("noEnemyCollide",       wd.collisionFlags, NoEnemyCollide);
@@ -447,9 +446,10 @@ static bool InitParamMap()
 	ADD_FUNCTION("noFeatureCollide",     wd.collisionFlags, NoFeatureCollide);
 	ADD_FUNCTION("noNeutralCollide",     wd.collisionFlags, NoNeutralCollide);
 	ADD_FUNCTION("noGroundCollide",      wd.collisionFlags, NoGroundCollide);
-	ADD_FUNCTION("onlyTargetCategories", wd.onlyTargetCategory, CategorySetFromBits);
 
-	ADD_FUNCTION("maxVelocity", wd.projectilespeed, DeprecatedMaxVelocity); // NOTE: deprecated (needs to be linked via _FUNCTION, else it would be writable)
+	ADD_DEPRECATED_LUADEF_KEY("areaOfEffect");
+	ADD_DEPRECATED_LUADEF_KEY("maxVelocity");
+	ADD_DEPRECATED_LUADEF_KEY("onlyTargetCategories");
 
 	ADD_INT("id", wd.id);
 
@@ -477,7 +477,6 @@ static bool InitParamMap()
 
 	ADD_FLOAT("craterAreaOfEffect", wd.craterAreaOfEffect);
 	ADD_FLOAT("damageAreaOfEffect", wd.damageAreaOfEffect);
-	ADD_FLOAT("areaOfEffect",       wd.damageAreaOfEffect); // backward compability (TODO: find a way to print a warning when used!)
 	ADD_FLOAT("edgeEffectiveness",  wd.edgeEffectiveness);
 	ADD_FLOAT("fireStarter",        wd.fireStarter);
 	ADD_FLOAT("size",               wd.size);
@@ -528,6 +527,7 @@ static bool InitParamMap()
 
 	ADD_BOOL("selfExplode", wd.selfExplode);
 	ADD_BOOL("gravityAffected", wd.gravityAffected);
+	ADD_FLOAT("myGravity", wd.myGravity);
 	ADD_BOOL("noExplode", wd.noExplode);
 	ADD_FLOAT("startvelocity", wd.startvelocity);
 	ADD_FLOAT("weaponAcceleration", wd.weaponacceleration);

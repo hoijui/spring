@@ -138,18 +138,6 @@ CAICallback::~CAICallback()
 
 void CAICallback::SendStartPos(bool ready, float3 startPos)
 {
-	if (startPos.z < gameSetup->allyStartingData[gu->myAllyTeam].startRectTop * gs->mapy * SQUARE_SIZE)
-		startPos.z = gameSetup->allyStartingData[gu->myAllyTeam].startRectTop * gs->mapy * SQUARE_SIZE;
-
-	if (startPos.z > gameSetup->allyStartingData[gu->myAllyTeam].startRectBottom * gs->mapy * SQUARE_SIZE)
-		startPos.z = gameSetup->allyStartingData[gu->myAllyTeam].startRectBottom * gs->mapy * SQUARE_SIZE;
-
-	if (startPos.x < gameSetup->allyStartingData[gu->myAllyTeam].startRectLeft * gs->mapx * SQUARE_SIZE)
-		startPos.x = gameSetup->allyStartingData[gu->myAllyTeam].startRectLeft * gs->mapx * SQUARE_SIZE;
-
-	if (startPos.x > gameSetup->allyStartingData[gu->myAllyTeam].startRectRight * gs->mapx * SQUARE_SIZE)
-		startPos.x = gameSetup->allyStartingData[gu->myAllyTeam].startRectRight * gs->mapx * SQUARE_SIZE;
-
 	unsigned char readyness = ready? 1: 0;
 	net->Send(CBaseNetProtocol::Get().SendStartPos(gu->myPlayerNum, team, readyness, startPos.x, startPos.y, startPos.z));
 }
@@ -736,8 +724,8 @@ bool CAICallback::IsUnitNeutral(int unitId) {
 
 int CAICallback::InitPath(const float3& start, const float3& end, int pathType, float goalRadius)
 {
-	assert(((size_t)pathType) < moveinfo->moveData.size());
-	return pathManager->RequestPath(moveinfo->moveData.at(pathType), start, end, goalRadius, NULL, false);
+	assert(((size_t)pathType) < moveDefHandler->moveDefs.size());
+	return pathManager->RequestPath(moveDefHandler->moveDefs.at(pathType), start, end, goalRadius, NULL, false);
 }
 
 float3 CAICallback::GetNextWaypoint(int pathId)
@@ -1179,8 +1167,7 @@ bool CAICallback::CanBuildAt(const UnitDef* unitDef, const float3& pos, int faci
 	CFeature* blockingF = NULL;
 	BuildInfo bi(unitDef, pos, facing);
 	bi.pos = helper->Pos2BuildPos(bi, false);
-	const int canBuildState = uh->TestUnitBuildSquare(bi, blockingF, teamHandler->AllyTeam(team), false);
-	return (canBuildState != 0);
+	return !!uh->TestUnitBuildSquare(bi, blockingF, teamHandler->AllyTeam(team), false);
 }
 
 

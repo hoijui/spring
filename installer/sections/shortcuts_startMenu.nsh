@@ -1,4 +1,3 @@
-
 !ifdef INSTALL
 
 	SetOutPath "$INSTDIR"
@@ -19,9 +18,11 @@
 !endif
 	CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Settings.lnk" "$INSTDIR\springsettings.exe"
 	CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring.lnk" "$INSTDIR\spring.exe"
+	CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring (safemode).lnk" "$INSTDIR\spring.exe" "--safemode"
 	!ifdef SEC_GML
 		${If} ${SectionIsSelected} ${SEC_GML}
 			CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring MT.lnk" "$INSTDIR\spring-multithreaded.exe"
+			CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring MT (safemode).lnk" "$INSTDIR\spring-multithreaded.exe" "--safemode"
 		${EndIf}
 	!endif
 
@@ -35,7 +36,9 @@
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Zero-K Lobby.lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Settings.lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring.lnk"
+	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring (safemode).lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring MT.lnk"
+	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Test Spring MT (safemode).lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall Spring.lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\Download Content.lnk"
 	Delete "$SMPROGRAMS\${PRODUCT_NAME}\rapid-GUI.lnk"

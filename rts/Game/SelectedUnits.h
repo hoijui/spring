@@ -18,6 +18,9 @@ public:
 	CSelectedUnits();
 	virtual ~CSelectedUnits();
 
+	bool IsSelected(const CUnit* unit) const;
+	bool IsSelected(const int unitID) const;
+
 	void Init(unsigned numPlayers);
 	void SelectGroup(int num);
 	void AiOrder(int unitid, const Command& c, int playerID);
@@ -51,9 +54,9 @@ public:
 	std::string GetTooltip();
 	void SetCommandPage(int page);
 	void SendCommand(const Command& c);
-	void SendCommandsToUnits(const std::vector<int>& unitIDs, const std::vector<Command>& commands);
+	void SendCommandsToUnits(const std::vector<int>& unitIDs, const std::vector<Command>& commands, bool pairwise = false);
 
-
+public:
 	CUnitSet selectedUnits;
 
 	bool selectionChanged;

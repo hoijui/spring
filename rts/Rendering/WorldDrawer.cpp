@@ -140,10 +140,11 @@ void CWorldDrawer::Draw()
 
 	{
 		SCOPED_TIMER("WorldDrawer::Models");
-		DebugColVolDrawer::Draw();
 		unitDrawer->Draw(false);
 		modelDrawer->Draw();
 		featureDrawer->Draw();
+		DebugColVolDrawer::Draw();
+
 		pathDrawer->DrawAll();
 	}
 

@@ -33,6 +33,7 @@ if (System == nil) then
     GL = GL,
     CMD = CMD,
     CMDTYPE = CMDTYPE,
+    LOG = LOG,
     
     UnitDefs        = UnitDefs,
     UnitDefNames    = UnitDefNames,
@@ -53,6 +54,9 @@ if (System == nil) then
     package = package,
     coroutine = coroutine,
     
+    -- luasocket
+    socket          = socket,
+
     --  
     --  Standard functions and variables
     --

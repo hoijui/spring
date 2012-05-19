@@ -20,7 +20,6 @@
 #include "ExternalAI/EngineOutHandler.h"
 #include "ExternalAI/SkirmishAIHandler.h"
 #include "Lua/LuaRules.h"
-#include "Lua/LuaUI.h"
 #include "UI/GameSetupDrawer.h"
 #include "UI/MouseHandler.h"
 #include "Rendering/GlobalRendering.h"
@@ -58,16 +57,17 @@ void CGame::ClientReadNet()
 
 	boost::shared_ptr<const netcode::RawPacket> packet;
 
-	// compute new timeLeft to "smooth" out SimFrame() calls
+	// compute new msgProcTimeLeft to "smooth" out SimFrame() calls
 	if (!gameServer) {
 		const spring_time currentFrame = spring_gettime();
 
 		if (skipping) {
-			timeLeft = 0.01f;
+			msgProcTimeLeft = 0.01f;
 		} else {
-			if (timeLeft > 1.0f)
-				timeLeft -= 1.0f;
-			timeLeft += consumeSpeed * (spring_tomsecs(currentFrame - lastframe) / 1000.0f);
+			if (msgProcTimeLeft > 1.0f)
+				msgProcTimeLeft -= 1.0f;
+
+			msgProcTimeLeft += consumeSpeed * (spring_tomsecs(currentFrame - lastframe) / 1000.0f);
 		}
 
 		lastframe = currentFrame;
@@ -97,19 +97,40 @@ void CGame::ClientReadNet()
 
 		if (que < leastQue)
 			leastQue = que;
-	}
-	else
-	{
+	} else {
 		// make sure ClientReadNet returns at least every 15 game frames
 		// so CGame can process keyboard input, and render etc.
-		timeLeft = GAME_SPEED/float(gu->minFPS) * gs->userSpeedFactor;
+		msgProcTimeLeft = GAME_SPEED / float(gu->minFPS) * gs->userSpeedFactor;
 	}
 
+	const spring_time msgProcStartTime = spring_gettime();
+
+	// balance the time spent in simulation & drawing (esp. when reconnecting)
 	// always render at least 2FPS (will otherwise be highly unresponsive when catching up after a reconnection)
-	const spring_time procstarttime = spring_gettime();
+	// else use the following algo: i.e. with gu->reconnectSimDrawBalance = 0.2f
+	//  -> try to spend minimum 20% of the time in drawing
+	//  -> use remaining 80% for reconnecting
+	// (maxSimFPS / minDrawFPS) is desired number of simframes per drawframe
+	const float maxSimFPS    = (1.0f - gu->reconnectSimDrawBalance) * 1000.0f / std::max(0.01f, gu->avgSimFrameTime);
+	const float minDrawFPS   =         gu->reconnectSimDrawBalance  * 1000.0f / std::max(0.01f, gu->avgDrawFrameTime);
+	const float simDrawRatio = maxSimFPS / minDrawFPS;
+	const float msgProcTimeLimit = Clamp(simDrawRatio * gu->avgSimFrameTime, 5.0f, 1000.0f / gu->minFPS);
+
 	// really process the messages
-	while (timeLeft > 0.0f && spring_tomsecs(spring_gettime() - procstarttime) < 500 && (packet = net->GetData(gs->frameNum)))
-	{
+	while (true) {
+		const float msgProcTimeSpent = spring_tomsecs(spring_gettime() - msgProcStartTime);
+		const bool allowMsgProcessing =
+			(msgProcTimeLeft  >              0.0f) && // smooths simframes across the full second
+			(msgProcTimeSpent <= msgProcTimeLimit);   // balance the time spent in sim & drawing
+
+		if (!allowMsgProcessing)
+			break;
+
+		// get netpacket from the queue
+		packet = net->GetData(gs->frameNum);
+		if (!packet)
+			break;
+
 		const unsigned char* inbuf = packet->data;
 		const unsigned dataLength = packet->length;
 		const unsigned char packetCode = inbuf[0];
@@ -297,6 +318,7 @@ void CGame::ClientReadNet()
 					float3 pos(*(float*)&inbuf[4],
 					           *(float*)&inbuf[8],
 					           *(float*)&inbuf[12]);
+					teamHandler->Team(team)->ClampStartPosInStartBox(&pos);
 					if (!luaRules || luaRules->AllowStartPosition(player, pos)) {
 						teamHandler->Team(team)->StartposMessage(pos);
 						if (inbuf[3] != 2 && player != SERVER_PLAYER)
@@ -328,6 +350,7 @@ void CGame::ClientReadNet()
 						p[ 0], p[ 1], p[ 2], p[ 3], p[ 4], p[ 5], p[ 6], p[ 7],
 						p[ 8], p[ 9], p[10], p[11], p[12], p[13], p[14], p[15]);
 				AddTraffic(-1, packetCode, dataLength);
+				eventHandler.GameID(gameID, sizeof(gameID));
 				break;
 			}
 
@@ -350,7 +373,7 @@ void CGame::ClientReadNet()
 					if (playerCheckSum != localCheckSum) {
 						LOG_L(L_WARNING, // XXX maybe use a "Desync" section here?
 								"[DESYNC WARNING] path-checksum %08x for player %d (%s)"
-								"does not match local checksum %08x; stale PathEstimator-cache?",
+								" does not match local checksum %08x; stale PathEstimator-cache?",
 								playerCheckSum, playerNum, player->name.c_str(), localCheckSum);
 					}
 				}
@@ -366,7 +389,7 @@ void CGame::ClientReadNet()
 				// Fall-through
 			}
 			case NETMSG_NEWFRAME: {
-				timeLeft -= 1.0f;
+				msgProcTimeLeft -= 1.0f;
 				SimFrame();
 				// both NETMSG_SYNCRESPONSE and NETMSG_NEWFRAME are used for ping calculation by server
 #ifdef SYNCCHECK
@@ -542,6 +565,14 @@ void CGame::ClientReadNet()
 						throw netcode::UnpackPacketException("Invalid player number");
 					unsigned char aiID;
 					pckt >> aiID;
+					unsigned char pairwise;
+					pckt >> pairwise;
+					unsigned int sameCmdID;
+					pckt >> sameCmdID;
+					unsigned char sameCmdOpt;
+					pckt >> sameCmdOpt;
+					unsigned short sameCmdParamSize;
+					pckt >> sameCmdParamSize;
 					// parse the unit list
 					vector<int> unitIDs;
 					short int unitCount;
@@ -558,12 +589,21 @@ void CGame::ClientReadNet()
 					for (int c = 0; c < commandCount; c++) {
 						int cmd_id;
 						unsigned char cmd_opt;
-						pckt >> cmd_id;
-						pckt >> cmd_opt;
+						if (sameCmdID == 0)
+							pckt >> cmd_id;
+						else
+							cmd_id = sameCmdID;
+						if (sameCmdOpt == 0xFF)
+							pckt >> cmd_opt;
+						else
+							cmd_opt = sameCmdOpt;
 
 						Command cmd(cmd_id, cmd_opt);
 						short int paramCount;
-						pckt >> paramCount;
+						if (sameCmdParamSize == 0xFFFF)
+							pckt >> paramCount;
+						else
+							paramCount = sameCmdParamSize;
 						for (int p = 0; p < paramCount; p++) {
 							float param;
 							pckt >> param;
@@ -572,9 +612,16 @@ void CGame::ClientReadNet()
 						commands.push_back(cmd);
 					}
 					// apply the commands
-					for (int c = 0; c < commandCount; c++) {
-						for (int u = 0; u < unitCount; u++) {
-							selectedUnits.AiOrder(unitIDs[u], commands[c], player);
+					if (pairwise) {
+						for (int x = 0; x < std::min(unitCount, commandCount); ++x) {
+							selectedUnits.AiOrder(unitIDs[x], commands[x], player);
+						}
+					}
+					else {
+						for (int c = 0; c < commandCount; c++) {
+							for (int u = 0; u < unitCount; u++) {
+								selectedUnits.AiOrder(unitIDs[u], commands[c], player);
+							}
 						}
 					}
 					AddTraffic(player, packetCode, dataLength);

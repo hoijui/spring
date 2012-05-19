@@ -9,11 +9,12 @@
 
 #include "Rendering/Icon.h"
 #include "Sim/Misc/GuiSoundSet.h"
+#include "Sim/Objects/SolidObject.h"
 #include "System/float3.h"
 
 
 struct Command;
-struct MoveData;
+struct MoveDef;
 struct WeaponDef;
 struct S3DModel;
 struct UnitDefImage;
@@ -36,17 +37,23 @@ struct UnitModelDef
 
 struct UnitDefWeapon {
 	UnitDefWeapon();
-	UnitDefWeapon(std::string name, const WeaponDef* def, int slavedTo,
-	              float3 mainDir, float maxAngleDif, unsigned int badTargetCat,
-	              unsigned int onlyTargetCat, float fuelUse);
+	UnitDefWeapon(const WeaponDef* weaponDef);
+	UnitDefWeapon(const WeaponDef* weaponDef, const LuaTable& weaponTable);
+	UnitDefWeapon(const UnitDefWeapon& udw) { *this = udw; }
+
+	// unused
 	std::string name;
+
 	const WeaponDef* def;
 	int slavedTo;
-	float3 mainDir;
-	float maxAngleDif;
+
 	float fuelUsage; /// How many seconds of fuel it costs for the owning unit to fire this weapon
+	float maxMainDirAngleDif;
+
 	unsigned int badTargetCat;
 	unsigned int onlyTargetCat;
+
+	float3 mainDir;
 };
 
 
@@ -65,21 +72,21 @@ public:
 	bool IsAllowedTerrainHeight(float rawHeight, float* clampedHeight = NULL) const;
 
 	bool IsTransportUnit()      const { return (transportCapacity > 0 && transportMass > 0.0f); }
-	bool IsImmobileUnit()       const { return (movedata == NULL && !canfly && speed <= 0.0f); }
-	bool IsBuildingUnit()       const { return (IsImmobileUnit() && !yardmaps[0].empty()); }
+	bool IsImmobileUnit()       const { return (moveDef == NULL && !canfly && speed <= 0.0f); }
+	bool IsBuildingUnit()       const { return (IsImmobileUnit() && !yardmap.empty()); }
 	bool IsMobileBuilderUnit()  const { return (builder && !IsImmobileUnit()); }
 	bool IsStaticBuilderUnit()  const { return (builder &&  IsImmobileUnit()); }
 	bool IsFactoryUnit()        const { return (builder &&  IsBuildingUnit()); }
 	bool IsExtractorUnit()      const { return (extractsMetal > 0.0f); }
-	bool IsGroundUnit()         const { return (movedata != NULL && !canfly); }
-	bool IsAirUnit()            const { return (movedata == NULL &&  canfly); }
+	bool IsGroundUnit()         const { return (moveDef != NULL && !canfly); }
+	bool IsAirUnit()            const { return (moveDef == NULL &&  canfly); }
 	bool IsNonHoveringAirUnit() const { return (IsAirUnit() && !hoverAttack); }
 	bool IsFighterUnit()        const { return (IsNonHoveringAirUnit() && !HasBomberWeapon()); }
 	bool IsBomberUnit()         const { return (IsNonHoveringAirUnit() &&  HasBomberWeapon()); }
 
-	bool WantsMoveData() const { return (canmove && speed > 0.0f && !canfly); }
+	bool WantsMoveDef() const { return (canmove && speed > 0.0f && !canfly); }
 	bool HasBomberWeapon() const;
-	const std::vector<unsigned char>& GetYardMap(unsigned int facing) const { return (yardmaps[facing % /*NUM_FACINGS*/ 4]); }
+	const std::vector<YardmapStatus>& GetYardMap() const { return yardmap; }
 
 	// NOTE: deprecated, only used by LuaUnitDefs.cpp
 	const char* GetTypeString() const {
@@ -147,12 +154,13 @@ public:
 	float turnRate;
 	bool turnInPlace;
 
-	/**
-	 * units below this speed will turn in place regardless of their
-	 * turnInPlace setting, units above this speed will slow down to
-	 * it when turning
-	 */
+	///< for units with turnInPlace=false, defines the
+	///< minimum speed to slow down to while turning
 	float turnInPlaceSpeedLimit;
+	///< for units with turnInPlace=true, defines the
+	///< maximum angle of a turn that can be entered
+	///< without slowing down
+	float turnInPlaceAngleLimit;
 
 	bool upright;
 	bool blocking;
@@ -309,11 +317,11 @@ public:
 	float maxRudder;
 	float crashDrag;
 
-	MoveData* movedata;
+	MoveDef* moveDef;
 
-	///< Iterations of the yardmap for building rotation
+	///< The unrotated yardmap for buildings
 	///< (only non-mobile ground units can have these)
-	std::vector<unsigned char> yardmaps[/*NUM_FACINGS*/ 4];
+	std::vector<YardmapStatus> yardmap;
 
 	///< both sizes expressed in heightmap coordinates; M x N
 	///< footprint covers M*SQUARE_SIZE x N*SQUARE_SIZE elmos

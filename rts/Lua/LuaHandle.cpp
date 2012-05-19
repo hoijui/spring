@@ -626,7 +626,7 @@ void CLuaHandle::GameFrame(int frameNum)
 
 	LUA_FRAME_BATCH_PUSH(frameNum);
 	LUA_CALL_IN_CHECK(L);
-	if(CopyExportTable())
+	if (CopyExportTable())
 		DelayRecvFromSynced(L, 0); // Copy _G.EXPORT --> SYNCED.EXPORT once a game frame
 	lua_checkstack(L, 4);
 
@@ -643,6 +643,27 @@ void CLuaHandle::GameFrame(int frameNum)
 
 	// call the routine
 	RunCallInTraceback(cmdStr, 1, 0, errfunc);
+}
+
+
+void CLuaHandle::GameID(const unsigned char* gameID, unsigned int numBytes)
+{
+	LUA_CALL_IN_CHECK(L);
+	lua_checkstack(L, 4);
+
+	const LuaHashString cmdStr("GameID");
+	const int errFunc = SetupTraceback(L);
+
+	if (!cmdStr.GetGlobalFunc(L)) {
+		if (errFunc != 0) {
+			lua_pop(L, 1);
+		}
+		return;
+	}
+
+	lua_pushlstring(L, reinterpret_cast<const char*>(gameID), numBytes);
+
+	RunCallInTraceback(cmdStr, 1, 0, errFunc);
 }
 
 
@@ -858,7 +879,7 @@ void CLuaHandle::UnitDestroyed(const CUnit* unit, const CUnit* attacker)
 	lua_pushnumber(L, unit->id);
 	lua_pushnumber(L, unit->unitDef->id);
 	lua_pushnumber(L, unit->team);
-	if (GetFullRead(L) && (attacker != NULL)) {
+	if (GetHandleFullRead(L) && (attacker != NULL)) {
 		lua_pushnumber(L, attacker->id);
 		lua_pushnumber(L, attacker->unitDef->id);
 		lua_pushnumber(L, attacker->team);
@@ -1009,7 +1030,7 @@ void CLuaHandle::UnitDamaged(const CUnit* unit, const CUnit* attacker,
 	lua_pushnumber(L, unit->team);
 	lua_pushnumber(L, damage);
 	lua_pushboolean(L, paralyzer);
-	if (GetFullRead(L)) {
+	if (GetHandleFullRead(L)) {
 		lua_pushnumber(L, weaponID);
 		argCount += 1;
 		if (attacker != NULL) {
@@ -1059,7 +1080,7 @@ void CLuaHandle::UnitSeismicPing(const CUnit* unit, int allyTeam,
 	LUA_UNIT_BATCH_PUSH(,UNIT_SEISMIC_PING, unit, allyTeam, pos, strength);
 	LUA_CALL_IN_CHECK(L);
 	lua_checkstack(L, 9);
-	int readAllyTeam = GetReadAllyTeam(L);
+	int readAllyTeam = GetHandleReadAllyTeam(L);
 	if ((readAllyTeam >= 0) && (unit->losStatus[readAllyTeam] & LOS_INLOS)) {
 		return; // don't need to see this ping
 	}
@@ -1072,14 +1093,14 @@ void CLuaHandle::UnitSeismicPing(const CUnit* unit, int allyTeam,
 	lua_pushnumber(L, pos.y);
 	lua_pushnumber(L, pos.z);
 	lua_pushnumber(L, strength);
-	if (GetFullRead(L)) {
+	if (GetHandleFullRead(L)) {
 		lua_pushnumber(L, allyTeam);
 		lua_pushnumber(L, unit->id);
 		lua_pushnumber(L, unit->unitDef->id);
 	}
 
 	// call the routine
-	RunCallIn(cmdStr, GetFullRead(L) ? 7 : 4, 0);
+	RunCallIn(cmdStr, GetHandleFullRead(L) ? 7 : 4, 0);
 }
 
 
@@ -1095,13 +1116,13 @@ void CLuaHandle::LosCallIn(const LuaHashString& hs,
 
 	lua_pushnumber(L, unit->id);
 	lua_pushnumber(L, unit->team);
-	if (GetFullRead(L)) {
+	if (GetHandleFullRead(L)) {
 		lua_pushnumber(L, allyTeam);
 		lua_pushnumber(L, unit->unitDef->id);
 	}
 
 	// call the routine
-	RunCallIn(hs, GetFullRead(L) ? 4 : 2, 0);
+	RunCallIn(hs, GetHandleFullRead(L) ? 4 : 2, 0);
 }
 
 
@@ -1368,30 +1389,30 @@ void CLuaHandle::ProjectileCreated(const CProjectile* p)
 
 	if (!p->synced) return;
 	if (!p->weapon && !p->piece) return;
-	if (p->weapon) {
-		const CWeaponProjectile* wp = static_cast<const CWeaponProjectile*>(p);
-		const WeaponDef* wd = wp->weaponDef;
 
-		// if this weapon-type is not being watched, bail
-		if (wd == NULL || !watchWeaponDefs[wd->id])	return;
-	}
+	const CUnit* owner = p->owner();
+	const CWeaponProjectile* wp = p->weapon? static_cast<const CWeaponProjectile*>(p): NULL;
+	const WeaponDef* wd = p->weapon? wp->weaponDef: NULL;
+
+	// if this weapon-type is not being watched, bail
+	if (p->weapon && (wd == NULL || !watchWeaponDefs[wd->id]))
+		return;
 
 	LUA_PROJ_BATCH_PUSH(PROJ_CREATED, p);
 	LUA_CALL_IN_CHECK(L);
-	lua_checkstack(L, 4);
+	lua_checkstack(L, 5);
 
 	static const LuaHashString cmdStr("ProjectileCreated");
 
 	if (!cmdStr.GetGlobalFunc(L))
 		return; // the call is not defined
 
-	const CUnit* owner = p->owner();
-
 	lua_pushnumber(L, p->id);
-	lua_pushnumber(L, (owner? owner->id: -1));
+	lua_pushnumber(L, ((owner != NULL)? owner->id: -1));
+	lua_pushnumber(L, ((wd != NULL)? wd->id: -1));
 
 	// call the routine
-	RunCallIn(cmdStr, 2, 0);
+	RunCallIn(cmdStr, 3, 0);
 }
 
 
@@ -2843,49 +2864,49 @@ int CLuaHandle::CallOutGetName(lua_State* L)
 
 int CLuaHandle::CallOutGetSynced(lua_State* L)
 {
-	lua_pushboolean(L, GetSynced(L));
+	lua_pushboolean(L, GetHandleSynced(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetFullCtrl(lua_State* L)
 {
-	lua_pushboolean(L, GetFullCtrl(L));
+	lua_pushboolean(L, GetHandleFullCtrl(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetFullRead(lua_State* L)
 {
-	lua_pushboolean(L, GetFullRead(L));
+	lua_pushboolean(L, GetHandleFullRead(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetCtrlTeam(lua_State* L)
 {
-	lua_pushnumber(L, GetCtrlTeam(L));
+	lua_pushnumber(L, GetHandleCtrlTeam(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetReadTeam(lua_State* L)
 {
-	lua_pushnumber(L, GetReadTeam(L));
+	lua_pushnumber(L, GetHandleReadTeam(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetReadAllyTeam(lua_State* L)
 {
-	lua_pushnumber(L, GetReadAllyTeam(L));
+	lua_pushnumber(L, GetHandleReadAllyTeam(L));
 	return 1;
 }
 
 
 int CLuaHandle::CallOutGetSelectTeam(lua_State* L)
 {
-	lua_pushnumber(L, GetSelectTeam(L));
+	lua_pushnumber(L, GetHandleSelectTeam(L));
 	return 1;
 }
 

@@ -31,17 +31,14 @@ CR_BIND_DERIVED(CFeature, CSolidObject, )
 
 CR_REG_METADATA(CFeature, (
 	// CR_MEMBER(model),
+	CR_MEMBER(defID),
 	CR_MEMBER(isRepairingBeforeResurrect),
 	CR_MEMBER(resurrectProgress),
-	CR_MEMBER(health),
 	CR_MEMBER(reclaimLeft),
-	CR_MEMBER(luaDraw),
-	CR_MEMBER(noSelect),
 	CR_MEMBER(tempNum),
 	CR_MEMBER(lastReclaim),
 	// CR_MEMBER(def),
 	// CR_MEMBER(udef),
-	CR_MEMBER(defName),
 	CR_MEMBER(transMatrix),
 	CR_MEMBER(inUpdateQue),
 	CR_MEMBER(drawQuad),
@@ -55,12 +52,10 @@ CR_REG_METADATA(CFeature, (
 
 
 CFeature::CFeature() : CSolidObject(),
+	defID(-1),
 	isRepairingBeforeResurrect(false),
 	resurrectProgress(0.0f),
-	health(0.0f),
 	reclaimLeft(1.0f),
-	luaDraw(false),
-	noSelect(false),
 	tempNum(0),
 	lastReclaim(0),
 	def(NULL),
@@ -104,7 +99,7 @@ CFeature::~CFeature()
 
 void CFeature::PostLoad()
 {
-	def = featureHandler->GetFeatureDef(defName);
+	def = featureHandler->GetFeatureDefByID(defID);
 
 	float fRadius = 1.0f;
 	float fHeight = 0.0f;
@@ -144,7 +139,7 @@ void CFeature::Initialize(const float3& _pos, const FeatureDef* _def, short int 
 {
 	def = _def;
 	udef = _udef;
-	defName = def->myName;
+	defID = def->id;
 	heading = _heading;
 	buildFacing = facing;
 	team = _team;
@@ -169,7 +164,7 @@ void CFeature::Initialize(const float3& _pos, const FeatureDef* _def, short int 
 		model = def->LoadModel();
 
 		if (!model) {
-			LOG_L(L_ERROR, "Features: Couldn't load model for %s", defName.c_str());
+			LOG_L(L_ERROR, "Features: Couldn't load model for %s", def->name.c_str());
 		} else {
 			relMidPos = model->relMidPos;
 			fRadius = model->radius;
@@ -189,7 +184,7 @@ void CFeature::Initialize(const float3& _pos, const FeatureDef* _def, short int 
 		collisionVolume = new CollisionVolume(def->collisionVolume, fRadius);
 	}
 
-	Move3D(_pos.ClampInBounds(), false);
+	Move3D(_pos.cClampInMap(), false);
 	SetRadiusAndHeight(fRadius, fHeight);
 	UpdateMidPos();
 	CalculateTransform();
@@ -367,7 +362,7 @@ bool CFeature::AddBuildPower(float amount, CUnit* builder)
 }
 
 
-void CFeature::DoDamage(const DamageArray& damages, const float3& impulse)
+void CFeature::DoDamage(const DamageArray& damages, const float3& impulse, CUnit*, int)
 {
 	if (damages.paralyzeDamageTime) {
 		return; // paralyzers do not damage features
@@ -400,13 +395,6 @@ void CFeature::DoDamage(const DamageArray& damages, const float3& impulse)
 	}
 }
 
-
-void CFeature::Kill(const float3& impulse, bool crushKill) {
-	crushKilled = crushKill;
-
-	DamageArray damage;
-	DoDamage(damage * (health + 1.0f), impulse);
-}
 
 
 void CFeature::DependentDied(CObject *o)
@@ -479,9 +467,15 @@ bool CFeature::UpdatePosition()
 	if (udef != NULL) {
 		// we are a wreck of a dead unit
 		if (!reachedFinalPos) {
+			// def->floating is unreliable (true for land unit wrecks),
+			// just assume wrecks always sink even if their "owner" was
+			// a floating object (as is the case for ships anyway)
+			const float realGroundHeight = ground->GetHeightReal(pos.x, pos.z);
+			const bool reachedGround = ((pos.y - realGroundHeight) <= 0.1f);
+
 			// NOTE: apply more drag if we were a tank or bot?
 			// (would require passing extra data to Initialize())
-			deathSpeed *= 0.95f;
+			deathSpeed *= ((reachedGround)? 0.95f: 0.9999f);
 
 			if (deathSpeed.SqLength2D() > 0.01f) {
 				UnBlock();
@@ -497,12 +491,6 @@ bool CFeature::UpdatePosition()
 				deathSpeed.x = 0.0f;
 				deathSpeed.z = 0.0f;
 			}
-
-			// def->floating is unreliable (true for land unit wrecks),
-			// just assume wrecks always sink even if their "owner" was
-			// a floating object (as is the case for ships anyway)
-			const float realGroundHeight = ground->GetHeightReal(pos.x, pos.z);
-			const bool reachedGround = (pos.y <= realGroundHeight);
 
 			if (!reachedGround) {
 				if (pos.y > 0.0f) {
@@ -525,7 +513,8 @@ bool CFeature::UpdatePosition()
 
 			reachedFinalPos = (deathSpeed == ZeroVector);
 
-			if (!pos.CheckInBounds()) {
+			if (!pos.IsInBounds()) {
+				pos.ClampInBounds();
 				// ensure that no more forward-speed updates are done
 				// (prevents wrecks floating in mid-air at edge of map
 				// due to gravity no longer being applied either)
@@ -545,16 +534,16 @@ bool CFeature::UpdatePosition()
 			if (pos.y > 0.0f) {
 				speed.y += mapInfo->map.gravity;
 			} else {
-				// fall slower in water
-				speed.y += mapInfo->map.gravity * 0.5;
+				speed.y = mapInfo->map.gravity;
 			}
 
-			transMatrix[13] += speed.y;
 			Move1D(speed.y, 1, true);
 
 			if (def->drawType >= DRAWTYPE_TREE) {
 				treeDrawer->AddTree(def->drawType - 1, pos, 1.0f);
 			}
+
+			transMatrix[13] += speed.y;
 		} else if (pos.y < finalHeight) {
 			// if ground is restored, make sure feature does not get buried
 			if (def->drawType >= DRAWTYPE_TREE) {

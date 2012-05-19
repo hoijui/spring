@@ -23,15 +23,12 @@
 	Delete "$INSTDIR\vorbis.dll"
 	Delete "$INSTDIR\ogg.dll"
 	Delete "$INSTDIR\cache\ArchiveCacheV9.lua"
-	Delete "$INSTDIR\ArchiveCacheV7.lua"
 	; deprecated files
 	Delete "$INSTDIR\SpringDownloader.exe"
-	Delete "$INSTDIR\springfiles.url"
 	Delete "$INSTDIR\springfiles.url"
 	Delete "$INSTDIR\ArchiveCacheV7.lua"
 	; Old AI stuff
 	RmDir /r "$INSTDIR\AI\Global"
-	RmDir /r "$INSTDIR\AI\Skirmish"
 	RmDir /r "$INSTDIR\AI\Helper-libs"
 
 	RmDir "$INSTDIR\mods"

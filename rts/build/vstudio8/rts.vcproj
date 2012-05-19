@@ -43,7 +43,7 @@
 				AdditionalOptions="/vmg /MP /D_WIN32_WINNT=0x502"
 				Optimization="0"
 				AdditionalIncludeDirectories="../../;../../System;../../lib/streflop;../../lib/crashrpt/include;../../../vclibs/freetype/include;../../../vclibs/DevIL/include;../../../vclibs/boost/Include;../../../vclibs/OpenAL/include/AL;../../../vclibs/glew/include;../../../vclibs/zlib/include;../../../vclibs/SDL/include;&quot;../../../vclibs/libjpeg/libjpeg-include&quot;;../../lib/lua/include;../../lib/luabind;../../../vclibs/ogg_vorbis/include;../../lib/assimp/include;../../lib;../../lib/minizip"
-				PreprocessorDefinitions="DEBUG;_CMATH_;NO_CATCH_EXCEPTIONS;_WIN32;WIN32;_DEBUG;_WINDOWS;ZLIB_WINAPI;_SZ_ONE_DIRECTORY;DIRECT_CONTROL_ALLOWED;BUILDING_SPRING;STREFLOP_SSE"
+				PreprocessorDefinitions="DEBUG;_CMATH_;NO_CATCH_EXCEPTIONS;_WIN32;WIN32;_DEBUG;_WINDOWS;ZLIB_WINAPI;_SZ_ONE_DIRECTORY;DIRECT_CONTROL_ALLOWED;BUILDING_SPRING;STREFLOP_SSE;SYNCCHECK"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="1"
@@ -514,7 +514,7 @@
 				AdditionalOptions="/vmg /MP /D_WIN32_WINNT=0x502"
 				Optimization="0"
 				AdditionalIncludeDirectories="../../;../../System;../../lib/streflop;../../lib/crashrpt/include;../../../vclibs/freetype/include;../../../vclibs/DevIL/include;../../../vclibs/boost/Include;../../../vclibs/OpenAL/include/AL;../../../vclibs/glew/include;../../../vclibs/zlib/include;../../../vclibs/SDL/include;&quot;../../../vclibs/libjpeg/libjpeg-include&quot;;../../lib/lua/include;../../lib/luabind;../../../vclibs/ogg_vorbis/include;../../lib/assimp/include;../../lib;../../lib/minizip"
-				PreprocessorDefinitions="DEBUG;_CMATH_;NO_CATCH_EXCEPTIONS;_WIN32;WIN32;_DEBUG;_WINDOWS;ZLIB_WINAPI;_SZ_ONE_DIRECTORY;DIRECT_CONTROL_ALLOWED;BUILDING_SPRING;STREFLOP_SSE;USE_GML;USE_GML_SIM"
+				PreprocessorDefinitions="DEBUG;_CMATH_;NO_CATCH_EXCEPTIONS;_WIN32;WIN32;_DEBUG;_WINDOWS;ZLIB_WINAPI;_SZ_ONE_DIRECTORY;DIRECT_CONTROL_ALLOWED;BUILDING_SPRING;STREFLOP_SSE;USE_GML;USE_GML_SIM;SYNCCHECK"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="1"
@@ -3703,11 +3703,11 @@
 						>
 					</File>
 					<File
-						RelativePath="..\..\Sim\Projectiles\Unsynced\ShieldPartProjectile.cpp"
+						RelativePath="..\..\Sim\Projectiles\Unsynced\ShieldProjectile.cpp"
 						>
 					</File>
 					<File
-						RelativePath="..\..\Sim\Projectiles\Unsynced\ShieldPartProjectile.h"
+						RelativePath="..\..\Sim\Projectiles\Unsynced\ShieldProjectile.h"
 						>
 					</File>
 					<File
@@ -4040,11 +4040,23 @@
 				Name="Path"
 				>
 				<File
+					RelativePath="..\..\Sim\Path\IPathController.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Sim\Path\IPathController.hpp"
+					>
+				</File>
+				<File
 					RelativePath="..\..\Sim\Path\IPathManager.cpp"
 					>
 				</File>
 				<File
 					RelativePath="..\..\Sim\Path\IPathManager.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Sim\Path\PFSTypes.h"
 					>
 				</File>
 				<Filter
@@ -4345,6 +4357,14 @@
 				</File>
 				<File
 					RelativePath="..\..\Sim\MoveTypes\AAirMoveType.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Sim\MoveTypes\ClassicGroundMoveType.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Sim\MoveTypes\ClassicGroundMoveType.h"
 					>
 				</File>
 				<File
@@ -6181,6 +6201,10 @@
 						>
 					</File>
 					<File
+						RelativePath="..\..\System\Platform\Win\MessageBox.cpp"
+						>
+					</File>
+					<File
 						RelativePath="..\..\System\Platform\Win\seh.cpp"
 						>
 					</File>
@@ -7995,11 +8019,23 @@
 				Name="Misc"
 				>
 				<File
+					RelativePath="..\..\System\Misc\BitwiseEnum.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\System\Misc\RectangleOptimizer.cpp"
 					>
 				</File>
 				<File
 					RelativePath="..\..\System\Misc\RectangleOptimizer.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\System\Misc\SpringTime.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\System\Misc\SpringTime.h"
 					>
 				</File>
 			</Filter>
@@ -8268,6 +8304,14 @@
 				</File>
 				<File
 					RelativePath="..\..\Map\Smf\SmfReadMap.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Map\SMF\SMFRenderState.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\Map\SMF\SMFRenderState.h"
 					>
 				</File>
 				<Filter
@@ -16927,6 +16971,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\advancing_front.cc"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\advancing_front.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\assimp\code\ASELoader.cpp"
 					>
 				</File>
@@ -17055,7 +17107,23 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\cdt.cc"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\cdt.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\assimp\code\CInterfaceIOWrapper.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\clipper\clipper.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\clipper\clipper.hpp"
 					>
 				</File>
 				<File
@@ -17639,11 +17707,27 @@
 					>
 				</File>
 				<File
-					RelativePath="..\..\lib\assimp\code\OgreImporterMaterial.cpp"
+					RelativePath="..\..\lib\assimp\code\OgreImporter.hpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\OgreMaterial.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\OgreMesh.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\OgreSkeleton.cpp"
 					>
 				</File>
 				<File
 					RelativePath="..\..\lib\assimp\code\OgreXmlHelper.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\OgreXmlHelper.hpp"
 					>
 				</File>
 				<File
@@ -17664,6 +17748,14 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\assimp\code\ParsingUtils.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\PlyExporter.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\PlyExporter.h"
 					>
 				</File>
 				<File
@@ -17815,6 +17907,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\common\shapes.cc"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\common\shapes.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\assimp\code\SkeletonMeshBuilder.cpp"
 					>
 				</File>
@@ -17895,6 +17995,14 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\assimp\code\STLExporter.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\STLExporter.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\assimp\code\STLLoader.cpp"
 					>
 				</File>
@@ -17916,6 +18024,22 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\assimp\code\Subdivision.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\sweep.cc"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\sweep.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\sweep_context.cc"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\sweep\sweep_context.h"
 					>
 				</File>
 				<File
@@ -17963,6 +18087,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\assimp\contrib\poly2tri\poly2tri\common\utils.h"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\assimp\code\ValidateDataStructure.cpp"
 					>
 				</File>
@@ -18004,6 +18132,134 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\assimp\code\XFileParser.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\XGLLoader.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\assimp\code\XGLLoader.h"
+					>
+				</File>
+			</Filter>
+			<Filter
+				Name="luasocket"
+				>
+				<File
+					RelativePath="..\..\lib\luasocket\src\auxiliar.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\auxiliar.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\buffer.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\buffer.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\except.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\except.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\inet.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\inet.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\io.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\io.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\luasocket.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\luasocket.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\mime.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\mime.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\options.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\options.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\restrictions.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\restrictions.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\select.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\select.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\socket.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\tcp.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\tcp.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\timeout.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\timeout.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\udp.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\udp.h"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\wsocket.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\luasocket\src\wsocket.h"
 					>
 				</File>
 			</Filter>

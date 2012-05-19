@@ -110,6 +110,7 @@ bool LuaUnsyncedCtrl::PushEntries(lua_State* L)
 	lua_rawset(L, -3)
 
 	REGISTER_LUA_CFUNC(Echo);
+	REGISTER_LUA_CFUNC(Log);
 
 	REGISTER_LUA_CFUNC(SendMessage);
 	REGISTER_LUA_CFUNC(SendMessageToPlayer);
@@ -327,7 +328,7 @@ static inline CUnit* ParseSelectUnit(lua_State* L,
 	if (unit == NULL || unit->noSelect) {
 		return NULL;
 	}
-	const int selectTeam = CLuaHandle::GetSelectTeam(L);
+	const int selectTeam = CLuaHandle::GetHandleSelectTeam(L);
 	if (selectTeam < 0) {
 		return (selectTeam == CEventClient::AllAccessTeam) ? unit : NULL;
 	}
@@ -421,6 +422,11 @@ void LuaUnsyncedCtrl::ClearUnitCommandQueues()
 int LuaUnsyncedCtrl::Echo(lua_State* L)
 {
 	return LuaUtils::Echo(L);
+}
+
+int LuaUnsyncedCtrl::Log(lua_State* L)
+{
+	return LuaUtils::Log(L);
 }
 
 static string ParseMessage(lua_State* L, const string& msg)
@@ -536,7 +542,7 @@ int LuaUnsyncedCtrl::LoadSoundDef(lua_State* L)
 	const string soundFile = lua_tostring(L, 1);
 	bool success = sound->LoadSoundDefs(soundFile);
 
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		lua_pushboolean(L, success);
 		return 1;
 	} else {
@@ -617,7 +623,7 @@ int LuaUnsyncedCtrl::PlaySoundFile(lua_State* L)
 		success = true;
 	}
 
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		lua_pushboolean(L, success);
 		return 1;
 	} else {
@@ -640,7 +646,7 @@ int LuaUnsyncedCtrl::PlaySoundStream(lua_State* L)
 
 	// .ogg files don't have sound ID's generated
 	// for them (yet), so we always succeed here
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		lua_pushboolean(L, true);
 		return 1;
 	} else {
@@ -916,7 +922,7 @@ int LuaUnsyncedCtrl::SetCameraState(lua_State* L)
 	lua_pushboolean(L, camHandler->SetState(camState));
 	camHandler->CameraTransition(camTime);
 
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		return 1;
 	} else {
 		return 0;
@@ -992,9 +998,9 @@ int LuaUnsyncedCtrl::SetTeamColor(lua_State* L)
 	if (team == NULL) {
 		return 0;
 	}
-	const float r = max(0.0f, min(1.0f, luaL_checknumber(L, 2)));
-	const float g = max(0.0f, min(1.0f, luaL_checknumber(L, 3)));
-	const float b = max(0.0f, min(1.0f, luaL_checknumber(L, 4)));
+	const float r = max(0.0f, min(1.0f, luaL_checkfloat(L, 2)));
+	const float g = max(0.0f, min(1.0f, luaL_checkfloat(L, 3)));
+	const float b = max(0.0f, min(1.0f, luaL_checkfloat(L, 4)));
 	team->color[0] = (unsigned char)(r * 255.0f);
 	team->color[1] = (unsigned char)(g * 255.0f);
 	team->color[2] = (unsigned char)(b * 255.0f);
@@ -1028,7 +1034,7 @@ int LuaUnsyncedCtrl::AssignMouseCursor(lua_State* L)
 
 	const bool worked = mouse->AssignMouseCursor(cmdName, fileName, hotSpot, overwrite);
 
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		lua_pushboolean(L, worked);
 		return 1;
 	}
@@ -1056,7 +1062,7 @@ int LuaUnsyncedCtrl::ReplaceMouseCursor(lua_State* L)
 
 	const bool worked = mouse->ReplaceMouseCursor(oldName, newName, hotSpot);
 
-	if (!CLuaHandle::GetSynced(L)) {
+	if (!CLuaHandle::GetHandleSynced(L)) {
 		lua_pushboolean(L, worked);
 		return 1;
 	}
@@ -1308,13 +1314,13 @@ static bool ParseLight(lua_State* L, int tblIdx, GL::Light& light, const char* c
 
 			else if (lua_isnumber(L, -1)) {
 				if (key == "radius") {
-					light.SetRadius(std::max(1.0f, lua_tonumber(L, -1)));
+					light.SetRadius(std::max(1.0f, lua_tofloat(L, -1)));
 				} else if (key == "fov") {
-					light.SetFOV(std::max(0.0f, std::min(180.0f, lua_tonumber(L, -1))));
+					light.SetFOV(std::max(0.0f, std::min(180.0f, lua_tofloat(L, -1))));
 				} else if (key == "ttl") {
-					light.SetTTL(lua_tonumber(L, -1));
+					light.SetTTL(lua_tofloat(L, -1));
 				} else if (key == "priority") {
-					light.SetPriority(lua_tonumber(L, -1));
+					light.SetPriority(lua_tofloat(L, -1));
 				}
 			}
 		}
@@ -1325,7 +1331,7 @@ static bool ParseLight(lua_State* L, int tblIdx, GL::Light& light, const char* c
 
 int LuaUnsyncedCtrl::AddMapLight(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 
@@ -1346,7 +1352,7 @@ int LuaUnsyncedCtrl::AddMapLight(lua_State* L)
 
 int LuaUnsyncedCtrl::AddModelLight(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 
@@ -1370,7 +1376,7 @@ int LuaUnsyncedCtrl::UpdateMapLight(lua_State* L)
 {
 	const unsigned int lightHandle = luaL_checkint(L, 1);
 
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 
@@ -1390,7 +1396,7 @@ int LuaUnsyncedCtrl::UpdateModelLight(lua_State* L)
 {
 	const unsigned int lightHandle = luaL_checkint(L, 1);
 
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 
@@ -1467,7 +1473,7 @@ static bool AddLightTrackingTarget(lua_State* L, GL::Light* light, bool trackEna
 // the position of a moving object (unit or projectile)
 int LuaUnsyncedCtrl::SetMapLightTrackingState(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 	if (!lua_isnumber(L, 2)) {
@@ -1495,7 +1501,7 @@ int LuaUnsyncedCtrl::SetMapLightTrackingState(lua_State* L)
 // the position of a moving object (unit or projectile)
 int LuaUnsyncedCtrl::SetModelLightTrackingState(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L) || !CLuaHandle::GetFullRead(L)) {
+	if (CLuaHandle::GetHandleSynced(L) || !CLuaHandle::GetHandleFullRead(L)) {
 		return 0;
 	}
 	if (!lua_isnumber(L, 2)) {
@@ -1524,7 +1530,7 @@ int LuaUnsyncedCtrl::SetModelLightTrackingState(lua_State* L)
 
 int LuaUnsyncedCtrl::SetMapSquareTexture(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L)) {
+	if (CLuaHandle::GetHandleSynced(L)) {
 		return 0;
 	}
 
@@ -1580,7 +1586,7 @@ int LuaUnsyncedCtrl::SetMapSquareTexture(lua_State* L)
 
 int LuaUnsyncedCtrl::SetUnitNoDraw(lua_State* L)
 {
-	if (CLuaHandle::GetUserMode(L)) {
+	if (CLuaHandle::GetHandleUserMode(L)) {
 		return 0;
 	}
 	CUnit* unit = ParseCtrlUnit(L, __FUNCTION__, 1);
@@ -1599,7 +1605,7 @@ int LuaUnsyncedCtrl::SetUnitNoDraw(lua_State* L)
 
 int LuaUnsyncedCtrl::SetUnitNoMinimap(lua_State* L)
 {
-	if (CLuaHandle::GetUserMode(L)) {
+	if (CLuaHandle::GetHandleUserMode(L)) {
 		return 0;
 	}
 	CUnit* unit = ParseCtrlUnit(L, __FUNCTION__, 1);
@@ -1620,7 +1626,7 @@ int LuaUnsyncedCtrl::SetUnitNoSelect(lua_State* L)
 {
 	GML_RECMUTEX_LOCK(sel); // SetUnitNoSelect
 
-	if (CLuaHandle::GetUserMode(L)) {
+	if (CLuaHandle::GetHandleUserMode(L)) {
 		return 0;
 	}
 	CUnit* unit = ParseCtrlUnit(L, __FUNCTION__, 1);
@@ -1661,7 +1667,7 @@ int LuaUnsyncedCtrl::SetUnitLeaveTracks(lua_State* L)
 
 int LuaUnsyncedCtrl::AddUnitIcon(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L)) {
+	if (CLuaHandle::GetHandleSynced(L)) {
 		return 0;
 	}
 	const string iconName  = luaL_checkstring(L, 1);
@@ -1677,7 +1683,7 @@ int LuaUnsyncedCtrl::AddUnitIcon(lua_State* L)
 
 int LuaUnsyncedCtrl::FreeUnitIcon(lua_State* L)
 {
-	if (CLuaHandle::GetSynced(L)) {
+	if (CLuaHandle::GetHandleSynced(L)) {
 		return 0;
 	}
 	const string iconName  = luaL_checkstring(L, 1);
@@ -2017,7 +2023,6 @@ int LuaUnsyncedCtrl::GetConfigInt(lua_State* L)
 	return 1;
 }
 
-
 int LuaUnsyncedCtrl::SetConfigInt(lua_State* L)
 {
 	if (!CheckModUICtrl()) {
@@ -2026,10 +2031,14 @@ int LuaUnsyncedCtrl::SetConfigInt(lua_State* L)
 	const string name = luaL_checkstring(L, 1);
 	const int value   = luaL_checkint(L, 2);
 	const bool useOverlay = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : false;
+	// don't allow to change a read-only variable
+	if (configHandler->IsReadOnly(name)) {
+		LOG_L(L_ERROR, "tried to set readonly (int) %s = %d", name.c_str(), value);
+		return 0;
+	}
 	configHandler->Set(name, value, useOverlay);
 	return 0;
 }
-
 
 int LuaUnsyncedCtrl::GetConfigString(lua_State* L)
 {
@@ -2053,6 +2062,11 @@ int LuaUnsyncedCtrl::SetConfigString(lua_State* L)
 	const string name  = luaL_checkstring(L, 1);
 	const string value = luaL_checkstring(L, 2);
 	const bool useOverlay = lua_isboolean(L, 3) ? lua_toboolean(L, 3) : false;
+	// don't allow to change a read-only variable
+	if (configHandler->IsReadOnly(name)) {
+		LOG_L(L_ERROR, "tried to set readonly (string) %s = %s", name.c_str(), value.c_str());
+		return 0;
+	}
 	configHandler->SetString(name, value, useOverlay);
 	return 0;
 }
@@ -2107,7 +2121,7 @@ int LuaUnsyncedCtrl::Restart(lua_State* L)
 		scriptfile << script;
 		scriptfile.close();
 
-		processArgs.push_back(Quote(scriptFullName));
+		processArgs.push_back(scriptFullName);
 	}
 
 #ifdef _WIN32
@@ -2344,7 +2358,7 @@ static bool CanGiveOrders(const lua_State *L)
 	if (gu->spectating) {
 		return false;
 	}
-	const int ctrlTeam = CLuaHandle::GetCtrlTeam(L);
+	const int ctrlTeam = CLuaHandle::GetHandleCtrlTeam(L);
 	// FIXME ? (correct? warning / error?)
 	if ((ctrlTeam != gu->myTeam) || (ctrlTeam < 0)) {
 		return false;
@@ -2499,6 +2513,8 @@ int LuaUnsyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 		return 1;
 	}
 
+	const int args = lua_gettop(L); // number of arguments
+
 	// unitIDs
 	vector<int> unitIDs;
 	ParseUnitArray(L, __FUNCTION__, 1, unitIDs);
@@ -2507,12 +2523,16 @@ int LuaUnsyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 	vector<Command> commands;
 	LuaUtils::ParseCommandArray(L, __FUNCTION__, 2, commands);
 
+	bool pairwise = false;
+	if (args >= 3)
+		pairwise = lua_toboolean(L, 3);
+
 	if ((unitIDs.size() <= 0) || (commands.size() <= 0)) {
 		lua_pushboolean(L, false);
 		return 1;
 	}
 
-	selectedUnits.SendCommandsToUnits(unitIDs, commands);
+	selectedUnits.SendCommandsToUnits(unitIDs, commands, pairwise);
 
 	lua_pushboolean(L, true);
 	return 1;
@@ -2689,17 +2709,11 @@ int LuaUnsyncedCtrl::MarkerAddPoint(lua_State* L)
 	if (inMapDrawer == NULL) {
 		return 0;
 	}
-	const int args = lua_gettop(L); // number of arguments
-	if ((args < 3) ||
-	    !lua_isnumber(L, 1) || !lua_isnumber(L, 2)  || !lua_isnumber(L, 3) ||
-	    ((args >= 4) && !lua_isstring(L, 4))) {
-		luaL_error(L, "Incorrect arguments to MarkerAddPoint(x, y, z[, text, local ])");
-	}
-	const float3 pos(lua_tofloat(L, 1),
-	                 lua_tofloat(L, 2),
-	                 lua_tofloat(L, 3));
+	const float3 pos(luaL_checkfloat(L, 1),
+	                 luaL_checkfloat(L, 2),
+	                 luaL_checkfloat(L, 3));
 	const string text = luaL_optstring(L, 4, "");
-	const bool onlyLocal = bool(luaL_optnumber(L, 5, 1));
+	const bool onlyLocal = (lua_isnumber(L, 5)) ? bool(luaL_optnumber(L, 5, 1)) : luaL_optboolean(L, 5, true);
 
 	if (onlyLocal) {
 		inMapDrawerModel->AddPoint(pos, text, gu->myPlayerNum);
@@ -2719,26 +2733,18 @@ int LuaUnsyncedCtrl::MarkerAddLine(lua_State* L)
 	if (inMapDrawer == NULL) {
 		return 0;
 	}
-	const int args = lua_gettop(L); // number of arguments
-	if ((args != 6) ||
-	    !lua_isstring(L, 1) || !lua_isnumber(L, 2) ||
-	    !lua_isnumber(L, 3) || !lua_isnumber(L, 4) ||
-	    !lua_isnumber(L, 5) || !lua_isnumber(L, 6)) {
-		luaL_error(L,
-			"Incorrect arguments to MarkerAddLine(x1, y1, z1, x2, y2, z2[, local ])");
-	}
-	const float3 pos1(lua_tofloat(L, 1),
-	                  lua_tofloat(L, 2),
-	                  lua_tofloat(L, 3));
-	const float3 pos2(lua_tofloat(L, 4),
-	                  lua_tofloat(L, 5),
-	                  lua_tofloat(L, 6));
-	const bool onlyLocal = bool(luaL_optnumber(L, 7, 0));
+	const float3 pos1(luaL_checkfloat(L, 1),
+	                  luaL_checkfloat(L, 2),
+	                  luaL_checkfloat(L, 3));
+	const float3 pos2(luaL_checkfloat(L, 4),
+	                  luaL_checkfloat(L, 5),
+	                  luaL_checkfloat(L, 6));
+	const bool onlyLocal = (lua_isnumber(L, 7)) ? bool(luaL_optnumber(L, 7, 0)) : luaL_optboolean(L, 7, false);
 
 	if (onlyLocal) {
 		inMapDrawerModel->AddLine(pos1, pos2, gu->myPlayerNum);
 	} else {
-		inMapDrawerModel->AddLine(pos1, pos2, true);
+		inMapDrawer->SendLine(pos1, pos2, true);
 	}
 
 	return 0;
@@ -2753,14 +2759,9 @@ int LuaUnsyncedCtrl::MarkerErasePosition(lua_State* L)
 	if (inMapDrawer == NULL) {
 		return 0;
 	}
-	const int args = lua_gettop(L); // number of arguments
-	if ((args != 3) ||
-	    !lua_isstring(L, 1) || !lua_isnumber(L, 2) || !lua_isnumber(L, 3)) {
-		luaL_error(L, "Incorrect arguments to MarkerDeletePositionl(x, y, z)");
-	}
-	const float3 pos(lua_tofloat(L, 1),
-	                 lua_tofloat(L, 2),
-	                 lua_tofloat(L, 3));
+	const float3 pos(luaL_checkfloat(L, 1),
+	                 luaL_checkfloat(L, 2),
+	                 luaL_checkfloat(L, 3));
 
 	inMapDrawer->SendErase(pos);
 
@@ -2892,7 +2893,7 @@ int LuaUnsyncedCtrl::SetSunDirection(lua_State* L)
 /******************************************************************************/
 
 int LuaUnsyncedCtrl::SendSkirmishAIMessage(lua_State* L) {
-	if (CLuaHandle::GetSynced(L)) {
+	if (CLuaHandle::GetHandleSynced(L)) {
 		return 0;
 	}
 	if (lua_gettop(L) != 2) {
@@ -2904,15 +2905,18 @@ int LuaUnsyncedCtrl::SendSkirmishAIMessage(lua_State* L) {
 
 	std::vector<const char*> outData;
 
-	lua_checkstack(L, outData.size() + 1);
+	lua_checkstack(L, 2);
 	lua_pushboolean(L, eoh->SendLuaMessages(aiTeam, inData, outData));
+	lua_createtable(L, outData.size(), 0);
 
-	// push the response(s)
+	// push the AI response(s)
 	for (unsigned int n = 0; n < outData.size(); n++) {
+		lua_pushnumber(L, n + 1);
 		lua_pushstring(L, outData[n]);
+		lua_rawset(L, -3);
 	}
 
-	return (outData.size() + 1);
+	return 2;
 }
 
 /******************************************************************************/
@@ -2932,4 +2936,3 @@ int LuaUnsyncedCtrl::ClearWatchDogTimer(lua_State* L) {
 
 	return 0;
 }
-

@@ -36,7 +36,10 @@
 #include "System/EventHandler.h"
 #include "System/mmgr.h"
 #include "System/myMath.h"
+#include "System/Sound/SoundChannels.h"
 #include "System/Sync/SyncTracer.h"
+
+#define PLAY_SOUNDS 1
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -75,9 +78,11 @@ void CGameHelper::DoExplosionDamage(
 	const float3& expPos,
 	float expRad,
 	float expSpeed,
-	bool ignoreOwner, float edgeEffectiveness,
-	const DamageArray& damages, int weaponDefID)
-{
+	float edgeEffectiveness,
+	bool ignoreOwner,
+	const DamageArray& damages,
+	const int weaponDefID
+) {
 	if (ignoreOwner && (unit == owner)) {
 		return;
 	}
@@ -163,16 +168,20 @@ void CGameHelper::DoExplosionDamage(
 	const float3 addedImpulse = diffPos * modImpulseStrength;
 
 	if (expDist2 < (expSpeed * 4.0f)) { // damage directly
-		unit->DoDamage(damageDone, owner, addedImpulse, weaponDefID);
+		unit->DoDamage(damageDone, addedImpulse, owner, weaponDefID);
 	} else { // damage later
 		WaitingDamage* wd = new WaitingDamage((owner? owner->id: -1), unit->id, damageDone, addedImpulse, weaponDefID);
 		waitingDamages[(gs->frameNum + int(expDist2 / expSpeed) - 3) & 127].push_front(wd);
 	}
 }
 
-void CGameHelper::DoExplosionDamage(CFeature* feature,
-	const float3& expPos, float expRad, const DamageArray& damages)
-{
+void CGameHelper::DoExplosionDamage(
+	CFeature* feature,
+	const float3& expPos,
+	float expRad,
+	const DamageArray& damages,
+	const int weaponDefID
+) {
 	const CollisionVolume* cv = feature->collisionVolume;
 
 	if (cv) {
@@ -192,7 +201,10 @@ void CGameHelper::DoExplosionDamage(CFeature* feature,
 		}
 
 		if (expMod > 0.0f) {
-			feature->DoDamage(damages * expMod, dif * (damages.impulseFactor * expMod / expDist * dmgScale));
+			const DamageArray modDamages = damages * expMod;
+			const float3& modImpulse = dif * (damages.impulseFactor * expMod / expDist * dmgScale);
+
+			feature->DoDamage(modDamages, modImpulse, NULL, weaponDefID);
 		}
 	}
 }
@@ -204,8 +216,10 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 	const float3& dir = params.dir;
 	const DamageArray& damages = params.damages;
 
+	// if weaponDef is NULL, this is a piece-explosion
+	// (implicit damage-type -DAMAGE_EXPLOSION_DEBRIS)
 	const WeaponDef* weaponDef = params.weaponDef;
-	const int weaponDefID = (weaponDef != NULL)? weaponDef->id: -1;
+	const int weaponDefID = (weaponDef != NULL)? weaponDef->id: -CSolidObject::DAMAGE_EXPLOSION_DEBRIS;
 
 	const float3 expPos = pos;
 
@@ -234,9 +248,9 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 
 	if (impactOnly) {
 		if (hitUnit) {
-			DoExplosionDamage(hitUnit, owner, expPos, damageAOE, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
+			DoExplosionDamage(hitUnit, owner, expPos, damageAOE, expSpeed, edgeEffectiveness, ignoreOwner, damages, weaponDefID);
 		} else if (hitFeature) {
-			DoExplosionDamage(hitFeature, expPos, damageAOE, damages);
+			DoExplosionDamage(hitFeature, expPos, damageAOE, damages, weaponDefID);
 		}
 	} else {
 		{
@@ -251,14 +265,14 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 					hitUnitDamaged = true;
 				}
 
-				DoExplosionDamage(unit, owner, expPos, damageAOE, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
+				DoExplosionDamage(unit, owner, expPos, damageAOE, expSpeed, edgeEffectiveness, ignoreOwner, damages, weaponDefID);
 			}
 
 			// HACK: for a unit with an offset coldet volume, the explosion
 			// (from an impacting projectile) position might not correspond
 			// to its quadfield position so we need to damage it separately
 			if (hitUnit != NULL && !hitUnitDamaged) {
-				DoExplosionDamage(hitUnit, owner, expPos, damageAOE, expSpeed, ignoreOwner, edgeEffectiveness, damages, weaponDefID);
+				DoExplosionDamage(hitUnit, owner, expPos, damageAOE, expSpeed, edgeEffectiveness, ignoreOwner, damages, weaponDefID);
 			}
 		}
 
@@ -274,11 +288,11 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 					hitFeatureDamaged = true;
 				}
 
-				DoExplosionDamage(feature, expPos, damageAOE, damages);
+				DoExplosionDamage(feature, expPos, damageAOE, damages, weaponDefID);
 			}
 
 			if (hitFeature != NULL && !hitFeatureDamaged) {
-				DoExplosionDamage(hitFeature, expPos, damageAOE, damages);
+				DoExplosionDamage(hitFeature, expPos, damageAOE, damages, weaponDefID);
 			}
 		}
 
@@ -310,6 +324,18 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 
 	CExplosionEvent explosionEvent(expPos, damages.GetDefaultDamage(), damageAOE, weaponDef);
 	FireExplosionEvent(explosionEvent);
+
+	#if (PLAY_SOUNDS == 1)
+	if (weaponDef != NULL) {
+		const GuiSoundSet& soundSet = weaponDef->hitSound;
+		const int soundNum = (expPos.y < 0.0f);
+		const int soundID = soundSet.getID(soundNum);
+
+		if (soundID > 0) {
+			Channels::Battle.PlaySample(soundID, expPos, soundSet.getVolume(soundNum));
+		}
+	}
+	#endif
 }
 
 
@@ -607,12 +633,13 @@ public:
 }; // end of namespace Query
 }; // end of namespace
 
-
+// Use this instead of unit->tempNum here, because it requires a mutex lock that will deadlock if luaRules is invoked simultaneously.
+// Not the cleanest solution, but faster than e.g. a std::set, and this function is called quite frequently.
+static int tempTargetUnits[MAX_UNITS] = {0};
+static int targetTempNum = 2;
 
 void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* lastTargetUnit, std::multimap<float, CUnit*>& targets)
 {
-	GML_RECMUTEX_LOCK(qnum); // GenerateTargets
-
 	const CUnit* attacker = weapon->owner;
 	const float radius    = weapon->range;
 	const float3& pos     = attacker->pos;
@@ -625,7 +652,7 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* last
 
 	const std::vector<int>& quads = qf->GetQuads(pos, radius + (aHeight - std::max(0.f, readmap->initMinHeight)) * heightMod);
 
-	const int tempNum = gs->tempNum++;
+	const int tempNum = targetTempNum++;
 
 	typedef std::vector<int>::const_iterator VectorIt;
 	typedef std::list<CUnit*>::const_iterator ListIt;
@@ -642,82 +669,84 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* last
 				CUnit* targetUnit = *ui;
 				float targetPriority = 1.0f;
 
+				if (!(targetUnit->category & weapon->onlyTargetCategory)) {
+					continue;
+				}
+
+				if (tempTargetUnits[targetUnit->id] == tempNum) {
+					continue;
+				}
+
+				tempTargetUnits[targetUnit->id] = tempNum;
+
+				if (targetUnit->isUnderWater && !weapon->weaponDef->waterweapon) {
+					continue;
+				}
+				if (targetUnit->isDead) {
+					continue;
+				}
+
+				float3 targPos;
+				const unsigned short targetLOSState = targetUnit->losStatus[attacker->allyteam];
+
+				if (targetLOSState & LOS_INLOS) {
+					targPos = targetUnit->midPos;
+				} else if (targetLOSState & LOS_INRADAR) {
+					targPos = targetUnit->midPos + (targetUnit->posErrorVector * radarhandler->radarErrorSize[attacker->allyteam]);
+					targetPriority *= 10.0f;
+				} else {
+					continue;
+				}
+
+				const float modRange = radius + (aHeight - targPos.y) * heightMod;
+
+				if ((pos - targPos).SqLength2D() > modRange * modRange) {
+					continue;
+				}
+
+				const float dist2D = (pos - targPos).Length2D();
+				const float rangeMul = (dist2D * weapon->weaponDef->proximityPriority + modRange * 0.4f + 100.0f);
+				const float damageMul = weapon->weaponDef->damages[targetUnit->armorType] * targetUnit->curArmorMultiple;
+
+				targetPriority *= rangeMul;
+
+				if (targetLOSState & LOS_INLOS) {
+					targetPriority *= (secDamage + targetUnit->health);
+
+					if (targetUnit == lastTargetUnit) {
+						targetPriority *= weapon->avoidTarget ? 10.0f : 0.4f;
+					}
+
+					if (paralyzer && targetUnit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? targetUnit->maxHealth: targetUnit->health)) {
+						targetPriority *= 4.0f;
+					}
+
+					if (weapon->hasTargetWeight) {
+						targetPriority *= weapon->TargetWeight(targetUnit);
+					}
+				} else {
+					targetPriority *= (secDamage + 10000.0f);
+				}
+
+				if (targetLOSState & LOS_PREVLOS) {
+					targetPriority /= (damageMul * targetUnit->power * (0.7f + gs->randFloat() * 0.6f));
+
+					if (targetUnit->category & weapon->badTargetCategory) {
+						targetPriority *= 100.0f;
+					}
+					if (targetUnit->crashing) {
+						targetPriority *= 1000.0f;
+					}
+				}
+
 				if (luaRules != NULL) {
-					const int targetAllowed = luaRules->AllowWeaponTarget(attacker->id, targetUnit->id, weapon->weaponNum, weapon->weaponDef->id, &targetPriority);
-
-					if (targetAllowed >= 0) {
-						if (targetAllowed > 0) {
-							targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
-						}
-
+					const bool targetAllowed = luaRules->AllowWeaponTarget(attacker->id, targetUnit->id, weapon->weaponNum, weapon->weaponDef->id, &targetPriority);
+					if (!targetAllowed) {
 						continue;
 					}
 				}
 
-
-				if (targetUnit->tempNum != tempNum && (targetUnit->category & weapon->onlyTargetCategory)) {
-					targetUnit->tempNum = tempNum;
-
-					if (targetUnit->isUnderWater && !weapon->weaponDef->waterweapon) {
-						continue;
-					}
-					if (targetUnit->isDead) {
-						continue;
-					}
-
-					float3 targPos;
-					const unsigned short targetLOSState = targetUnit->losStatus[attacker->allyteam];
-
-					if (targetLOSState & LOS_INLOS) {
-						targPos = targetUnit->midPos;
-					} else if (targetLOSState & LOS_INRADAR) {
-						targPos = targetUnit->midPos + (targetUnit->posErrorVector * radarhandler->radarErrorSize[attacker->allyteam]);
-						targetPriority *= 10.0f;
-					} else {
-						continue;
-					}
-
-					const float modRange = radius + (aHeight - targPos.y) * heightMod;
-
-					if ((pos - targPos).SqLength2D() <= modRange * modRange) {
-						const float dist2D = (pos - targPos).Length2D();
-						const float rangeMul = (dist2D * weapon->weaponDef->proximityPriority + modRange * 0.4f + 100.0f);
-						const float damageMul = weapon->weaponDef->damages[targetUnit->armorType] * targetUnit->curArmorMultiple;
-
-						targetPriority *= rangeMul;
-
-						if (targetLOSState & LOS_INLOS) {
-							targetPriority *= (secDamage + targetUnit->health);
-
-							if (targetUnit == lastTargetUnit) {
-								targetPriority *= weapon->avoidTarget ? 10.0f : 0.4f;
-							}
-
-							if (paralyzer && targetUnit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? targetUnit->maxHealth: targetUnit->health)) {
-								targetPriority *= 4.0f;
-							}
-
-							if (weapon->hasTargetWeight) {
-								targetPriority *= weapon->TargetWeight(targetUnit);
-							}
-						} else {
-							targetPriority *= (secDamage + 10000.0f);
-						}
-
-						if (targetLOSState & LOS_PREVLOS) {
-							targetPriority /= (damageMul * targetUnit->power * (0.7f + gs->randFloat() * 0.6f));
-
-							if (targetUnit->category & weapon->badTargetCategory) {
-								targetPriority *= 100.0f;
-							}
-							if (targetUnit->crashing) {
-								targetPriority *= 1000.0f;
-							}
-						}
-
-						targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
-					}
-				}
+				targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
 			}
 		}
 	}
@@ -809,7 +838,7 @@ float3 CGameHelper::GetUnitErrorPos(const CUnit* unit, int allyteam)
 	float3 pos = unit->midPos;
 	if (teamHandler->Ally(allyteam,unit->allyteam) || (unit->losStatus[allyteam] & LOS_INLOS)) {
 		// ^ it's one of our own, or it's in LOS, so don't add an error ^
-	} else if ((!gameSetup || gameSetup->ghostedBuildings) && (unit->losStatus[allyteam] & LOS_PREVLOS) && !unit->mobility) {
+	} else if ((!gameSetup || gameSetup->ghostedBuildings) && (unit->losStatus[allyteam] & LOS_PREVLOS) && !unit->moveDef) {
 		// ^ this is a ghosted building, so don't add an error ^
 	} else if ((unit->losStatus[allyteam] & LOS_INRADAR)) {
 		pos += unit->posErrorVector * radarhandler->radarErrorSize[allyteam];
@@ -973,12 +1002,18 @@ float3 CGameHelper::ClosestBuildSite(int team, const UnitDef* unitDef, float3 po
 
 void CGameHelper::Update()
 {
-	std::list<WaitingDamage*>* wd = &waitingDamages[gs->frameNum&127];
+	std::list<WaitingDamage*>* wd = &waitingDamages[gs->frameNum & 127];
+
 	while (!wd->empty()) {
 		WaitingDamage* w = wd->back();
 		wd->pop_back();
-		if (uh->units[w->target])
-			uh->units[w->target]->DoDamage(w->damage, w->attacker == -1? NULL: uh->units[w->attacker], w->impulse, w->weaponId);
+
+		CUnit* attackee = uh->units[w->target];
+		CUnit* attacker = (w->attacker == -1)? NULL: uh->units[w->attacker];
+
+		if (attackee != NULL)
+			attackee->DoDamage(w->damage, w->impulse, attacker, w->weaponId);
+
 		delete w;
 	}
 }

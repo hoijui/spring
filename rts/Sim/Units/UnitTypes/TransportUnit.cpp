@@ -95,6 +95,11 @@ void CTransportUnit::Update()
 		transportee->Move3D(absPiecePos, false);
 		transportee->UpdateMidPos();
 		transportee->SetHeadingFromDirection();
+
+		// see ::AttachUnit
+		if (transportee->stunned) {
+			qf->MovedUnit(transportee);
+		}
 	}
 }
 
@@ -163,7 +168,7 @@ void CTransportUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker
 			if (!unitDef->releaseHeld) {
 				if (!selfDestruct) {
 					// we don't want it to leave a corpse
-					transportee->DoDamage(DamageArray(1e6f), 0, ZeroVector);
+					transportee->DoDamage(DamageArray(1e6f), ZeroVector, NULL, -DAMAGE_EXTSOURCE_KILLED);
 				}
 
 				transportee->KillUnit(selfDestruct, reclaimed, attacker);
@@ -323,9 +328,18 @@ void CTransportUnit::AttachUnit(CUnit* unit, int piece)
 
 	unit->UnBlock();
 	loshandler->FreeInstance(unit->los);
-	unit->los = 0;
 	radarhandler->RemoveUnit(unit);
-	qf->RemoveUnit(unit);
+
+	// do not remove unit from QF, otherwise projectiles
+	// will not be able to connect with (ie. damage) it
+	//
+	// for NON-stunned transportees, QF position is kept
+	// up-to-date by MoveType::SlowUpdate, otherwise by
+	// ::Update
+	//
+	// qf->RemoveUnit(unit);
+
+	unit->los = NULL;
 
 	if (CBuilding* building = dynamic_cast<CBuilding*>(unit)) {
 		unitLoader->RestoreGround(unit);
@@ -462,7 +476,7 @@ float CTransportUnit::GetLoadUnloadHeight(const float3& wantedPos, const CUnit* 
 	float clampedHeight = wantedHeight;
 
 	const UnitDef* unitDef = unit->unitDef;
-	const MoveData* moveData = unitDef->movedata;
+	const MoveDef* moveDef = unitDef->moveDef;
 
 	if (unit->transporter != NULL) {
 		// unit is being transported, set <clampedHeight> to
@@ -471,13 +485,13 @@ float CTransportUnit::GetLoadUnloadHeight(const float3& wantedPos, const CUnit* 
 		isAllowedHeight = unitDef->IsAllowedTerrainHeight(wantedHeight, &clampedHeight);
 
 		if (isAllowedHeight) {
-			if (moveData != NULL) {
-				switch (moveData->moveType) {
-					case MoveData::Ship_Move: {
+			if (moveDef != NULL) {
+				switch (moveDef->moveType) {
+					case MoveDef::Ship_Move: {
 						wantedHeight = std::max(-unitDef->waterline, wantedHeight);
 						clampedHeight = wantedHeight;
 					} break;
-					case MoveData::Hover_Move: {
+					case MoveDef::Hover_Move: {
 						wantedHeight = std::max(0.0f, wantedHeight);
 						clampedHeight = wantedHeight;
 					} break;

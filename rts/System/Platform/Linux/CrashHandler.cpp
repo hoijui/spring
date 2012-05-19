@@ -28,6 +28,14 @@
 #include "System/Platform/Misc.h"
 #include "System/Platform/errorhandler.h"
 #include "System/Platform/Threading.h"
+#include <new>
+
+
+#ifdef __APPLE__
+#define ADDR2LINE "gaddr2line"
+#else
+#define ADDR2LINE "addr2line"
+#endif
 
 
 static const int MAX_STACKTRACE_DEPTH = 10;
@@ -243,7 +251,7 @@ static void TranslateStackTrace(std::vector<std::string>* lines, const std::vect
 	static int addr2line_found = -1;
 	if (addr2line_found < 0)
 	{
-		FILE* cmdOut = popen("addr2line --help", "r");
+		FILE* cmdOut = popen(ADDR2LINE " --help", "r");
 		if (cmdOut == NULL) {
 			addr2line_found = false;
 		} else {
@@ -270,7 +278,7 @@ static void TranslateStackTrace(std::vector<std::string>* lines, const std::vect
 		const std::string symbolFile = LocateSymbolFile(libName);
 
 		std::ostringstream buf;
-		buf << "addr2line " << "--exe=\"" << symbolFile << "\"";
+		buf << ADDR2LINE << " --exe=\"" << symbolFile << "\"";
 
 		// insert requested addresses that should be translated by addr2line
 		std::queue<size_t> indices;
@@ -313,6 +321,17 @@ static void ForcedExitAfterFiveSecs() {
 	exit(-1);
 }
 
+
+typedef struct sigaction sigaction_t;
+
+static sigaction_t& GetSigAction(void (*s_hand)(int))
+{
+	static sigaction_t sa;
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = s_hand;
+	return sa;
+}
 
 
 namespace CrashHandler
@@ -424,12 +443,13 @@ namespace CrashHandler
 		for (std::vector<std::string>::iterator it = stacktrace.begin(); it != stacktrace.end(); ++it) {
 			LOG_L(L_ERROR, "  <%u> %s", numLine++, it->c_str());
 		}
-		LOG_CLEANUP();
 	}
 
 
 	void Stacktrace(Threading::NativeThreadHandle thread, const std::string& threadName)
 	{
+		//TODO Our custom thread_backtrace() only works on the mainthread.
+		//     Use to gdb's libthread_db to get the stacktraces of all threads.
 		if (!Threading::IsMainThread(thread)) {
 			LOG_L(L_ERROR, "Stacktrace (%s):", threadName.c_str());
 			LOG_L(L_ERROR, "  No Stacktraces for non-MainThread.");
@@ -439,7 +459,10 @@ namespace CrashHandler
 	}
 
 	void PrepareStacktrace() {}
-	void CleanupStacktrace() {}
+
+	void CleanupStacktrace() {
+		LOG_CLEANUP();
+	}
 
 	void HandleSignal(int signal)
 	{
@@ -473,19 +496,25 @@ namespace CrashHandler
 			error += " (SIGABRT)";
 		} else if (signal == SIGFPE) {
 			error += " (SIGFPE)";
+		} else if (signal == SIGBUS) {
+			error += " (SIGBUS)";
 		}
 		LOG_L(L_ERROR, "%s in spring %s", error.c_str(), SpringVersion::GetFull().c_str());
 
 		//! print stacktrace
 		bool keepRunning = false;
+
+		PrepareStacktrace();
 		Stacktrace(&keepRunning);
+		CleanupStacktrace();
 
 		//! don't try to keep on running after these signals
 		if (keepRunning &&
 		    (signal != SIGSEGV) &&
 		    (signal != SIGILL) &&
 		    (signal != SIGPIPE) &&
-		    (signal != SIGABRT)) {
+		    (signal != SIGABRT) &&
+		    (signal != SIGBUS)) {
 			keepRunning = false;
 		}
 
@@ -522,32 +551,52 @@ namespace CrashHandler
 				<< error << ".\n\n"
 				<< "A stacktrace has been written to:\n"
 				<< "  " << logOutput.GetFilePath();
-			ErrorMessageBox(buf.str(), "Spring crashed", MBF_CRASH); //! this also calls exit()
+			ErrorMessageBox(buf.str(), "Spring crashed", MBF_OK | MBF_CRASH); //! this also calls exit()
 		}
-	}
-
-	void Install() {
-		signal(SIGSEGV, HandleSignal); //! segmentation fault
-		signal(SIGILL,  HandleSignal); //! illegal instruction
-		signal(SIGPIPE, HandleSignal); //! maybe some network error
-		signal(SIGIO,   HandleSignal); //! who knows?
-		signal(SIGFPE,  HandleSignal); //! div0 and more
-		signal(SIGABRT, HandleSignal);
-		signal(SIGINT,  HandleSignal);
-	}
-
-	void Remove() {
-		signal(SIGSEGV, SIG_DFL);
-		signal(SIGILL,  SIG_DFL);
-		signal(SIGPIPE, SIG_DFL);
-		signal(SIGIO,   SIG_DFL);
-		signal(SIGFPE,  SIG_DFL);
-		signal(SIGABRT, SIG_DFL);
-		signal(SIGINT,  SIG_DFL);
 	}
 
 	void OutputStacktrace() {
 		bool keepRunning = true;
+		PrepareStacktrace();
 		Stacktrace(&keepRunning);
+		CleanupStacktrace();
+	}
+
+	void NewHandler() {
+		LOG_L(L_ERROR, "Failed to allocate memory"); // make sure this ends up in the log also
+
+		OutputStacktrace();
+
+		ErrorMessageBox("Failed to allocate memory", "Spring: Fatal Error", MBF_OK | MBF_CRASH);
+	}
+
+	void Install() {
+		const sigaction_t& sa = GetSigAction(&HandleSignal);
+
+		sigaction(SIGSEGV, &sa, NULL); // segmentation fault
+		sigaction(SIGILL,  &sa, NULL); // illegal instruction
+		sigaction(SIGPIPE, &sa, NULL); // maybe some network error
+		sigaction(SIGIO,   &sa, NULL); // who knows?
+		sigaction(SIGFPE,  &sa, NULL); // div0 and more
+		sigaction(SIGABRT, &sa, NULL);
+		sigaction(SIGINT,  &sa, NULL);
+		sigaction(SIGBUS,  &sa, NULL); // on macosx EXC_BAD_ACCESS (mach exception) is translated to SIGBUS
+
+		std::set_new_handler(NewHandler);
+	}
+
+	void Remove() {
+		const sigaction_t& sa = GetSigAction(SIG_DFL);
+
+		sigaction(SIGSEGV, &sa, NULL); // segmentation fault
+		sigaction(SIGILL,  &sa, NULL); // illegal instruction
+		sigaction(SIGPIPE, &sa, NULL); // maybe some network error
+		sigaction(SIGIO,   &sa, NULL); // who knows?
+		sigaction(SIGFPE,  &sa, NULL); // div0 and more
+		sigaction(SIGABRT, &sa, NULL);
+		sigaction(SIGINT,  &sa, NULL);
+		sigaction(SIGBUS,  &sa, NULL); // on macosx EXC_BAD_ACCESS (mach exception) is translated to SIGBUS
+
+		std::set_new_handler(NULL);
 	}
 };

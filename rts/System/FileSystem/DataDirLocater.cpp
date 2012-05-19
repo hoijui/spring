@@ -32,7 +32,8 @@
 #include "System/Platform/Misc.h"
 
 CONFIG(std::string, SpringData).defaultValue("")
-		.description("List of addidional data-directories, separated by ';' on windows, ':' on other OSs");
+		.description("List of addidional data-directories, separated by ';' on windows, ':' on other OSs")
+		.readOnly(true);
 
 
 DataDirLocater dataDirLocater;
@@ -49,10 +50,19 @@ DataDirLocater::DataDirLocater()
 	: isolationMode(false)
 	, writeDir(NULL)
 {
+	UpdateIsolationModeByEnvVar();
+}
+
+
+void DataDirLocater::UpdateIsolationModeByEnvVar()
+{
+	isolationMode = false;
+	isolationModeDir = "";
+
 	const char* const envIsolation = getenv("SPRING_ISOLATED");
 	if (envIsolation != NULL) {
 		isolationMode = true;
-		if (FileSystem::DirExists(envIsolation)) {
+		if (FileSystem::DirExists(SubstEnvVars(envIsolation))) {
 			isolationModeDir = envIsolation;
 		}
 	}
@@ -268,7 +278,7 @@ void DataDirLocater::LocateDataDirs()
 			if (FileSystem::DirExists(isolationModeDir)) {
 				AddDir(isolationModeDir);
 			} else {
-				LOG_L(L_FATAL, "The specified isolation-mode directory does not exist: %s", isolationModeDir.c_str());
+				throw user_error(std::string("The specified isolation-mode directory does not exist: ") + isolationModeDir);
 			}
 		}
 	}

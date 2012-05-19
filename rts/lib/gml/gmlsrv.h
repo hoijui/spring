@@ -11,7 +11,7 @@
 #define GMLSRV_H
 
 #ifdef USE_GML
-
+#include "System/OffscreenGLContext.h"
 #include <boost/thread/thread.hpp>
 #include <boost/thread/barrier.hpp>
 #include <boost/bind.hpp>
@@ -21,6 +21,8 @@
 #if !defined(_MSC_VER) && defined(_WIN32)
 #	include "System/Platform/Win/win32.h"
 #endif
+
+extern COffscreenGLContext* ogc[GML_MAX_NUM_THREADS];
 
 EXTERN inline void gmlUpdateServers() {
 	gmlItemsConsumed=0;
@@ -217,7 +219,7 @@ public:
 //			int nproc=0;
 			int updsrv=0;
 			if(ex->maxthreads>1) {
-				while(ClientsReady<=gmlThreadCount+1) {
+				while(ClientsReady < gmlThreadCount - 1) {
 					if(!gmlShareLists && ((updsrv++%GML_UPDSRV_INTERVAL)==0 || *(volatile int *)&gmlItemsConsumed>=GML_UPDSRV_INTERVAL))
 						gmlUpdateServers();
 					BOOL_ processed=FALSE;
@@ -241,9 +243,6 @@ public:
 							//						++nproc;
 						}
 					}
-
-					if(ClientsReady>=gmlThreadCount-1)
-						++ClientsReady;
 				}
 			}
 			else {
@@ -297,6 +296,8 @@ public:
 		new (ex+1) GML_TYPENAME gmlExecState<R,A,U>(wrk,wrka,wrkit,cls,mt,sm,nu,it,l1,l2,sw,swf);
 		newwork=TRUE;
 
+		while(!qd->Empty())
+			boost::thread::yield();
 		++ClientsReady;	
 		gmlClientSub();
 
@@ -349,14 +350,23 @@ public:
 //			}
 		}
 		qd->ReleaseWrite();
+		while(!qd->Empty())
+			boost::thread::yield();
 		++ClientsReady;	
 	}
 
 	void gmlClient() {
-		set_threadnum(++threadcnt + 2);
+		long thr = ++threadcnt;
+		set_threadnum(thr + 2);
+		if (gmlShareLists) {
+			ogc[thr]->WorkerThreadPost();
+		}
 		streflop_init<streflop::Simple>();
 		while(dorun) {
 			gmlClientSub();
+		}
+		if (gmlShareLists) {
+			ogc[thr]->WorkerThreadFree();
 		}
 	}
 
@@ -371,11 +381,11 @@ public:
 		qd->GetWrite(qd->WasSynced?2:TRUE);
 
 		if(isq1) {
-			while(!qd->Locked1 && *(BYTE * volatile *)&qd->Pos1!=qd->Queue1)
+			while(!qd->Locked1 && !qd->Empty(1))
 				boost::thread::yield();
 		}
 		else {
-			while(!qd->Locked2 && *(BYTE * volatile *)&qd->Pos2!=qd->Queue2)
+			while(!qd->Locked2 && !qd->Empty(2))
 				boost::thread::yield();
 		}
 	}

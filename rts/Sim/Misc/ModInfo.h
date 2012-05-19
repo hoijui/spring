@@ -10,11 +10,11 @@ class CModInfo
 {
 public:
 	CModInfo()
-		: allowTeamColors(true)
-		, allowAircraftToLeaveMap(true)
+		: allowAircraftToLeaveMap(true)
 		, allowPushingEnemyUnits(false)
 		, allowCrushingAlliedUnits(false)
 		, allowUnitCollisionDamage(false)
+		, useClassicGroundMoveType(false)
 		, constructionDecay(true)
 		, constructionDecayTime(1000)
 		, constructionDecaySpeed(1.0f)
@@ -75,13 +75,12 @@ public:
 	std::string mutator;
 	std::string description;
 
-	bool allowTeamColors;
-
 	// Movement behaviour
 	bool allowAircraftToLeaveMap;    // determines if gunships are allowed to leave map boundaries
 	bool allowPushingEnemyUnits;     // determines if enemy (ground-)units can be pushed during collisions
 	bool allowCrushingAlliedUnits;   // determines if allied (ground-)units can be crushed during collisions
 	bool allowUnitCollisionDamage;   // determines if units take damage from (skidding) collisions
+	bool useClassicGroundMoveType;   // determines if (ground-)units use the CClassicGroundMoveType path-follower
 
 	// Build behaviour
 	/// Should constructions without builders decay?

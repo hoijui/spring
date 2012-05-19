@@ -77,7 +77,7 @@ using std::set;
 #undef far // avoid collision with windef.h
 #undef near
 
-CONFIG(bool, LuaShaders).defaultValue(true);
+CONFIG(bool, LuaShaders).defaultValue(true).safemodeValue(false);
 
 static const int MAX_TEXTURE_UNITS = 32;
 
@@ -1320,7 +1320,7 @@ static inline CUnit* ParseUnit(lua_State* L, const char* caller, int index)
 		return NULL;
 	}
 
-	const int readAllyTeam = CLuaHandle::GetReadAllyTeam(L);
+	const int readAllyTeam = CLuaHandle::GetHandleReadAllyTeam(L);
 	if (readAllyTeam < 0) {
 		if (readAllyTeam == CEventClient::NoAccessTeam) {
 			return NULL;
@@ -1577,7 +1577,7 @@ static inline bool IsFeatureVisible(const lua_State *L, const CFeature* feature)
 	if (ActiveFullRead())
 		return true;
 
-	const int readAllyTeam = CLuaHandle::GetReadAllyTeam(L);
+	const int readAllyTeam = CLuaHandle::GetHandleReadAllyTeam(L);
 	if (readAllyTeam < 0) {
 		return (readAllyTeam == CEventClient::AllAccessTeam);
 	}
@@ -2053,6 +2053,10 @@ int LuaOpenGL::BeginEnd(lua_State* L)
 		luaL_error(L, "Incorrect arguments to gl.BeginEnd(type, func, ...)");
 	}
 	const GLuint primMode = (GLuint)lua_tonumber(L, 1);
+
+	if (primMode == GL_POINTS) {
+		WorkaroundATIPointSizeBug();
+	}
 
 	// call the function
 	glBegin(primMode);

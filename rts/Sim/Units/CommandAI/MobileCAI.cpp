@@ -33,6 +33,7 @@ CR_BIND_DERIVED(CMobileCAI ,CCommandAI , );
 
 CR_REG_METADATA(CMobileCAI, (
 				CR_MEMBER(goalPos),
+				CR_MEMBER(goalRadius),
 				CR_MEMBER(lastBuggerGoalPos),
 				CR_MEMBER(lastUserGoal),
 
@@ -59,6 +60,7 @@ CR_REG_METADATA(CMobileCAI, (
 CMobileCAI::CMobileCAI():
 	CCommandAI(),
 	goalPos(-1,-1,-1),
+	goalRadius(0.0f),
 	lastBuggerGoalPos(-1,0,-1),
 	lastUserGoal(0,0,0),
 	lastIdleCheck(0),
@@ -79,6 +81,7 @@ CMobileCAI::CMobileCAI():
 CMobileCAI::CMobileCAI(CUnit* owner):
 	CCommandAI(owner),
 	goalPos(-1,-1,-1),
+	goalRadius(0.0f),
 	lastBuggerGoalPos(-1,0,-1),
 	lastUserGoal(owner->pos),
 	lastIdleCheck(0),
@@ -240,17 +243,23 @@ void CMobileCAI::GiveCommandReal(const Command &c, bool fromSynced)
 	}
 
 	if (owner->unitDef->canfly && c.GetID() == CMD_IDLEMODE) {
-		if (c.params.empty()) {
-			return;
-		}
-		AAirMoveType* airMT = GetAirMoveType<AAirMoveType>(owner);
-		if (!airMT)
+		if (c.params.empty())
 			return;
 
+		AAirMoveType* airMT = GetAirMoveType<AAirMoveType>(owner);
+
+		if (airMT == NULL)
+			return;
+
+		// toggle between the "land" and "fly" idle-modes
 		switch ((int) c.params[0]) {
-			case 0: { airMT->autoLand = false; airMT->Takeoff(); break; }
+			case 0: { airMT->autoLand = false; break; }
 			case 1: { airMT->autoLand = true; break; }
 		}
+
+		if (!airMT->autoLand && !airMT->owner->beingBuilt)
+			airMT->Takeoff();
+
 		for (vector<CommandDescription>::iterator cdi = possibleCommands.begin();
 				cdi != possibleCommands.end(); ++cdi) {
 			if (cdi->id == CMD_IDLEMODE) {
@@ -283,14 +292,12 @@ bool CMobileCAI::RefuelIfNeeded()
 
 	if (owner->currentFuel <= 0.0f) {
 		// we're completely out of fuel
-		StopMove();
-
 		owner->userAttackGround = false;
 		owner->SetUserTarget(NULL);
 		inCommand = false;
 
 		CAirBaseHandler::LandingPad* lp =
-			airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower);
+			airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower, true);
 
 		if (lp != NULL) {
 			// found a pad
@@ -306,25 +313,25 @@ bool CMobileCAI::RefuelIfNeeded()
 				// so don't call it
 				SetGoal(landingPos, owner->pos);
 			} else {
-				owner->moveType->StopMoving();
+				StopMove();
 			}
 		}
+
 		return true;
-	} else if (owner->moveType->WantsRefuel() && true
-		/* (commandQue.empty() || commandQue.front().id == CMD_PATROL || commandQue.front().id == CMD_FIGHT) */) {
+	} else if (owner->moveType->WantsRefuel()) {
 		// current fuel level is below our bingo threshold
 		// note: force the refuel attempt (irrespective of
 		// what our currently active command is)
 
 		CAirBaseHandler::LandingPad* lp =
-			airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower);
+			airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower, true);
 
 		if (lp != NULL) {
 			StopMove();
 			owner->userAttackGround = false;
 			owner->SetUserTarget(NULL);
-			inCommand = false;
 			owner->moveType->ReservePad(lp);
+			inCommand = false;
 			return true;
 		}
 	}
@@ -343,7 +350,7 @@ bool CMobileCAI::LandRepairIfNeeded()
 
 	// we're damaged, just seek a pad for repairs
 	CAirBaseHandler::LandingPad* lp =
-		airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower);
+		airBaseHandler->FindAirBase(owner, owner->unitDef->minAirBasePower, true);
 
 	if (lp != NULL) {
 		owner->moveType->ReservePad(lp);
@@ -389,6 +396,7 @@ void CMobileCAI::SlowUpdate()
 	}
 
 	if (!slowGuard) {
+		// when slow-guarding, regulate speed through {Start,Stop}SlowGuard
 		SlowUpdateMaxSpeed();
 	}
 
@@ -664,14 +672,17 @@ void CMobileCAI::ExecuteAttack(Command &c)
 {
 	assert(owner->unitDef->canAttack);
 
-	// limit how far away we fly
-	if (tempOrder && (owner->moveState < MOVESTATE_ROAM) && orderTarget
-			&& LinePointDist(ClosestPointOnLine(commandPos1, commandPos2, owner->pos),
-					commandPos2, orderTarget->pos)
-			> (500 * owner->moveState + owner->maxRange)) {
-		StopMove();
-		FinishCommand();
-		return;
+	// limit how far away we fly based on our movestate
+	if (tempOrder && orderTarget) {
+		const float3& closestPos = ClosestPointOnLine(commandPos1, commandPos2, owner->pos);
+		const float curTargetDist = LinePointDist(closestPos, commandPos2, orderTarget->pos);
+		const float maxTargetDist = (500 * owner->moveState + owner->maxRange);
+
+		if (owner->moveState < MOVESTATE_ROAM && curTargetDist > maxTargetDist) {
+			StopMove();
+			FinishCommand();
+			return;
+		}
 	}
 
 	// check if we are in direct command of attacker
@@ -726,8 +737,8 @@ void CMobileCAI::ExecuteAttack(Command &c)
 		bool b2 = false;
 		bool b3 = false;
 		bool b4 = false;
-		float edgeFactor = 0.f; // percent offset to target center
-		float3 diff = owner->pos - orderTarget->midPos;
+		float edgeFactor = 0.0f; // percent offset to target center
+		const float3 diff = owner->pos - orderTarget->midPos;
 
 		if (!owner->weapons.empty()) {
 			if (!(c.options & ALT_KEY) && SkipParalyzeTarget(orderTarget)) {
@@ -755,7 +766,7 @@ void CMobileCAI::ExecuteAttack(Command &c)
 			edgeFactor = fabs(w->targetBorder);
 		}
 
-		float diffLength2d = diff.Length2D();
+		const float diffLength2d = diff.Length2D();
 
 		// if w->AttackUnit() returned true then we are already
 		// in range with our biggest weapon so stop moving
@@ -772,7 +783,7 @@ void CMobileCAI::ExecuteAttack(Command &c)
 						SQUARE_SIZE, orderTarget->speed.Length() * 1.1f);
 			} else {
 				StopMove();
-				// FIXME kill magic frame number
+
 				if (gs->frameNum > lastCloseInTry + MAX_CLOSE_IN_RETRY_TICKS) {
 					owner->moveType->KeepPointingTo(orderTarget->midPos,
 							std::min((float) owner->losRadius * loshandler->losDiv,
@@ -810,8 +821,8 @@ void CMobileCAI::ExecuteAttack(Command &c)
 			else if (owner->unitDef->strafeToAttack && b3 && diffLength2d < (owner->maxRange * 0.9f))
 			{
 				moveDir ^= (owner->moveType->progressState == AMoveType::Failed);
-				float sin = moveDir ? 3.0/5 : -3.0/5;
-				float cos = 4.0/5;
+				const float sin = moveDir ? 3.0/5 : -3.0/5;
+				const float cos = 4.0/5;
 				float3 goalDiff(0, 0, 0);
 				goalDiff.x = diff.dot(float3(cos, 0, -sin));
 				goalDiff.z = diff.dot(float3(sin, 0, cos));
@@ -834,8 +845,8 @@ void CMobileCAI::ExecuteAttack(Command &c)
 					(orderTarget->losStatus[owner->allyteam] & LOS_INLOS ?
 						float3(0.f,0.f,0.f) :
 						owner->posErrorVector * 128);
-			float3 norm = float3(fix - owner->pos).Normalize();
-			float3 goal = fix - norm*(orderTarget->radius*edgeFactor*0.8f);
+			const float3 norm = float3(fix - owner->pos).Normalize();
+			const float3 goal = fix - norm*(orderTarget->radius*edgeFactor*0.8f);
 			SetGoal(goal, owner->pos);
 			if (lastCloseInTry < gs->frameNum + MAX_CLOSE_IN_RETRY_TICKS)
 				lastCloseInTry = gs->frameNum;
@@ -920,6 +931,7 @@ void CMobileCAI::SetGoal(const float3 &pos, const float3& curPos, float goalRadi
 	if (pos == goalPos)
 		return;
 	goalPos = pos;
+	this->goalRadius = goalRadius;
 	owner->moveType->StartMoving(pos, goalRadius);
 }
 
@@ -928,6 +940,7 @@ void CMobileCAI::SetGoal(const float3 &pos, const float3& curPos, float goalRadi
 	if (pos == goalPos)
 		return;
 	goalPos = pos;
+	this->goalRadius = goalRadius;
 	owner->moveType->StartMoving(pos, goalRadius, speed);
 }
 
@@ -935,9 +948,16 @@ void CMobileCAI::StopMove()
 {
 	owner->moveType->StopMoving();
 	goalPos = owner->pos;
+	goalRadius = 0.f;
 }
 
-
+void CMobileCAI::StopMoveAndKeepPointing()
+{
+	const float3 goalPos    = this->goalPos;
+	const float  goalRadius = this->goalRadius;
+	StopMove();
+	owner->moveType->KeepPointingTo(goalPos, goalRadius, false);
+}
 
 void CMobileCAI::BuggerOff(const float3& pos, float radius)
 {
@@ -1071,14 +1091,18 @@ void CMobileCAI::IdleCheck()
 	}
 }
 
+
+
 void CMobileCAI::StopSlowGuard() {
 	if (!slowGuard)
 		return;
 
 	slowGuard = false;
 
-	// restore our default maximum speed
-	owner->moveType->SetMaxSpeed(owner->moveType->GetMaxSpeedDef());
+	// restore maxWantedSpeed to our current maxSpeed
+	// (StartSlowGuard modifies maxWantedSpeed, so we
+	// do not know its old value here)
+	owner->moveType->SetWantedMaxSpeed(owner->moveType->GetMaxSpeed());
 }
 
 void CMobileCAI::StartSlowGuard(float speed) {
@@ -1095,10 +1119,12 @@ void CMobileCAI::StartSlowGuard(float speed) {
 
 	// when guarding, temporarily adopt the maximum
 	// (forward) speed of the guardee unit as our own
-	if ((c.GetID() != CMD_SET_WANTED_MAX_SPEED) || (c.params[0] > speed)) {
-		owner->moveType->SetMaxSpeed(speed);
+	// WANTED maximum
+	if (c.GetID() == CMD_SET_WANTED_MAX_SPEED) {
+		owner->moveType->SetWantedMaxSpeed(speed);
 	}
 }
+
 
 
 void CMobileCAI::CalculateCancelDistance()

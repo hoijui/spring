@@ -16,6 +16,7 @@
 #include "System/Util.h"
 #include "System/SafeCStrings.h"
 #include "Game/GameVersion.h"
+#include <new>
 
 
 #define BUFFER_SIZE 2048
@@ -300,11 +301,11 @@ void PrepareStacktrace() {
 }
 
 void CleanupStacktrace() {
+	LOG_CLEANUP();
 	// Unintialize IMAGEHLP.DLL
 	SymCleanup(GetCurrentProcess());
 
 	LeaveCriticalSection( &stackLock );
-
 }
 
 void OutputStacktrace() {
@@ -315,12 +316,17 @@ void OutputStacktrace() {
 
 	PrepareStacktrace();
 
-	LOG_L(L_ERROR, "Stacktrace:");
 	Stacktrace(NULL, NULL);
 
 	CleanupStacktrace();
+}
 
-	LOG_CLEANUP();
+void NewHandler() {
+	LOG_L(L_ERROR, "Failed to allocate memory"); // make sure this ends up in the log also
+
+	OutputStacktrace();
+
+	ErrorMessageBox("Failed to allocate memory", "Spring: Fatal Error", MBF_OK | MBF_CRASH);
 }
 
 /** Called by windows if an exception happens. */
@@ -374,6 +380,7 @@ void Install()
 {
 	SetUnhandledExceptionFilter(ExceptionHandler);
 	signal(SIGABRT, SigAbrtHandler);
+	std::set_new_handler(NewHandler);
 }
 
 
@@ -382,6 +389,7 @@ void Remove()
 {
 	SetUnhandledExceptionFilter(NULL);
 	signal(SIGABRT, SIG_DFL);
+	std::set_new_handler(NULL);
 }
 
 }; // namespace CrashHandler

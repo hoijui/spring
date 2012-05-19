@@ -16,8 +16,12 @@
 #include "System/Log/ILog.h"
 #include "System/Exceptions.h"
 #include "System/TimeProfiler.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/FileSystem/FileHandler.h"
+#include "System/Platform/MessageBox.h"
 
+
+CONFIG(bool, DisableCrappyGPUWarning).defaultValue(false);
 
 
 static CVertexArray* vertexArray1 = NULL;
@@ -182,7 +186,7 @@ static bool GetAvailableVideoRAM(GLint* memory)
 }
 
 
-
+//FIXME move most of this to globalRendering's ctor?
 void LoadExtensions()
 {
 	glewInit();
@@ -246,6 +250,26 @@ void LoadExtensions()
 			LOG_L(L_WARNING, "If the game crashes, looks ugly or runs slow, buy a better card!");
 			LOG_L(L_WARNING, ".");
 		}
+
+		if (!configHandler->GetBool("DisableCrappyGPUWarning")) {
+			if (gfxCardIsCrap) {
+				std::string msg =
+					"Warning!\n"
+					"Your graphics card is insufficient to play Spring.\n\n"
+					"If the game crashes, looks ugly or runs slow, buy a better card!\n"
+					"You may try \"spring --safemode\" to test if some of your issues are related to wrong settings.\n"
+					"\nHint: You can disable this MessageBox by appending \"DisableCrappyGPUWarning = 1\" to \"" + configHandler->GetConfigFile() + "\".";
+				Platform::MsgBox(msg, "Warning: Your GPU is not supported", MBF_EXCL);
+			} else if (globalRendering->haveMesa) {
+				std::string mesa_msg =
+					"Warning!\n"
+					"OpenSource graphics card drivers detected.\n"
+					"MesaGL/Gallium drivers are not able to run Spring. Try to switch to proprietary drivers.\n\n"
+					"You may try \"spring --safemode\".\n"
+					"\nHint: You can disable this MessageBox by appending \"DisableCrappyGPUWarning = 1\" to \"" + configHandler->GetConfigFile() + "\".";
+				Platform::MsgBox(mesa_msg, "Warning: Your GPU driver is not supported", MBF_EXCL);
+			}
+		}
 	}
 #endif // !defined DEBUG
 
@@ -305,6 +329,21 @@ void UnloadExtensions()
 	vertexArray2 = NULL;
 }
 
+/******************************************************************************/
+
+void WorkaroundATIPointSizeBug()
+{
+	if (globalRendering->atiHacks && globalRendering->haveGLSL) {
+		GLboolean pointSpritesEnabled = false;
+		glGetBooleanv(GL_POINT_SPRITE, &pointSpritesEnabled);
+		if (pointSpritesEnabled)
+			return;
+
+		const GLfloat atten[3] = { 1.0f, 0.0f, 0.0f };
+		glPointParameterfv(GL_POINT_DISTANCE_ATTENUATION, atten);
+		glPointParameterf(GL_POINT_FADE_THRESHOLD_SIZE, 1.0f);
+	}
+}
 
 /******************************************************************************/
 
@@ -545,6 +584,10 @@ void SetTexGen(const float& scaleX, const float& scaleZ, const float& offsetX, c
 {
 	const GLfloat planeX[] = {scaleX, 0.0f,   0.0f,  offsetX};
 	const GLfloat planeZ[] = {  0.0f, 0.0f, scaleZ,  offsetZ};
+
+	//BUG: Nvidia drivers take the current texcoord into account when TexGen is used!
+	// You MUST reset the coords before using TexGen!
+	//glMultiTexCoord4f(target, 1.0f,1.0f,1.0f,1.0f);
 
 	glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
 	glTexGenfv(GL_S, GL_EYE_PLANE, planeX);

@@ -77,13 +77,14 @@
 #undef KeyRelease
 
 #include "lib/gml/gml_base.h"
+#include "lib/luasocket/src/restrictions.h"
 
-CONFIG(unsigned, SetCoreAffinity).defaultValue(0).description("Defines a bitmask indicating which CPU cores the main-thread should use.");
+CONFIG(unsigned, SetCoreAffinity).defaultValue(0).safemodeValue(1).description("Defines a bitmask indicating which CPU cores the main-thread should use.");
 CONFIG(int, DepthBufferBits).defaultValue(24);
 CONFIG(int, StencilBufferBits).defaultValue(8);
 CONFIG(int, FSAALevel).defaultValue(0);
-CONFIG(int, SmoothLines).defaultValue(2).minimumValue(0).maximumValue(3).description("Smooth lines.\n 0 := off\n 1 := fastest\n 2 := don't care\n 3 := nicest");
-CONFIG(int, SmoothPoints).defaultValue(2).minimumValue(0).maximumValue(3).description("Smooth points.\n 0 := off\n 1 := fastest\n 2 := don't care\n 3 := nicest");
+CONFIG(int, SmoothLines).defaultValue(2).safemodeValue(0).minimumValue(0).maximumValue(3).description("Smooth lines.\n 0 := off\n 1 := fastest\n 2 := don't care\n 3 := nicest");
+CONFIG(int, SmoothPoints).defaultValue(2).safemodeValue(0).minimumValue(0).maximumValue(3).description("Smooth points.\n 0 := off\n 1 := fastest\n 2 := don't care\n 3 := nicest");
 CONFIG(float, TextureLODBias).defaultValue(0.0f);
 CONFIG(bool, FixAltTab).defaultValue(false);
 CONFIG(std::string, FontFile).defaultValue("fonts/FreeSansBold.otf");
@@ -101,7 +102,7 @@ CONFIG(int, WindowPosX).defaultValue(32);
 CONFIG(int, WindowPosY).defaultValue(32);
 CONFIG(int, WindowState).defaultValue(0);
 CONFIG(bool, WindowBorderless).defaultValue(false);
-CONFIG(int, HardwareThreadCount).defaultValue(0);
+CONFIG(int, HardwareThreadCount).defaultValue(0).safemodeValue(1);
 CONFIG(std::string, name).defaultValue("UnnamedPlayer");
 
 
@@ -254,8 +255,12 @@ bool SpringApp::Initialize()
 	ISound::Initialize();
 	InitJoystick();
 
+	// Lua socket restrictions
+	luaSocketRestrictions = new CLuaSocketRestrictions();
+
 	// Multithreading & Affinity
 	LOG("CPU Cores: %d", Threading::GetAvailableCores());
+	Threading::SetThreadScheduler();
 	const uint32_t affinity = configHandler->GetUnsigned("SetCoreAffinity");
 	const uint32_t cpuMask  = Threading::SetAffinity(affinity);
 	if (cpuMask == 0xFFFFFF) {
@@ -723,6 +728,7 @@ void SpringApp::ParseCmdLine()
 	cmdline->AddSwitch('t', "textureatlas",       "Dump each finalized textureatlas in textureatlasN.tga");
 	cmdline->AddString('n', "name",               "Set your player name");
 	cmdline->AddString('C', "config",             "Configuration file");
+	cmdline->AddSwitch(0,   "safemode",           "Turns off many things that are known to cause problems (i.e. on PC/Mac's with lower-end graphic cards)");
 	cmdline->AddSwitch(0,   "list-ai-interfaces", "Dump a list of available AI Interfaces to stdout");
 	cmdline->AddSwitch(0,   "list-skirmish-ais",  "Dump a list of available Skirmish AIs to stdout");
 	cmdline->AddSwitch(0,   "list-config-vars",   "Dump a list of config vars and meta data to stdout");
@@ -756,11 +762,19 @@ void SpringApp::ParseCmdLine()
 		exit(0);
 	}
 
-	string configSource = "";
-	if (cmdline->IsSet("config")) {
-		configSource = cmdline->GetString("config");
+	if (cmdline->IsSet("isolation")) {
+		dataDirLocater.SetIsolationMode(true);
 	}
-	ConfigHandler::Instantiate(configSource);
+
+	if (cmdline->IsSet("isolation-dir")) {
+		dataDirLocater.SetIsolationMode(true);
+		dataDirLocater.SetIsolationModeDir(cmdline->GetString("isolation-dir"));
+	}
+
+	const string configSource = (cmdline->IsSet("config") ? cmdline->GetString("config") : "");
+	const bool safemode = cmdline->IsSet("safemode");
+
+	ConfigHandler::Instantiate(configSource, safemode);
 	GlobalConfig::Instantiate();
 
 	// mutually exclusive options that cause spring to quit immediately
@@ -778,15 +792,6 @@ void SpringApp::ParseCmdLine()
 	else if (cmdline->IsSet("list-config-vars")) {
 		ConfigVariable::OutputMetaDataMap();
 		exit(0);
-	}
-
-	if (cmdline->IsSet("isolation")) {
-		dataDirLocater.SetIsolationMode(true);
-	}
-
-	if (cmdline->IsSet("isolation-dir")) {
-		dataDirLocater.SetIsolationMode(true);
-		dataDirLocater.SetIsolationModeDir(cmdline->GetString("isolation-dir"));
 	}
 
 #ifdef _DEBUG
@@ -1055,6 +1060,7 @@ void SpringApp::Shutdown()
 	DeleteAndNull(gu);
 	DeleteAndNull(globalRendering);
 	DeleteAndNull(startsetup);
+	DeleteAndNull(luaSocketRestrictions);
 
 	FileSystemInitializer::Cleanup();
 

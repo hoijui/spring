@@ -115,6 +115,9 @@ static std::ostream& operator<< (std::ostream& out, const ConfigVariableMetaData
 	if (d->GetDescription().IsSet()) {
 		KV(description, Quote(d->GetDescription().Get()));
 	}
+	if (d->GetReadOnly().IsSet()) {
+		KV(readOnly, d->GetReadOnly().Get());
+	}
 	if (d->GetDefaultValue().IsSet()) {
 		KV(defaultValue, Quote(d->GetType(), d->GetDefaultValue().ToString()));
 	}
@@ -123,6 +126,9 @@ static std::ostream& operator<< (std::ostream& out, const ConfigVariableMetaData
 	}
 	if (d->GetMaximumValue().IsSet()) {
 		KV(maximumValue, Quote(d->GetType(), d->GetMaximumValue().ToString()));
+	}
+	if (d->GetSafemodeValue().IsSet()) {
+		KV(safemodeValue, Quote(d->GetType(), d->GetSafemodeValue().ToString()));
 	}
 	// Type is required.
 	// Easiest to do this last because of the trailing comma that isn't there.

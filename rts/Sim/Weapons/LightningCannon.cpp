@@ -33,14 +33,21 @@ CLightningCannon::~CLightningCannon(void)
 
 void CLightningCannon::Update(void)
 {
-	if(targetType!=Target_None){
-		weaponPos=owner->pos+owner->frontdir*relWeaponPos.z+owner->updir*relWeaponPos.y+owner->rightdir*relWeaponPos.x;
-		weaponMuzzlePos=owner->pos+owner->frontdir*relWeaponMuzzlePos.z+owner->updir*relWeaponMuzzlePos.y+owner->rightdir*relWeaponMuzzlePos.x;
-		if(!onlyForward){
-			wantedDir=targetPos-weaponPos;
-			wantedDir.Normalize();
+	if (targetType != Target_None) {
+		weaponPos = owner->pos +
+			owner->frontdir * relWeaponPos.z +
+			owner->updir    * relWeaponPos.y +
+			owner->rightdir * relWeaponPos.x;
+		weaponMuzzlePos = owner->pos +
+			owner->frontdir * relWeaponMuzzlePos.z +
+			owner->updir    * relWeaponMuzzlePos.y +
+			owner->rightdir * relWeaponMuzzlePos.x;
+
+		if (!onlyForward) {
+			wantedDir = (targetPos - weaponPos).Normalize();
 		}
 	}
+
 	CWeapon::Update();
 }
 
@@ -83,60 +90,68 @@ void CLightningCannon::Init(void)
 
 void CLightningCannon::FireImpl()
 {
-	float3 dir(targetPos - weaponMuzzlePos);
-	dir.Normalize();
-	dir +=
+	float3 curPos = weaponMuzzlePos;
+	float3 hitPos;
+	float3 curDir = (targetPos - curPos).Normalize();
+	float3 newDir = curDir;
+
+	curDir +=
 		(gs->randVector() * sprayAngle + salvoError) *
 		(1.0f - owner->limExperience * weaponDef->ownerExpAccWeight);
-	dir.Normalize();
+	curDir.Normalize();
 
-	CUnit* u = NULL;
-	CFeature* f = NULL;
-	float r = TraceRay::TraceRay(weaponMuzzlePos, dir, range, collisionFlags, owner, u, f);
+	CUnit* hitUnit = NULL;
+	CFeature* hitFeature = NULL;
+	CPlasmaRepulser* hitShield = NULL;
 
-	float3 newDir;
-	CPlasmaRepulser* shieldHit = NULL;
-	const float shieldLength = interceptHandler.AddShieldInterceptableBeam(this, weaponMuzzlePos, dir, range, newDir, shieldHit);
+	float boltLength = TraceRay::TraceRay(curPos, curDir, range, collisionFlags, owner, hitUnit, hitFeature);
 
-	if (shieldLength < r) {
-		r = shieldLength;
-		if (shieldHit) {
-			shieldHit->BeamIntercepted(this);
+	if (!weaponDef->waterweapon) {
+		// terminate bolt at water surface if necessary
+		if ((curDir.y < 0.0f) && ((curPos.y + curDir.y * boltLength) <= 0.0f)) {
+			boltLength = curPos.y / -curDir.y;
 		}
 	}
 
-	if (u) {
-		if (u->unitDef->usePieceCollisionVolumes) {
-			u->SetLastAttackedPiece(u->localmodel->GetRoot(), gs->frameNum);
-		}
+	const float shieldLength = interceptHandler.AddShieldInterceptableBeam(this, curPos, curDir, range, newDir, hitShield);
+
+	if (shieldLength < boltLength) {
+		boltLength = shieldLength;
+		hitShield->BeamIntercepted(this);
 	}
 
-	// Dynamic Damage
-	DamageArray damageArray;
-	if (weaponDef->dynDamageExp > 0) {
-		damageArray = weaponDefHandler->DynamicDamages(
+	hitPos = curPos + curDir * boltLength;
+	// NOTE: we still need the old position and direction for the projectile
+	// curPos = hitPos;
+	// curDir = newDir;
+
+	if (hitUnit != NULL) {
+		hitUnit->SetLastAttackedPiece(hitUnit->localmodel->GetRoot(), gs->frameNum);
+	}
+
+
+	const DamageArray& damageArray = (weaponDef->dynDamageExp <= 0.0f)?
+		weaponDef->damages:
+		weaponDefHandler->DynamicDamages(
 			weaponDef->damages,
 			weaponMuzzlePos,
 			targetPos,
-			weaponDef->dynDamageRange > 0?
+			(weaponDef->dynDamageRange > 0.0f)?
 				weaponDef->dynDamageRange:
 				weaponDef->range,
 			weaponDef->dynDamageExp,
 			weaponDef->dynDamageMin,
 			weaponDef->dynDamageInverted
 		);
-	} else {
-		damageArray = weaponDef->damages;
-	}
 
-	CGameHelper::ExplosionParams params = {
-		weaponMuzzlePos + dir * r,
-		dir,
+	const CGameHelper::ExplosionParams params = {
+		hitPos,
+		curDir,
 		damageArray,
 		weaponDef,
 		owner,
-		u,                                                // hitUnit
-		f,                                                // hitFeature
+		hitUnit,
+		hitFeature,
 		craterAreaOfEffect,
 		damageAreaOfEffect,
 		weaponDef->edgeEffectiveness,
@@ -150,8 +165,8 @@ void CLightningCannon::FireImpl()
 	helper->Explosion(params);
 
 	new CLightningProjectile(
-		weaponMuzzlePos,
-		weaponMuzzlePos + dir * (r + 10),
+		curPos,
+		curPos + curDir * (boltLength + 10.0f),
 		owner,
 		color,
 		weaponDef,

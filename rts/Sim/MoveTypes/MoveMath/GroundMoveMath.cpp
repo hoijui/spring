@@ -12,46 +12,38 @@ float CGroundMoveMath::waterDamageCost = 1.0f;
 /*
 Calculate speed-multiplier for given height and slope data.
 */
-float CGroundMoveMath::SpeedMod(const MoveData& moveData, float height, float slope) const
+float CGroundMoveMath::SpeedMod(const MoveDef& moveDef, float height, float slope) const
 {
 	float speedMod = 0.0f;
 
 	// too steep or too deep?
-	if (slope > moveData.maxSlope)
+	if (slope > moveDef.maxSlope)
 		return speedMod;
-	if (-height > moveData.depth)
+	if (-height > moveDef.depth)
 		return speedMod;
 
 	// slope-mod
-	speedMod = 1.0f / (1.0f + slope * moveData.slopeMod);
-
-	// depth-mod
-	if (height < 0.0f) {
-		speedMod /= std::max(0.01f, 1.0f + (-height * moveData.depthMod));
-		speedMod *= waterDamageCost;
-	}
+	speedMod = 1.0f / (1.0f + slope * moveDef.slopeMod);
+	speedMod *= ((height < 0.0f)? waterDamageCost: 1.0f);
+	speedMod *= moveDef.GetDepthMod(height);
 
 	return speedMod;
 }
 
-float CGroundMoveMath::SpeedMod(const MoveData& moveData, float height, float slope, float moveSlope) const
+float CGroundMoveMath::SpeedMod(const MoveDef& moveDef, float height, float slope, float moveSlope) const
 {
 	float speedMod = 0.0f;
 
 	// too steep or too deep?
-	if ((slope * moveSlope) > moveData.maxSlope)
+	if ((slope * moveSlope) > moveDef.maxSlope)
 		return speedMod;
-	if ((moveSlope < 0) && (-height > moveData.depth))
+	if ((moveSlope < 0) && (-height > moveDef.depth))
 		return speedMod;
 
 	// slope-mod
-	speedMod = 1.0f / (1.0f + std::max(0.0f, slope * moveSlope) * moveData.slopeMod);
-
-	// depth-mod
-	if (height < 0.0f) {
-		speedMod /= std::max(0.01f, 1.0f + (-height * moveData.depthMod));
-		speedMod *= waterDamageCost;
-	}
+	speedMod = 1.0f / (1.0f + std::max(0.0f, slope * moveSlope) * moveDef.slopeMod);
+	speedMod *= ((height < 0.0f)? waterDamageCost: 1.0f);
+	speedMod *= moveDef.GetDepthMod(height);
 
 	return speedMod;
 }

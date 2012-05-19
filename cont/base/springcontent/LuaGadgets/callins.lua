@@ -30,6 +30,7 @@ CallInsList = {
 	"GamePreload",
 	"GameStart",
 	"GameOver",
+	"GameID",
 	"TeamDied",
 
 	"UnitCreated",
@@ -69,6 +70,7 @@ CallInsList = {
 	"DrawInMiniMap",
 	"DrawUnit",
 	"DrawFeature",
+	"DrawShield",
 
 	"Explosion",
 	"ShockFront",

@@ -10,7 +10,6 @@
 #include "ExternalAI/Interface/AISCommands.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Game/GameHelper.h"
-#include "Game/GameSetup.h"
 #include "Game/GlobalUnsynced.h"
 #include "Game/Player.h"
 #include "Game/PlayerHandler.h"
@@ -46,7 +45,7 @@ static inline bool IsUnitInLosOrRadarOfAllyTeam(const CUnit& unit, const int all
 	//     (thus UnitCreated will not produce EnemyCreated,
 	//     etc. without this, even when globalLOS is enabled
 	//     (for non-cheating AI's))
-	return (gs->globalLOS || unit.losStatus[allyTeamId] & (LOS_INLOS | LOS_INRADAR));
+	return (gs->globalLOS[allyTeamId] || unit.losStatus[allyTeamId] & (LOS_INLOS | LOS_INRADAR));
 }
 
 /////////////////////////////

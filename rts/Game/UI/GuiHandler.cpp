@@ -893,7 +893,7 @@ void CGuiHandler::GiveCommandsNow() {
 	for(std::vector< std::pair<Command, bool> >::iterator i = commandsToGiveTemp.begin(); i != commandsToGiveTemp.end(); ++i) {
 		const Command& cmd = (*i).first;
 		if (eventHandler.CommandNotify(cmd)) {
-			return;
+			continue;
 		}
 
 		selectedUnits.GiveCommand(cmd, (*i).second);
@@ -1444,7 +1444,7 @@ void CGuiHandler::RunCustomCommands(const std::vector<std::string>& cmds, bool r
 
 				Action action(copy);
 				if (!ProcessLocalActions(action)) {
-					game->ActionPressed(-1, action, false /*isRepeat*/);
+					game->ProcessAction(action);
 				}
 
 				keyInput->SetKeyState(SDLK_LALT,   tmpAlt);
@@ -3344,7 +3344,6 @@ static void DrawWeaponCone(const float3& pos,
 
 static inline void DrawWeaponArc(const CUnit* unit)
 {
-	return; // FIXME: disabled
 	if (unit->weapons.empty()) {
 		return;
 	}
@@ -3368,7 +3367,7 @@ static inline void DrawWeaponArc(const CUnit* unit)
 		pos = interPos + (UpVector * 10.0f);
 	}
 
-	const float hrads   = acos(w->maxAngleDif);
+	const float hrads   = acos(w->maxForwardAngleDif);
 	const float heading = atan2(-dir.z, dir.x);
 	const float pitch   = asin(dir.y);
 	DrawWeaponCone(pos, w->range, hrads, heading, pitch);
@@ -3590,14 +3589,16 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 			if (unitdef->kamikazeDist > 0) {
 				glColor4fv(cmdColors.rangeKamikaze);
 				glSurfaceCircle(unit->pos, unitdef->kamikazeDist, 40);
-				if (!unitdef->selfDExplosion.empty()) {
+
+				const WeaponDef* wd = weaponDefHandler->GetWeapon(unitdef->selfDExplosion);
+
+				if (wd != NULL) {
 					glColor4fv(cmdColors.rangeSelfDestruct);
-					const WeaponDef* wd = weaponDefHandler->GetWeapon(unitdef->selfDExplosion);
 					glSurfaceCircle(unit->pos, wd->damageAreaOfEffect, 40);
 				}
 			}
 			// draw build distance for immobile builders
-			if (unitdef->builder && !unitdef->canmove) {
+			if (unitdef->builder) {
 				const float radius = unitdef->buildDistance;
 				if (radius > 0.0f) {
 					glColor4fv(cmdColors.rangeBuild);
@@ -3605,7 +3606,7 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 				}
 			}
 			// draw shield range for immobile units
-			if (unitdef->shieldWeaponDef && !unitdef->canmove) {
+			if (unitdef->shieldWeaponDef) {
 				glColor4fv(cmdColors.rangeShield);
 				glSurfaceCircle(unit->pos, unitdef->shieldWeaponDef->shieldRadius, 40);
 			}
@@ -3650,7 +3651,7 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 					continue;
 				}
 				const UnitDef* unitdef = unit->unitDef;
-				if (unitdef->builder && !unitdef->canmove) {
+				if (unitdef->builder && (!unitdef->canmove || selectedUnits.IsSelected(unit))) {
 					const float radius = unitdef->buildDistance;
 					if (radius > 0.0f) {
 						glDisable(GL_TEXTURE_2D);
@@ -3699,7 +3700,7 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 						}
 					}
 					// draw build range for immobile builders
-					if (unitdef->builder && !unitdef->canmove) {
+					if (unitdef->builder) {
 						const float radius = unitdef->buildDistance;
 						if (radius > 0.0f) {
 							glColor4fv(cmdColors.rangeBuild);
@@ -3707,7 +3708,7 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 						}
 					}
 					// draw shield range for immobile units
-					if (unitdef->shieldWeaponDef && !unitdef->canmove) {
+					if (unitdef->shieldWeaponDef) {
 						glColor4fv(cmdColors.rangeShield);
 						glSurfaceCircle(buildpos, unitdef->shieldWeaponDef->shieldRadius, 40);
 					}
@@ -3779,7 +3780,7 @@ void CGuiHandler::DrawMapStuff(bool onMinimap)
 				glColor4fv(cmdColors.rangeAttack);
 				glBallisticCircle(unit->pos, unit->maxRange,
 				                  unit->weapons.front(), 40);
-				if (!onMinimap && gs->cheatEnabled) {
+				if (!onMinimap && gs->cheatEnabled && globalRendering->drawdebug) {
 					DrawWeaponArc(unit);
 				}
 			}

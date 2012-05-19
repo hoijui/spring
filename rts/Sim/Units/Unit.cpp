@@ -93,7 +93,6 @@ CUnit::CUnit() : CSolidObject(),
 	travelPeriod(0.0f),
 	power(100.0f),
 	maxHealth(100.0f),
-	health(100.0f),
 	paralyzeDamage(0.0f),
 	captureProgress(0.0f),
 	experience(0.0f),
@@ -231,18 +230,17 @@ CUnit::CUnit() : CSolidObject(),
 	currentFuel(0.0f),
 	alphaThreshold(0.1f),
 	cegDamage(1),
-	luaDraw(false),
 	noDraw(false),
-	noSelect(false),
 	noMinimap(false),
 	leaveTracks(false),
 	isIcon(false),
 	iconRadius(0.0f),
 	lodCount(0),
-	currentLOD(0)
+	currentLOD(0),
 #ifdef USE_GML
-	, lastDrawFrame(-30)
+	lastDrawFrame(-30),
 #endif
+	lastUnitUpdate(0)
 {
 	GML_GET_TICKS(lastUnitUpdate);
 }
@@ -345,7 +343,7 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	modelParser->CreateLocalModel(this);
 
 	relMidPos = model->relMidPos;
-	mapSquare = ground->GetSquare(position.ClampInBounds());
+	mapSquare = ground->GetSquare(position.cClampInMap());
 
 	heading  = GetHeadingFromFacing(facing);
 	frontdir = GetVectorFromHeading(heading);
@@ -353,7 +351,7 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	rightdir = frontdir.cross(updir);
 	upright  = unitDef->upright;
 
-	Move3D(position.ClampInBounds(), false);
+	Move3D(position.cClampInMap(), false);
 	SetRadiusAndHeight(model->radius, model->height);
 	UpdateDirVectors(!upright);
 	UpdateMidPos();
@@ -381,7 +379,9 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	ASSERT_SYNCED(pos);
 
 	buildFacing = std::abs(facing) % NUM_FACINGS;
-	curYardMap = (unitDef->GetYardMap(buildFacing).empty())? NULL: &unitDef->GetYardMap(buildFacing)[0];
+	blockMap = (unitDef->GetYardMap().empty())? NULL: &unitDef->GetYardMap()[0];
+
+	footprint = int2(unitDef->xsize, unitDef->zsize);
 	xsize = ((buildFacing & 1) == 0) ? unitDef->xsize : unitDef->zsize;
 	zsize = ((buildFacing & 1) == 1) ? unitDef->xsize : unitDef->zsize;
 
@@ -447,18 +447,19 @@ void CUnit::PreInit(const UnitDef* uDef, int uTeam, int facing, const float3& po
 	script = CUnitScriptFactory::CreateScript(unitDef->scriptPath, this);
 }
 
+
 void CUnit::PostInit(const CUnit* builder)
 {
 	weaponLoader->LoadWeapons(this);
 	// Call initializing script functions
 	script->Create();
 
-	if (unitDef->movedata != NULL) {
-		switch (unitDef->movedata->moveType) {
-			case MoveData::Hover_Move: {
+	if (unitDef->moveDef != NULL) {
+		switch (unitDef->moveDef->moveType) {
+			case MoveDef::Hover_Move: {
 				physicalState = CSolidObject::Hovering;
 			} break;
-			case MoveData::Ship_Move: {
+			case MoveDef::Ship_Move: {
 				physicalState = CSolidObject::Floating;
 			} break;
 			default: {
@@ -647,34 +648,35 @@ void CUnit::Update()
 
 	posErrorVector += posErrorDelta;
 
-	if (beingBuilt) {
-		return;
+	{
+		const bool oldInAir   = inAir;
+		const bool oldInWater = inWater;
+
+		inWater = (pos.y <= 0.0f);
+		inAir   = (!inWater) && ((pos.y - ground->GetHeightAboveWater(pos.x, pos.z)) > 1.0f);
+		isUnderWater = ((pos.y + ((moveDef != NULL && moveDef->subMarine)? 0.0f: model->height)) < 0.0f);
+
+		if (inAir != oldInAir) {
+			if (inAir) {
+				eventHandler.UnitEnteredAir(this);
+			} else {
+				eventHandler.UnitLeftAir(this);
+			}
+		}
+		if (inWater != oldInWater) {
+			if (inWater) {
+				eventHandler.UnitEnteredWater(this);
+			} else {
+				eventHandler.UnitLeftWater(this);
+			}
+		}
 	}
+
+	if (beingBuilt)
+		return;
 
 	// 0.968 ** 16 is slightly less than 0.6, which was the old value used in SlowUpdate
 	residualImpulse *= 0.968f;
-
-	const bool oldInAir   = inAir;
-	const bool oldInWater = inWater;
-
-	inWater = (pos.y <= 0.0f);
-	inAir   = (!inWater) && ((pos.y - ground->GetHeightAboveWater(pos.x,pos.z)) > 1.0f);
-	isUnderWater = ((pos.y + ((mobility != NULL && mobility->subMarine)? 0.0f: model->height)) < 0.0f);
-
-	if (inAir != oldInAir) {
-		if (inAir) {
-			eventHandler.UnitEnteredAir(this);
-		} else {
-			eventHandler.UnitLeftAir(this);
-		}
-	}
-	if (inWater != oldInWater) {
-		if (inWater) {
-			eventHandler.UnitEnteredWater(this);
-		} else {
-			eventHandler.UnitLeftWater(this);
-		}
-	}
 
 	if (travelPeriod != 0.0f) {
 		travel += speed.Length();
@@ -1021,14 +1023,47 @@ void CUnit::SlowUpdateWeapons() {
 
 
 
+float CUnit::GetFlankingDamageBonus(const float3& attackDir)
+{
+	float flankingBonus = 1.0f;
+
+	if (flankingBonusMode <= 0)
+		return flankingBonus;
+
+	if (flankingBonusMode == 1) {
+		// mode 1 = global coordinates, mobile
+		flankingBonusDir += (attackDir * flankingBonusMobility);
+		flankingBonusDir.Normalize();
+		flankingBonusMobility = 0.0f;
+		flankingBonus = (flankingBonusAvgDamage - attackDir.dot(flankingBonusDir) * flankingBonusDifDamage);
+	} else {
+		float3 adirRelative;
+		adirRelative.x = attackDir.dot(rightdir);
+		adirRelative.y = attackDir.dot(updir);
+		adirRelative.z = attackDir.dot(frontdir);
+
+		if (flankingBonusMode == 2) {
+			// mode 2 = unit coordinates, mobile
+			flankingBonusDir += (adirRelative * flankingBonusMobility);
+			flankingBonusDir.Normalize();
+			flankingBonusMobility = 0.0f;
+		}
+
+		// modes 2 and 3 both use this; 3 is unit coordinates, immobile
+		flankingBonus = (flankingBonusAvgDamage - adirRelative.dot(flankingBonusDir) * flankingBonusDifDamage);
+	}
+
+	return flankingBonus;
+}
+
 void CUnit::DoWaterDamage()
 {
-	if (mapInfo->water.damage <= 0.0f) {
+	if (mapInfo->water.damage <= 0.0f)
 		return;
-	}
-	if (!pos.IsInBounds()) {
+	if (!pos.IsInBounds())
 		return;
-	}
+	if (pos.y > 0.0f)
+		return;
 
 	const int  px            = pos.x / (SQUARE_SIZE * 2);
 	const int  pz            = pos.z / (SQUARE_SIZE * 2);
@@ -1036,12 +1071,15 @@ void CUnit::DoWaterDamage()
 	const bool onGround      = (physicalState == CSolidObject::OnGround);
 	const bool isWaterSquare = (readmap->GetMIPHeightMapSynced(1)[pz * gs->hmapx + px] <= 0.0f);
 
-	if ((pos.y <= 0.0f) && isWaterSquare && (isFloating || onGround)) {
-		DoDamage(DamageArray(mapInfo->water.damage), 0, ZeroVector, -1);
-	}
+	if (!isWaterSquare)
+		return;
+	if (!isFloating && !onGround)
+		return;
+
+	DoDamage(DamageArray(mapInfo->water.damage), ZeroVector, NULL, -DAMAGE_EXTSOURCE_WATER);
 }
 
-void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& impulse, int weaponDefId)
+void CUnit::DoDamage(const DamageArray& damages, const float3& impulse, CUnit* attacker, int weaponDefID)
 {
 	if (isDead) {
 		return;
@@ -1053,30 +1091,8 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 		if (attacker) {
 			SetLastAttacker(attacker);
 
-			if (flankingBonusMode) {
-				const float3 adir = (attacker->pos - pos).SafeNormalize(); // FIXME -- not the impulse direction?
-
-				if (flankingBonusMode == 1) {
-					// mode 1 = global coordinates, mobile
-					flankingBonusDir += adir * flankingBonusMobility;
-					flankingBonusDir.Normalize();
-					flankingBonusMobility = 0.0f;
-					damage *= flankingBonusAvgDamage - adir.dot(flankingBonusDir) * flankingBonusDifDamage;
-				} else {
-					float3 adirRelative;
-					adirRelative.x = adir.dot(rightdir);
-					adirRelative.y = adir.dot(updir);
-					adirRelative.z = adir.dot(frontdir);
-
-					if (flankingBonusMode == 2) {	// mode 2 = unit coordinates, mobile
-						flankingBonusDir += adirRelative * flankingBonusMobility;
-						flankingBonusDir.Normalize();
-						flankingBonusMobility = 0.0f;
-					}
-					// modes 2 and 3 both use this; 3 is unit coordinates, immobile
-					damage *= flankingBonusAvgDamage - adirRelative.dot(flankingBonusDir) * flankingBonusDifDamage;
-				}
-			}
+			// FIXME -- not the impulse direction?
+			damage *= GetFlankingDamageBonus((attacker->pos - pos).SafeNormalize());
 		}
 
 		damage *= curArmorMultiple;
@@ -1087,21 +1103,22 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 	hitDir.y = 0.0f;
 	hitDir.SafeNormalize();
 
-	script->HitByWeapon(hitDir, weaponDefId, /*inout*/ damage);
+	script->HitByWeapon(hitDir, weaponDefID, /*inout*/ damage);
 
 	float experienceMod = expMultiplier;
-	const int paralyzeTime = damages.paralyzeDamageTime;
 	float newDamage = damage;
 	float impulseMult = 1.0f;
 
-	if (luaRules && luaRules->UnitPreDamaged(this, attacker, damage, weaponDefId,
-			!!paralyzeTime, &newDamage, &impulseMult)) {
+	const int paralyzeTime = damages.paralyzeDamageTime;
+	const bool isParalyzer = (paralyzeTime != 0);
+
+	if (luaRules && luaRules->UnitPreDamaged(this, attacker, damage, weaponDefID, isParalyzer, &newDamage, &impulseMult)) {
 		damage = newDamage;
 	}
 
 	AddImpulse((impulse * impulseMult) / mass);
 
-	if (paralyzeTime == 0) { // real damage
+	if (!isParalyzer) { // real damage
 		if (damage > 0.0f) {
 			// Do not log overkill damage (so nukes etc do not inflate values)
 			const float statsdamage = std::max(0.0f, std::min(maxHealth - health, damage));
@@ -1110,8 +1127,7 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 			}
 			teamHandler->Team(team)->currentStats->damageReceived += statsdamage;
 			health -= damage;
-		}
-		else { // healing
+		} else { // healing
 			health -= damage;
 			if (health > maxHealth) {
 				health = maxHealth;
@@ -1176,8 +1192,8 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 		}
 	}
 
-	eventHandler.UnitDamaged(this, attacker, damage, weaponDefId, !!damages.paralyzeDamageTime);
-	eoh->UnitDamaged(*this, attacker, damage, weaponDefId, !!damages.paralyzeDamageTime);
+	eventHandler.UnitDamaged(this, attacker, damage, weaponDefID, isParalyzer);
+	eoh->UnitDamaged(*this, attacker, damage, weaponDefID, isParalyzer);
 
 #ifdef TRACE_SYNC
 	tracefile << "Damage: ";
@@ -1200,14 +1216,12 @@ void CUnit::DoDamage(const DamageArray& damages, CUnit* attacker, const float3& 
 
 
 
-void CUnit::Kill(const float3& impulse, bool crushKill) {
-	crushKilled = crushKill;
-
-	DamageArray damage;
-	DoDamage(damage * (health + 1.0f), NULL, impulse, -1);
-}
-
 void CUnit::AddImpulse(const float3& addedImpulse) {
+	if (GetTransporter() != NULL) {
+		// or apply impulse to the transporter?
+		return;
+	}
+
 	residualImpulse += addedImpulse;
 
 	if (addedImpulse.SqLength() >= 0.01f) {
@@ -1660,10 +1674,6 @@ bool CUnit::SetGroup(CGroup* newGroup)
 
 bool CUnit::AddBuildPower(float amount, CUnit* builder)
 {
-	const float part = amount / buildTime;
-	const float metalUse  = (metalCost  * part);
-	const float energyUse = (energyCost * part);
-
 	if (amount >= 0.0f) { //  build / repair
 		if (!beingBuilt && (health >= maxHealth)) {
 			return false;
@@ -1672,11 +1682,17 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 		lastNanoAdd = gs->frameNum;
 
 		if (beingBuilt) { //build
+			const float part = std::min(amount / buildTime, 1.0f - buildProgress);
+			const float metalUse  = (metalCost  * part);
+			const float energyUse = (energyCost * part);
+
 			if ((teamHandler->Team(builder->team)->metal  >= metalUse) &&
 			    (teamHandler->Team(builder->team)->energy >= energyUse) &&
 			    (!luaRules || luaRules->AllowUnitBuildStep(builder, this, part))) {
 				if (builder->UseMetal(metalUse)) {
 					// just because we checked doesn't mean they were deducted since upkeep can prevent deduction
+					// FIXME luaRules->AllowUnitBuildStep() may have changed the storages!!! so the checks can be invalid!
+					// TODO add a builder->UseResources(SResources(metalUse, energyUse))
 					if (builder->UseEnergy(energyUse)) {
 						health += (maxHealth * part);
 						health = std::min(health, maxHealth);
@@ -1698,7 +1714,9 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 			}
 			return false;
 		}
-		else { //repair
+		else if (health < maxHealth) { //repair
+			const float part = std::min(amount / buildTime, 1.0f - (health / maxHealth));
+			const float energyUse = (energyCost * part);
 			const float energyUseScaled = energyUse * modInfo.repairEnergyCostFactor;
 
 	  		if (!builder->UseEnergy(energyUseScaled)) {
@@ -1706,21 +1724,22 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 				return false;
 			}
 
-			if (health < maxHealth) {
-				repairAmount += amount;
-				health += maxHealth * part;
-				if (health > maxHealth) {
-					health = maxHealth;
-				}
-				return true;
+			repairAmount += amount;
+			health += maxHealth * part;
+			if (health > maxHealth) {
+				health = maxHealth;
 			}
-			return false;
+			return true;
 		}
 	}
 	else { // reclaim
 		if (isDead) {
 			return false;
 		}
+
+		const float part = std::max(amount / buildTime, -buildProgress);
+		const float energyUse = (energyCost * part);
+		const float energyUseScaled = energyUse * modInfo.reclaimUnitEnergyCostFactor;
 
 		if (luaRules && !luaRules->AllowUnitBuildStep(builder, this, part)) {
 			return false;
@@ -1732,8 +1751,6 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 			builder->DependentDied(this);
 			return false;
 		}
-
-		const float energyUseScaled = energyUse * modInfo.reclaimUnitEnergyCostFactor;
 
 		if (!builder->UseEnergy(-energyUseScaled)) {
 			teamHandler->Team(builder->team)->energyPull += energyUseScaled;
@@ -1747,6 +1764,7 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 		health += maxHealth * part;
 
 		if (beingBuilt) {
+			// progressive metal reclaiming
 			builder->AddMetal(-metalUse * modInfo.reclaimUnitEfficiency, false);
 			buildProgress += part;
 
@@ -1756,6 +1774,7 @@ bool CUnit::AddBuildPower(float amount, CUnit* builder)
 			}
 		} else {
 			if (health < 0) {
+				// in case of reclaiming of living units add the whole metal with the last nano particle to the storage
 				builder->AddMetal(metalCost * modInfo.reclaimUnitEfficiency, false);
 				KillUnit(false, true, NULL);
 				return false;
@@ -1862,13 +1881,6 @@ void CUnit::KillUnit(bool selfDestruct, bool reclaimed, CUnit* attacker, bool sh
 			};
 
 			helper->Explosion(params);
-
-			#if (PLAY_SOUNDS == 1)
-			// play explosion sound
-			if (wd->soundhit.getID(0) > 0) {
-				Channels::Battle.PlaySample(wd->soundhit.getID(0), pos, wd->soundhit.getVolume(0));
-			}
-			#endif
 		}
 
 		if (selfDestruct) {
@@ -2063,7 +2075,7 @@ void CUnit::PostLoad()
 	//HACK:Initializing after load
 	unitDef = unitDefHandler->GetUnitDefByID(unitDefID);
 	model = unitDef->LoadModel();
-	curYardMap = (unitDef->yardmaps[buildFacing].empty())? NULL: &unitDef->yardmaps[buildFacing][0];
+	blockMap = (unitDef->GetYardMap().empty())? NULL: &unitDef->GetYardMap()[0];
 
 	SetRadiusAndHeight(model->radius, model->height);
 
@@ -2180,7 +2192,6 @@ CR_REG_METADATA(CUnit, (
 	CR_MEMBER(paralyzeDamage),
 	CR_MEMBER(captureProgress),
 	CR_MEMBER(maxHealth),
-	CR_MEMBER(health),
 	CR_MEMBER(experience),
 	CR_MEMBER(limExperience),
 	CR_MEMBER(neutral),
@@ -2325,9 +2336,7 @@ CR_REG_METADATA(CUnit, (
 	CR_MEMBER(incomingMissiles),
 	CR_MEMBER(lastFlareDrop),
 	CR_MEMBER(currentFuel),
-	CR_MEMBER(luaDraw),
 	CR_MEMBER(noDraw),
-	CR_MEMBER(noSelect),
 	CR_MEMBER(noMinimap),
 	CR_MEMBER(leaveTracks),
 //	CR_MEMBER(isIcon),

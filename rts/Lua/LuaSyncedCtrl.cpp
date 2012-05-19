@@ -1537,6 +1537,8 @@ int LuaSyncedCtrl::SetUnitBlocking(lua_State* L)
 	}
 
 	unit->crushable = luaL_optboolean(L, 4, unit->crushable);
+	unit->blockEnemyPushing = luaL_optboolean(L, 5, unit->blockEnemyPushing);
+	unit->blockHeightChanges = luaL_optboolean(L, 6, unit->blockHeightChanges);
 	return 0;
 }
 
@@ -1549,21 +1551,24 @@ int LuaSyncedCtrl::SetUnitCrashing(lua_State* L) {
 	}
 
 	AAirMoveType* amt = dynamic_cast<AAirMoveType*>(unit->moveType);
+	bool ret = false;
 
 	if (amt != NULL) {
-		const bool crash = (lua_isboolean(L, 2) && lua_toboolean(L, 2));
-		const AAirMoveType::AircraftState state = crash?
-			AAirMoveType::AIRCRAFT_CRASHING:
-			AAirMoveType::AIRCRAFT_FLYING;
+		const bool wantCrash = (lua_isboolean(L, 2) && lua_toboolean(L, 2));
+		const AAirMoveType::AircraftState aircraftState = amt->aircraftState;
 
-		// note: this really only makes sense to call
-		// once, passing true for the second argument
-		amt->SetState(state);
-		lua_pushboolean(L, true);
-	} else {
-		lua_pushboolean(L, false);
+		// for simplicity, this can only set a flying aircraft to
+		// start crashing, or a crashing aircraft to start flying
+		if ( wantCrash && (aircraftState == AAirMoveType::AIRCRAFT_FLYING))
+			amt->SetState(AAirMoveType::AIRCRAFT_CRASHING);
+
+		if (!wantCrash && (aircraftState == AAirMoveType::AIRCRAFT_CRASHING))
+			amt->SetState(AAirMoveType::AIRCRAFT_FLYING);
+
+		ret = (amt->aircraftState != aircraftState);
 	}
 
+	lua_pushboolean(L, ret);
 	return 1;
 }
 
@@ -1980,13 +1985,13 @@ int LuaSyncedCtrl::AddUnitDamage(lua_State* L)
 	if (unit == NULL) {
 		return 0;
 	}
-	const float damage   = luaL_checkfloat(L, 2);
-	const int paralyze   = luaL_optint(L, 3, 0);
-	const int attackerID = luaL_optint(L, 4, -1);
-	const int weaponID   = luaL_optint(L, 5, -1);
-	const float3 impulse = float3(Clamp(luaL_optfloat(L, 6, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE),
-	                              Clamp(luaL_optfloat(L, 7, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE),
-	                              Clamp(luaL_optfloat(L, 8, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE));
+	const float damage    = luaL_checkfloat(L, 2);
+	const int paralyze    = luaL_optint(L, 3, 0);
+	const int attackerID  = luaL_optint(L, 4, -1);
+	const int weaponDefID = luaL_optint(L, 5, -1);
+	const float3 impulse  = float3(Clamp(luaL_optfloat(L, 6, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE),
+	                               Clamp(luaL_optfloat(L, 7, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE),
+	                               Clamp(luaL_optfloat(L, 8, 0.0f), -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE));
 
 	CUnit* attacker = NULL;
 	if (attackerID >= 0) {
@@ -1996,7 +2001,7 @@ int LuaSyncedCtrl::AddUnitDamage(lua_State* L)
 		attacker = uh->units[attackerID];
 	}
 
-	if (weaponID >= weaponDefHandler->numWeaponDefs) {
+	if (weaponDefID >= weaponDefHandler->numWeaponDefs) {
 		return 0;
 	}
 
@@ -2006,7 +2011,7 @@ int LuaSyncedCtrl::AddUnitDamage(lua_State* L)
 		damages.paralyzeDamageTime = paralyze;
 	}
 
-	unit->DoDamage(damages, attacker, impulse, weaponID);
+	unit->DoDamage(damages, impulse, attacker, weaponDefID);
 	return 0;
 }
 
@@ -2133,7 +2138,7 @@ int LuaSyncedCtrl::RemoveBuildingDecal(lua_State* L)
 int LuaSyncedCtrl::AddGrass(lua_State* L)
 {
 	float3 pos(luaL_checkfloat(L, 1), 0.0f, luaL_checkfloat(L, 2));
-	pos.CheckInBounds();
+	pos.ClampInBounds();
 
 	treeDrawer->AddGrass(pos);
 	return 0;
@@ -2143,7 +2148,7 @@ int LuaSyncedCtrl::AddGrass(lua_State* L)
 int LuaSyncedCtrl::RemoveGrass(lua_State* L)
 {
 	float3 pos(luaL_checkfloat(L, 1), 0.0f, luaL_checkfloat(L, 2));
-	pos.CheckInBounds();
+	pos.ClampInBounds();
 
 	treeDrawer->RemoveGrass((int)pos.x,(int)pos.z);
 	return 0;
@@ -2710,6 +2715,8 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 {
 	CheckAllowGameChanges(L);
 
+	const int args = lua_gettop(L); // number of arguments
+
 	// units
 	vector<CUnit*> units;
 	ParseUnitArray(L, __FUNCTION__, 1, units);
@@ -2719,6 +2726,10 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 	vector<Command> commands;
 	LuaUtils::ParseCommandArray(L, __FUNCTION__, 2, commands);
 	const int commandCount = (int)commands.size();
+
+	bool pairwise = false;
+	if (args >= 3)
+		pairwise = lua_toboolean(L, 3);
 
 	if ((unitCount <= 0) || (commandCount <= 0)) {
 		lua_pushnumber(L, 0);
@@ -2731,13 +2742,24 @@ int LuaSyncedCtrl::GiveOrderArrayToUnitArray(lua_State* L)
 	inGiveOrder = true;
 
 	int count = 0;
-	for (int u = 0; u < unitCount; u++) {
-		CUnit* unit = units[u];
-		if (CanControlUnit(L, unit)) {
-			for (int c = 0; c < commandCount; c++) {
-				unit->commandAI->GiveCommand(commands[c]);
+	if (pairwise) {
+		for (int x = 0; x < std::min(unitCount, commandCount); ++x) {
+			CUnit* unit = units[x];
+			if (CanControlUnit(L, unit)) {
+				unit->commandAI->GiveCommand(commands[x]);
+				count++;
 			}
-			count++;
+		}
+	}
+	else {
+		for (int u = 0; u < unitCount; u++) {
+			CUnit* unit = units[u];
+			if (CanControlUnit(L, unit)) {
+				for (int c = 0; c < commandCount; c++) {
+					unit->commandAI->GiveCommand(commands[c]);
+				}
+				count++;
+			}
 		}
 	}
 	inGiveOrder = false;
@@ -2782,10 +2804,11 @@ static void ParseParams(lua_State* L, const char* caller, float& factor,
 	}
 
 	// quantize and clamp
-	x1 = (int)max(0 , min(maxX, (int)(fx1 / resolution)));
-	z1 = (int)max(0 , min(maxZ, (int)(fz1 / resolution)));
-	x2 = (int)max(0 , min(maxX, (int)(fx2 / resolution)));
-	z2 = (int)max(0 , min(maxZ, (int)(fz2 / resolution)));
+	x1 = Clamp((int)(fx1 / resolution), 0, maxX);
+	x2 = Clamp((int)(fx2 / resolution), 0, maxX);
+	z1 = Clamp((int)(fz1 / resolution), 0, maxZ);
+	z2 = Clamp((int)(fz2 / resolution), 0, maxZ);
+
 }
 
 static inline void ParseMapParams(lua_State* L, const char* caller,

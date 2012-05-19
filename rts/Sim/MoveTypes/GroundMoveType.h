@@ -7,8 +7,9 @@
 #include "Sim/Objects/SolidObject.h"
 
 struct UnitDef;
-struct MoveData;
+struct MoveDef;
 class CMoveMath;
+class IPathController;
 
 class CGroundMoveType : public AMoveType
 {
@@ -23,27 +24,21 @@ public:
 	bool Update();
 	void SlowUpdate();
 
-	void SetDeltaSpeed(float, bool, bool = false);
-
 	void StartMoving(float3 pos, float goalRadius);
 	void StartMoving(float3 pos, float goalRadius, float speed);
 	void StopMoving();
 
-	void SetMaxSpeed(float speed);
-
-	void ImpulseAdded(const float3&);
-
 	void KeepPointingTo(float3 pos, float distance, bool aggressive);
 	void KeepPointingTo(CUnit* unit, float distance, bool aggressive);
 
-	bool OnSlope(float minSlideTolerance);
-
 	void TestNewTerrainSquare();
+	void ImpulseAdded(const float3&);
 	void LeaveTransport();
 
 	void StartSkidding() { skidding = true; }
 	void StartFlying() { skidding = true; flying = true; } // flying requires skidding
 
+	bool OnSlope(float minSlideTolerance);
 	bool IsSkidding() const { return skidding; }
 	bool IsFlying() const { return flying; }
 	bool IsReversing() const { return reversing; }
@@ -51,24 +46,7 @@ public:
 	static void CreateLineTable();
 	static void DeleteLineTable();
 
-
-	float turnRate;
-	float accRate;
-	float decRate;
-
-	float maxReverseSpeed;
-	float wantedSpeed;
-	float currentSpeed;
-	float requestedSpeed;
-	float deltaSpeed;
-
-	unsigned int pathId;
-	float goalRadius;
-
-	SyncedFloat3 currWayPoint;
-	SyncedFloat3 nextWayPoint;
-
-protected:
+private:
 	float3 ObstacleAvoidance(const float3& desiredDir);
 	float Distance2D(CSolidObject* object1, CSolidObject* object2, float marginal = 0.0f);
 
@@ -86,26 +64,23 @@ protected:
 	void HandleObjectCollisions();
 	void HandleUnitCollisions(
 		CUnit* collider,
-		const float3& colliderCurPos,
-		const float3& colliderOldPos,
 		const float colliderSpeed,
 		const float colliderRadius,
 		const float3& sepDirMask,
 		const UnitDef* colliderUD,
-		const MoveData* colliderMD,
+		const MoveDef* colliderMD,
 		const CMoveMath* colliderMM);
 	void HandleFeatureCollisions(
 		CUnit* collider,
-		const float3& colliderCurPos,
-		const float3& colliderOldPos,
 		const float colliderSpeed,
 		const float colliderRadius,
 		const float3& sepDirMask,
 		const UnitDef* colliderUD,
-		const MoveData* colliderMD,
+		const MoveDef* colliderMD,
 		const CMoveMath* colliderMM);
 
 	void SetMainHeading();
+	void ChangeSpeed(float, bool, bool = false);
 	void ChangeHeading(short newHeading);
 
 	void UpdateSkid();
@@ -120,9 +95,29 @@ protected:
 	bool FollowPath();
 	bool WantReverse(const float3&) const;
 
+private:
+	IPathController* pathController;
 
+public:
+	float turnRate;
+	float accRate;
+	float decRate;
+
+	float maxReverseSpeed;
+	float wantedSpeed;
+	float currentSpeed;
+	float deltaSpeed;
+
+	unsigned int pathId;
+	float goalRadius;
+
+	SyncedFloat3 currWayPoint;
+	SyncedFloat3 nextWayPoint;
+
+private:
 	bool atGoal;
-	bool haveFinalWaypoint;
+	bool atEndOfPath;
+
 	float currWayPointDist;
 	float prevWayPointDist;
 
@@ -163,3 +158,4 @@ protected:
 };
 
 #endif // GROUNDMOVETYPE_H
+

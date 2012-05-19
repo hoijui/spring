@@ -14,6 +14,7 @@
 #include "Sim/Units/Scripts/UnitScript.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
+#include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Weapons/Weapon.h"
 #include "System/myMath.h"
 
@@ -153,7 +154,10 @@ bool CStrafeAirMoveType::Update()
 {
 	AAirMoveType::Update();
 
-	if (owner->stunned || owner->beingBuilt) {
+	// need to additionally check that we are not crashing,
+	// otherwise we might fall through the map when stunned
+	// (the kill-on-impact code is not reached in that case)
+	if ((owner->stunned && !owner->crashing) || owner->beingBuilt) {
 		UpdateAirPhysics(0, lastAileronPos, lastElevatorPos, 0, ZeroVector);
 		return (HandleCollisions());
 	}
@@ -170,8 +174,8 @@ bool CStrafeAirMoveType::Update()
 
 			if (con.forward) { elevator -= 1; }
 			if (con.back   ) { elevator += 1; }
-			if (con.right  ) { aileron += 1; }
-			if (con.left   ) { aileron -= 1; }
+			if (con.right  ) { aileron  += 1; }
+			if (con.left   ) { aileron  -= 1; }
 
 			UpdateAirPhysics(0, aileron, elevator, 1, owner->frontdir);
 			maneuver = 0;
@@ -180,16 +184,27 @@ bool CStrafeAirMoveType::Update()
 		}
 	}
 
+	// somewhat hackish, but planes that have attack orders
+	// while no pad is available would otherwise continue
+	// attacking even if out of fuel
+	const bool outOfFuel = (owner->currentFuel <= 0.0f && owner->unitDef->maxFuel > 0.0f);
+	const bool continueAttack = (reservedPad == NULL && !outOfFuel);
+
 	if (aircraftState != AIRCRAFT_CRASHING) {
 		if (reservedPad != NULL) {
 			MoveToRepairPad();
 		} else {
-			if (owner->unitDef->maxFuel > 0.0f && owner->currentFuel <= 0.0f) {
-				if (padStatus == 0 && maxWantedSpeed > 0.0f) {
-					// out of fuel, keep us in the air to reach our landing
-					// goalPos (which is hopefully in the vicinity of a pad)
-					SetState(AIRCRAFT_FLYING);
-				}
+			if (outOfFuel && airBaseHandler->HaveAirBase(owner->allyteam)) {
+				// out of fuel, keep us in the air to reach our landing
+				// goalPos (which is/will be set to a pad's position by
+				// MobileCAI) so long as there is at least one friendly
+				// base
+				//
+				// NOTE:
+				//     technically need to pass minAirBasePower as well,
+				//     otherwise aircraft might keep flying and never be
+				//     serviced
+				SetState(AIRCRAFT_FLYING);
 			}
 		}
 	}
@@ -197,12 +212,6 @@ bool CStrafeAirMoveType::Update()
 	switch (aircraftState) {
 		case AIRCRAFT_FLYING: {
 			owner->restTime = 0;
-
-			// somewhat hackish, but planes that have attack orders
-			// while no pad is available would otherwise continue
-			// attacking even if out of fuel
-			const bool continueAttack =
-				(reservedPad == NULL && ((owner->currentFuel > 0.0f) || owner->unitDef->maxFuel <= 0.0f));
 
 			if (continueAttack && ((owner->userTarget && !owner->userTarget->isDead) || owner->userAttackGround)) {
 				inefficientAttackTime = std::min(inefficientAttackTime, float(gs->frameNum) - owner->lastFireWeapon);
@@ -237,10 +246,10 @@ bool CStrafeAirMoveType::Update()
 			UpdateLanding();
 			break;
 		case AIRCRAFT_CRASHING: {
-			// note: the crashing-state can only be set by scripts
+			// NOTE: the crashing-state can only be set (and unset) by scripts
 			UpdateAirPhysics(crashRudder, crashAileron, crashElevator, 0, owner->frontdir);
 
-			if (!(gs->frameNum & 3) && (ground->GetHeightAboveWater(owner->pos.x, owner->pos.z) + 5.0f + owner->radius) > owner->pos.y) {
+			if ((ground->GetHeightAboveWater(owner->pos.x, owner->pos.z) + 5.0f + owner->radius) > owner->pos.y) {
 				owner->crashing = false; owner->KillUnit(true, false, 0);
 			}
 
@@ -279,10 +288,8 @@ bool CStrafeAirMoveType::HandleCollisions() {
 	if (pos != oldPos) {
 		oldPos = pos;
 
-		const bool checkCollisions =
-			collide &&
-			(!owner->beingBuilt) &&
-			(aircraftState == AIRCRAFT_FLYING || aircraftState == AIRCRAFT_CRASHING);
+		// check for collisions if not on a pad, not being built, or not taking off
+		const bool checkCollisions = collide && !owner->beingBuilt && (padStatus == PAD_STATUS_FLYING) && (aircraftState != AIRCRAFT_TAKEOFF);
 
 		if (checkCollisions) {
 			bool hitBuilding = false;
@@ -306,8 +313,8 @@ bool CStrafeAirMoveType::HandleCollisions() {
 
 					const float damage = ((unit->speed - owner->speed) * 0.1f).SqLength();
 
-					owner->DoDamage(DamageArray(damage), 0, ZeroVector);
-					unit->DoDamage(DamageArray(damage), 0, ZeroVector);
+					owner->DoDamage(DamageArray(damage), ZeroVector, NULL, -CSolidObject::DAMAGE_COLLISION_OBJECT);
+					unit->DoDamage(DamageArray(damage), ZeroVector, NULL, -CSolidObject::DAMAGE_COLLISION_OBJECT);
 					hitBuilding = true;
 				} else {
 					const float part = owner->mass / (owner->mass + unit->mass);
@@ -317,8 +324,8 @@ bool CStrafeAirMoveType::HandleCollisions() {
 
 					const float damage = ((unit->speed - owner->speed) * 0.1f).SqLength();
 
-					owner->DoDamage(DamageArray(damage), 0, ZeroVector);
-					unit->DoDamage(DamageArray(damage), 0, ZeroVector);
+					owner->DoDamage(DamageArray(damage), ZeroVector, NULL, -CSolidObject::DAMAGE_COLLISION_OBJECT);
+					unit->DoDamage(DamageArray(damage), ZeroVector, NULL, -CSolidObject::DAMAGE_COLLISION_OBJECT);
 
 					owner->speed *= 0.99f;
 				}
@@ -409,7 +416,7 @@ void CStrafeAirMoveType::UpdateManeuver()
 			if ((owner->updir.y < 0.0f && owner->frontdir.y < 0.0f) || speedf < 0.8f) {
 				maneuver = 0;
 			}
-			// some seem to report that the "unlimited altitude" thing is because of these maneuvers
+			// [?] some seem to report that the "unlimited altitude" thing is because of these maneuvers
 			if (owner->pos.y - ground->GetApproximateHeight(owner->pos.x, owner->pos.z) > wantedHeight * 4.0f) {
 				maneuver = 0;
 			}
@@ -769,10 +776,7 @@ void CStrafeAirMoveType::UpdateFlying(float wantedHeight, float engine)
 
 void CStrafeAirMoveType::UpdateLanded()
 {
-	owner->Move3D(owner->speed = ZeroVector, true);
-	// match the terrain normal
-	owner->UpdateDirVectors(true);
-	owner->UpdateMidPos();
+	AAirMoveType::UpdateLanded();
 }
 
 
@@ -844,7 +848,7 @@ void CStrafeAirMoveType::UpdateLanding()
 			owner->Deactivate();
 			owner->script->StopMoving();
 		} else {
-			goalPos.CheckInBounds();
+			goalPos.ClampInBounds();
 			UpdateFlying(wantedHeight, 1);
 			return;
 		}
@@ -890,23 +894,21 @@ void CStrafeAirMoveType::UpdateLanding()
 	owner->UpdateMidPos();
 
 	// see if we are at the reserved (not user-clicked) landing spot
-	if (reservedLandingPosDist < 1.0f) {
-		const float gh = ground->GetHeightAboveWater(pos.x, pos.z);
-		const float gah = ground->GetHeightReal(pos.x, pos.z);
-		float alt = 0.0f;
+	const float gh = ground->GetHeightAboveWater(pos.x, pos.z);
+	const float gah = ground->GetHeightReal(pos.x, pos.z);
+	float altitude = 0.0f;
 
-		// can we submerge and are we still above water?
-		if ((owner->unitDef->canSubmerge) && (gah < 0)) {
-			alt = pos.y - gah;
-			reservedLandingPos.y = gah;
-		} else {
-			alt = pos.y - gh;
-			reservedLandingPos.y = gh;
-		}
+	// can we submerge and are we still above water?
+	if ((owner->unitDef->canSubmerge) && (gah < 0.0f)) {
+		altitude = pos.y - gah;
+		reservedLandingPos.y = gah;
+	} else {
+		altitude = pos.y - gh;
+		reservedLandingPos.y = gh;
+	}
 
-		if (alt <= 1.0f) {
-			SetState(AIRCRAFT_LANDED);
-		}
+	if (altitude <= 1.0f) {
+		SetState(AIRCRAFT_LANDED);
 	}
 }
 
@@ -940,7 +942,7 @@ void CStrafeAirMoveType::UpdateAirPhysics(float rudder, float aileron, float ele
 			engine = std::max(0.0f, std::min(engine, 1 - (pos.y - gHeight - wantedHeight * 1.2f) / wantedHeight));
 		}
 		// check next position given current (unadjusted) pos and speed
-		nextPosInBounds = (pos + speed).CheckInBounds();
+		nextPosInBounds = (pos + speed).IsInBounds();
 	}
 
 
@@ -969,7 +971,7 @@ void CStrafeAirMoveType::UpdateAirPhysics(float rudder, float aileron, float ele
 	}
 
 	// bounce away on ground collisions
-	if (gHeight > (owner->pos.y - owner->model->radius * 0.2f) && !owner->crashing) {
+	if (gHeight > (owner->pos.y - owner->model->radius * 0.2f)) {
 		const float3& gNormal = ground->GetNormal(pos.x, pos.z);
 		const float impactSpeed = -speed.dot(gNormal);
 
@@ -1009,36 +1011,52 @@ void CStrafeAirMoveType::SetState(AAirMoveType::AircraftState newState)
 	// this state is only used by CHoverAirMoveType, so we should never enter it
 	assert(newState != AIRCRAFT_HOVERING);
 
+	// once in crashing, we should never change back into another state
+	assert(aircraftState != AIRCRAFT_CRASHING || newState == AIRCRAFT_CRASHING);
+
 	if (newState == aircraftState) {
 		return;
 	}
 
-	owner->physicalState = (newState == AIRCRAFT_LANDED)?
-		CSolidObject::OnGround:
-		CSolidObject::Flying;
-	owner->useAirLos = (newState != AIRCRAFT_LANDED);
-	owner->crashing = (newState == AIRCRAFT_CRASHING);
-
-	// this checks our physicalState, and blocks only
-	// if not flying (otherwise unblocks and returns)
-	owner->Block();
-
-	if (newState == AIRCRAFT_FLYING) {
-		owner->Activate();
-		owner->script->StartMoving();
-	}
-
-	if (newState != AIRCRAFT_LANDING) {
-		// don't need a reserved position anymore
-		reservedLandingPos.x = -1.0f;
-	}
-
 	// make sure we only go into takeoff mode when landed
 	if (aircraftState == AIRCRAFT_LANDED) {
+		//assert(newState == AIRCRAFT_TAKEOFF);
 		aircraftState = AIRCRAFT_TAKEOFF;
 	} else {
 		aircraftState = newState;
 	}
+
+	owner->physicalState = CSolidObject::Flying;
+	owner->useAirLos = true;
+
+	switch (aircraftState) {
+		case AIRCRAFT_CRASHING:
+			owner->crashing = true;
+			break;
+		case AIRCRAFT_FLYING:
+			owner->Activate();
+			owner->script->StartMoving();
+			break;
+		case AIRCRAFT_LANDED:
+			owner->useAirLos = false;
+			owner->physicalState = CSolidObject::OnGround;
+			
+			//FIXME already inform commandAI in AIRCRAFT_LANDING!
+			//FIXME Problem is StopMove() also calls owner->script->StopMoving() what should only be called when landed. Also see CHoverAirMoveType::SetState().
+			owner->commandAI->StopMove();
+			break;
+		default:
+			break;
+	}
+
+	if (aircraftState != AIRCRAFT_LANDING) {
+		// don't need a reserved position anymore
+		reservedLandingPos.x = -1.0f;
+	}
+
+	// this checks our physicalState, and blocks only
+	// if not flying (otherwise unblocks and returns)
+	owner->Block();
 }
 
 
@@ -1065,13 +1083,13 @@ float3 CStrafeAirMoveType::FindLandingPos() const
 		return ret;
 	}
 
-	tryPos.CheckInBounds();
+	tryPos.ClampInBounds();
 
 	const int2 mp = owner->GetMapPos(tryPos);
 
 	for (int z = mp.y; z < mp.y + owner->zsize; z++) {
 		for (int x = mp.x; x < mp.x + owner->xsize; x++) {
-			if (groundBlockingObjectMap->GroundBlockedUnsafe(z * gs->mapx + x)) {
+			if (groundBlockingObjectMap->GroundBlocked(x, z, owner)) {
 				return ret;
 			}
 		}
